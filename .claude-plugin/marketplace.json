@@ -23,6 +23,16 @@
       "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words."
     },
     {
+      "name": "frontend-skill",
+      "source": "./plugins/frontend-skill",
+      "description": "Design visually strong landing pages, websites, apps, prototypes, and game UI with restrained composition and tasteful motion. From OpenAI."
+    },
+    {
+      "name": "implement-with-notes",
+      "source": "./plugins/implement-with-notes",
+      "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
+    },
+    {
       "name": "maintain-verification-skill",
       "source": "./plugins/maintain-verification-skill",
       "description": "Keep a project's verification skill and feature map accurate with a periodic audit pass. From Lauren Tan's pstack."

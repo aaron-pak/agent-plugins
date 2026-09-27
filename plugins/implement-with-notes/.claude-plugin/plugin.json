@@ -1,0 +1,7 @@
+{
+  "name": "implement-with-notes",
+  "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions.",
+  "author": {
+    "name": "Aaron Pak"
+  }
+}
