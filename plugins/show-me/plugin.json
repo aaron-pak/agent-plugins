@@ -1,8 +1,9 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "show-me",
-  "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts.",
+  "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer.",
   "author": {
-    "name": "Aaron Pak"
-  }
+    "name": "HumanLayer"
+  },
+  "license": "MIT"
 }

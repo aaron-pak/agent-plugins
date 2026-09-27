@@ -30,7 +30,7 @@
     {
       "name": "show-me",
       "source": "./plugins/show-me",
-      "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts."
+      "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer."
     },
     {
       "name": "verification",
