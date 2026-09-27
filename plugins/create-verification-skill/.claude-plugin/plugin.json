@@ -1,0 +1,8 @@
+{
+  "name": "create-verification-skill",
+  "description": "Generate a project-local verification skill that drives an app the way a user does. From Lauren Tan's pstack.",
+  "author": {
+    "name": "Aaron Pak"
+  },
+  "license": "MIT"
+}

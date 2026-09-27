@@ -1,0 +1,8 @@
+{
+  "name": "maintain-verification-skill",
+  "description": "Keep a project's verification skill and feature map accurate with a periodic audit pass. From Lauren Tan's pstack.",
+  "author": {
+    "name": "Aaron Pak"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,36 @@
+{
+  "name": "agent-plugins",
+  "owner": {
+    "name": "Aaron Pak"
+  },
+  "metadata": {
+    "description": "Aaron's personal skills, one plugin per skill, for Claude Code and Codex."
+  },
+  "plugins": [
+    {
+      "name": "artifact-design",
+      "source": "./plugins/artifact-design",
+      "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups."
+    },
+    {
+      "name": "create-verification-skill",
+      "source": "./plugins/create-verification-skill",
+      "description": "Generate a project-local verification skill that drives an app the way a user does. From Lauren Tan's pstack."
+    },
+    {
+      "name": "eli5",
+      "source": "./plugins/eli5",
+      "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words."
+    },
+    {
+      "name": "maintain-verification-skill",
+      "source": "./plugins/maintain-verification-skill",
+      "description": "Keep a project's verification skill and feature map accurate with a periodic audit pass. From Lauren Tan's pstack."
+    },
+    {
+      "name": "show-me",
+      "source": "./plugins/show-me",
+      "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts."
+    }
+  ]
+}
