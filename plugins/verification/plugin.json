@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "verification",
+  "description": "Create a project-local verification skill that drives an app the way a user does, and keep it and its feature map accurate with periodic audits. From Lauren Tan's pstack.",
+  "author": {
+    "name": "Aaron Pak"
+  },
+  "license": "MIT"
+}

@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "frontend-skill",
   "description": "Design visually strong landing pages, websites, apps, prototypes, and game UI with restrained composition and tasteful motion. From OpenAI.",
   "author": {

@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "eli5",
   "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words.",
   "author": {

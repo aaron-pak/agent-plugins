@@ -4,11 +4,13 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 
 ## Layout
 
-- `.claude-plugin/marketplace.json`: the marketplace catalog, named `agent-plugins`. Codex reads this file too.
-- `plugins/<name>/`: one plugin per skill. `.claude-plugin/plugin.json` is the manifest and `skills/<name>/` holds the skill with its references and license.
+- `.claude-plugin/marketplace.json`: the marketplace catalog, named `agent-plugins`. Claude Code and Codex both read it.
+- `plugins/<name>/`: one plugin per tool or workflow. `plugin.json` at the plugin root follows the open [Agent Plugins 1.0.0](https://agent-plugins.org) format, which Codex reads natively, and `skills/<skill>/` holds each skill with its references and license. Claude Code takes the plugin's name and description from the marketplace entry and finds `skills/` on its own, so plugins carry no `.claude-plugin/plugin.json`.
 - `instructions/`: the global agent instructions. Nothing installs these; link them by hand (see below).
 
-Current plugins: `artifact-design`, `create-verification-skill`, `eli5`, `frontend-skill`, `implement-with-notes`, `maintain-verification-skill`, `show-me`.
+Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `implement-with-notes`, `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
+
+To add a plugin, create `plugins/<name>/plugin.json` and `skills/`, then add a matching entry with the same name and description to `.claude-plugin/marketplace.json`.
 
 Plugin manifests leave `version` unset, so the Git commit decides when an installed plugin is out of date.
 
@@ -51,11 +53,12 @@ An MCP server gets its own plugin directory so it installs separately from any s
 
 ```
 plugins/example-mcp/
-  .claude-plugin/plugin.json   # {"name": "example-mcp", "description": "..."}
-  .mcp.json                    # {"mcpServers": {"example": {"command": "npx", "args": ["-y", "example-mcp"]}}}
+  plugin.json   # {"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "example-mcp"}
+  mcp.json      # Agent Plugins format for Codex: {"$schema": ".../mcp.schema.json", "mcpServers": {"example": {"type": "stdio", "command": "npx", "args": ["-y", "example-mcp"]}}}
+  .mcp.json     # Claude Code format: {"mcpServers": {"example": {"command": "npx", "args": ["-y", "example-mcp"]}}}
 ```
 
-Add a matching entry to `.claude-plugin/marketplace.json`. Pass secrets through environment variables such as `${EXAMPLE_API_KEY}` and keep the values out of this repository. Claude finds `.mcp.json` at the plugin root on its own. Codex's own plugins point to the same file with `"mcpServers": "./.mcp.json"` in their manifest, so add that field to `plugin.json` too, and confirm with `codex mcp list` that Codex starts the server.
+Add a matching entry to `.claude-plugin/marketplace.json`. Pass secrets through environment variables such as `${EXAMPLE_API_KEY}` and keep the values out of this repository. The two files describe the same servers in each harness's format. Agent Plugins `mcp.json` requires `type` and exposes `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` to the server. Confirm with `claude mcp list` and `codex mcp list` that each harness starts the server.
 
 ## Credits
 
