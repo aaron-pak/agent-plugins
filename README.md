@@ -1,6 +1,6 @@
 # Agent plugins
 
-Aaron's personal skills, packaged as a plugin marketplace that both Claude Code and Codex can install from. Each skill is its own plugin, so each harness gets only the plugins you pick for it.
+Aaron's personal skills, packaged as a plugin marketplace that both Claude Code and Codex can install from. Each plugin is installed on its own, so each harness gets only the plugins you pick for it.
 
 ## Layout
 
@@ -12,7 +12,7 @@ Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `implement-with-no
 
 To add a plugin, create `plugins/<name>/plugin.json` and `skills/`, then add a matching entry with the same name and description to `.claude-plugin/marketplace.json`.
 
-Plugin manifests leave `version` unset, so the Git commit decides when an installed plugin is out of date.
+Plugin manifests leave `version` unset. Claude Code uses the Git commit as the version. Codex shows every plugin as `1.0.0` but still pulls new commits when the marketplace is upgraded.
 
 ## Install a plugin
 
@@ -23,7 +23,7 @@ claude plugin marketplace add aaron-pak/agent-plugins
 claude plugin install eli5@agent-plugins --scope user   # or --scope project / local
 ```
 
-Skills from a plugin appear as `/eli5:eli5`. Pull new commits with `claude plugin marketplace update agent-plugins` and then `claude plugin update eli5@agent-plugins`, or turn on auto-update for this marketplace in `/plugin` → Marketplaces.
+Skills appear as `/<plugin>:<skill>`, for example `/eli5:eli5` or `/verification:create-verification-skill`. Pull new commits with `claude plugin marketplace update agent-plugins` and then `claude plugin update eli5@agent-plugins`, or turn on auto-update for this marketplace in `/plugin` → Marketplaces.
 
 Codex:
 
@@ -32,7 +32,7 @@ codex plugin marketplace add aaron-pak/agent-plugins
 codex plugin add eli5@agent-plugins
 ```
 
-Codex installs plugins for the user and records them in `~/.codex/config.toml`. Pull new commits with `codex plugin marketplace upgrade agent-plugins`. Remove one with `codex plugin remove eli5@agent-plugins`.
+Codex installs plugins for the user and records them in `~/.codex/config.toml`. Pull new commits with `codex plugin marketplace upgrade agent-plugins`, which also refreshes installed plugins. Codex has no auto-update. Remove one with `codex plugin remove eli5@agent-plugins`.
 
 While editing a plugin, add the local checkout instead (`claude plugin marketplace add ~/projects/agent-plugins`, `codex plugin marketplace add ~/projects/agent-plugins`) so changes show up without pushing.
 
