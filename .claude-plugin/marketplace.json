@@ -4,7 +4,7 @@
     "name": "Aaron Pak"
   },
   "metadata": {
-    "description": "Aaron's personal skills, one plugin per skill, for Claude Code and Codex."
+    "description": "Aaron's personal skills as plugins for Claude Code and Codex."
   },
   "plugins": [
     {
