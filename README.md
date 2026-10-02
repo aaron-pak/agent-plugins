@@ -60,6 +60,26 @@ plugins/example-mcp/
 
 Add a matching entry to `.claude-plugin/marketplace.json`. Pass secrets through environment variables such as `${EXAMPLE_API_KEY}` and keep the values out of this repository. The two files describe the same servers in each harness's format. Agent Plugins `mcp.json` requires `type` and exposes `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` to the server. Confirm with `claude mcp list` and `codex mcp list` that each harness starts the server.
 
+## Mods
+
+A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands). Mods are Claude Code only, so they stay out of `marketplace.json`, which Codex also reads.
+
+A mod folder holds `.claude-plugin/plugin.json`, `hooks/hooks.json` naming the module (`{ "modules": ["./register.ts"] }`), the module itself, and `tests/*.test.ts`. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
+
+Current mods:
+
+- `context-meter`: a status line entry with the context window's fill and the session's cost, a toast when context passes 80% (the `warnAt` option in `/config`), and `/meter` for the details.
+
+Try one in a session, check it, and run its tests:
+
+```sh
+claude --plugin-dir ~/projects/agent-plugins/plugins/context-meter
+claude plugin validate plugins/context-meter
+claude plugin test plugins/context-meter
+```
+
+The session reloads the mod when its files change, so edits show up without a restart.
+
 ## Credits
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.

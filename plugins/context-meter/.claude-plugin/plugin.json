@@ -1,0 +1,16 @@
+{
+  "name": "context-meter",
+  "version": "0.1.0",
+  "description": "Status line with context fill and session cost, a toast when context runs high, and /meter for the details.",
+  "author": {
+    "name": "Aaron Pak"
+  },
+  "userConfig": {
+    "warnAt": {
+      "type": "number",
+      "title": "Warn at",
+      "description": "Context fill, in percent, that shows a toast.",
+      "default": 80
+    }
+  }
+}
