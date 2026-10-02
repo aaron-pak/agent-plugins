@@ -25,7 +25,7 @@ When a skill comes from someone else, credit them the same way everywhere:
 - The plugin description ends with "From <author>." in both `plugin.json` and the marketplace entry.
 - README.md's Credits section names the source (with a pinned revision when there is one) and every deviation from upstream.
 
-The `artifact-design` plugin copies Claude Code's built-in `artifact-design`, `artifact-diagramming`, and `dataviz` skills. To re-sync, first commit the current Claude Code text verbatim, then reapply the edits listed in the artifact-design header comment in a second commit, so the diff between the two shows every deviation. `dataviz` stays verbatim. The page contract and guidance should also match what the Artifact tool's `quickstart` (intent `other`) returns for a plain page, since that is the text the model reads when it makes an artifact. `scripts/publish.py` holds the Artifact tool's publish skeleton and CDN allowlist; on a re-sync, compare them with the skeleton of a freshly published claude.ai artifact and with the skill's page contract.
+The `artifact-design` plugin copies Claude Code's built-in `artifact-design`, `artifact-diagramming`, and `dataviz` skills. To re-sync, first commit the current Claude Code text verbatim, then reapply the edits listed in the artifact-design header comment in a second commit, so the diff between the two shows every deviation. `artifact-diagramming` and `dataviz` stay verbatim. The page contract and guidance should also match what the Artifact tool's `quickstart` (intent `other`) returns for a plain page, since that is the text the model reads when it makes an artifact. `scripts/publish.py` holds the Artifact tool's publish skeleton and CDN allowlist; on a re-sync, compare them with the skeleton of a freshly published claude.ai artifact and with the skill's page contract, and compare `DESCRIPTION` in `mcp/server.py` with the Artifact tool's own description.
 
 ## Checks
 
@@ -47,7 +47,7 @@ codex plugin marketplace add ~/projects/agent-plugins
 
 ## Adding an MCP server plugin
 
-An MCP server gets its own plugin directory so it installs separately from any skill:
+An MCP server gets its own plugin directory so it installs separately from any skill, unless the skills are written around its tools, as `artifact-design`'s are around its `artifact` server; then the server ships in that plugin with the same two files:
 
 ```
 plugins/example-mcp/

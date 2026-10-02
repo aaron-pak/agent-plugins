@@ -218,9 +218,12 @@ for (const view of views) {
     for (const b of result.blocked) note(label, `${b} (not on the claude.ai allowlist)`);
     if (!result.title) note(label, "no <title>");
 
-    const shot = join(outDir, `${stem}-${view.name}-${scheme}.png`);
-    await tab.screenshot({ path: shot, fullPage: true });
-    shots.push(shot);
+    // JPEG, cut at four screens tall, so an image reader can still make out the text.
+    const shot = join(outDir, `${stem}-${view.name}-${scheme}.jpg`);
+    const full = await tab.evaluate(() => document.documentElement.scrollHeight);
+    const height = Math.min(full, view.viewport.height * 4);
+    await tab.screenshot({ path: shot, type: "jpeg", quality: 70, fullPage: true, clip: { x: 0, y: 0, width: view.viewport.width, height } });
+    shots.push(height < full ? `${shot} (top ${height}px of ${full}px)` : shot);
     await context.close();
   }
 }

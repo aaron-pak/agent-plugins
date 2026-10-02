@@ -5,30 +5,25 @@ description: Design guidance and fundamentals for Artifacts - HTML pages such as
 
 <!--
 Anthropic's Claude Code built-in `artifact-design` skill, captured from Claude Code 2.1.287
-(2026-10-02), with its sibling `artifact-diagramming` skill carried as
-`references/diagramming.md`; `dataviz` ships beside it in this plugin. The text is
-Claude Code's, word for word: the page contract and guidance below match both the skill
-as Claude Code loads it and the plain-page payload of the Artifact tool's quickstart.
-scripts/publish.py and scripts/preview.mjs stand in for the Artifact tool and its
-preview, so the text needs almost no changes. The only edits:
+(2026-10-02). Its siblings `artifact-diagramming` and `dataviz` ship beside it, and this
+plugin's `artifact` MCP server stands in for the Artifact tool, as Claude Code pairs them.
+The text is Claude Code's, word for word: the page contract and guidance below are also
+what the Artifact tool's quickstart returns for a plain page. The only edits:
   1. Frontmatter: `description` and `when_to_use` merged into one description, with
      example page types so the skill loads without a tool forcing it.
-  2. "Outside claude.ai" section added: maps the Artifact tool, its preview, Claude and
-     CLAUDE.md to what this harness has.
-  3. References section added in place of the tool routing to artifact-diagramming.
-  4. Removed, because only claude.ai can do them: the Icon paragraph, the pointers to
-     runtime capabilities and the `db` store, the Artifact-type note, and Open viewers.
-  5. The preview step names scripts/preview.mjs instead of ArtifactCheck.
+  2. "Outside claude.ai" section added: names the tool that stands in for the Artifact
+     tool, and maps Claude and CLAUDE.md to this harness.
+  3. Removed, because only claude.ai can do them: the pointers to runtime capabilities
+     and the `db` store, the Artifact-type note, and Open viewers.
 -->
 
 ## Outside claude.ai
 
 This is Claude Code's artifact-design skill. Read it with these substitutions:
 
-- **The Artifact tool, publishing:** `python3 scripts/publish.py <page.html> --description "<one sentence>"` (paths relative to this skill's directory). Your file stays as you wrote it; the published page goes beside it as `<name>.published.html`, wrapped in the publish skeleton, with the CDN allowlist applied as a Content-Security-Policy and mermaid blocks rendered as the viewer does. The script prints that path, which stands in for the artifact's link, and opens it in the browser. To update, edit your file and publish it again. The tool's `title` and `description` parameters are `--title` and `--description`; the description becomes the page's meta description, since there is no gallery card.
-- **The preview (`ArtifactCheck`):** `node scripts/preview.mjs <page.html>`. It needs Playwright and a Chromium; when it says they're missing, skip the look.
+- **The Artifact tool** is the `Artifact` tool of this plugin's `artifact` MCP server. It takes the same `file_path`, `description`, `title`, `icon` and `files`, publishes to a folder on this machine instead of claude.ai, and returns the page's link; its `preview` action is the preview described below. Where that server isn't connected, publish with `python3 scripts/publish.py <page.html> --description "<one sentence>"` and preview with `node scripts/preview.mjs <page.html>` (paths relative to this skill's directory).
 - **Claude** means you, and **CLAUDE.md** means the project's agent instructions file (CLAUDE.md or AGENTS.md).
-- Runtime capabilities, the `db` store, Artifact types, icons, and live updates to open viewers exist only on claude.ai; the steps that need them are left out.
+- Runtime capabilities, the `db` store, Artifact types, and live updates to open viewers exist only on claude.ai; the steps that need them are left out.
 
 ## Page contract — read before your first publish
 
@@ -59,11 +54,9 @@ body { background: var(--bg); color: var(--fg) }
 ```
 Every token gets its first definition on bare `:root`; the two dark blocks only redefine tokens, and their `color-scheme: dark` makes form controls and scrollbars follow. No color has its only definition inside a media or `[data-theme]` block, and no component rule uses a literal color that reads in one theme only. `body` keeps that explicit token background: the viewer paints its own ground behind the page, so a transparent body shows the host's theme instead. A dark-first design mirrors the whole shape, selectors included: dark values and `color-scheme: dark` on bare `:root` (the skeleton pins `light` there), light values and `color-scheme: light` under `(prefers-color-scheme: light)` guarded `:root:not([data-theme="dark"])` and again under `:root[data-theme="light"]`. A design that deliberately commits to a single look may drop the two dark blocks but still sets the background and every color explicitly, plus `color-scheme: dark` on `:root` if that look is dark.
 
+**Icon** (on every first publish): Pass one short generic word as `icon` (e.g. `"chart"`, `"calendar"`, `"recipe"`) for the artifact's browser-tab icon — a plain signifier for what the page is, never a product or brand name, and never an emoji or markup. It stays the **same** for the life of an artifact, so on a redeploy (the same file path this session, or `url`) omit `icon` and the artifact keeps the one it has; pass a different one only when the user asks.
+
 Work the way the design lead at a small, versatile studio would: give each client a visual identity at the level of treatment the task calls for. Make deliberate choices about palette, typography, and layout that are specific to this subject, and avoid templated designs.
-
-## References
-
-- `references/diagramming.md` — Diagramming know-how for Artifacts - when a picture earns its place, how to draw one that shows the real mechanism, and the inline-SVG mechanics that keep it legible in both themes. Read it before drawing any diagram.
 
 ## Read the request first
 
@@ -126,7 +119,7 @@ Before writing the page, settle a short design plan (a compact token system) and
 
 Then build the rest of the page from those tokens, deriving every color and type decision from them. The plan is working material, not part of the answer: unless the user asks about the design, one plain sentence on the direction is the most to say about it, with no hex values or font names.
 
-**Write, check once, publish.** Before publishing you may look at the rendered page once, where this session offers a way: one `node scripts/preview.mjs` preview, or else one screenshot of the local file; if the session offers none of these, skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing it covers needs a check of your own. The look is optional: if you take it, make one pass of edits for what it shows, without a second look; then publish. For a page that charts real numbers, take the look rather than skip it, and spend it on the chart. A page whose point is logic (dates, money, scoring, parsing) may get one more check before publishing: one run of a pure function on a sample input, or, where no preview ran, one syntax check of its script; nothing more. None of this becomes a loop, because the user is waiting for a link: no second screenshot, no scripts that probe the DOM, no re-running a check that passed. Review happens on the live page, and further polish is for the user to request; if the user reports something visibly broken (a clipped column, unreadable text, a control that does nothing), fix that, take at most one more look if the session offers a way, and republish once.
+**Write, check once, publish.** Before publishing you may look at the rendered page once, where this session offers a way: one `ArtifactCheck` preview (or the Artifact tool's own `action: "preview"` where there is no separate `ArtifactCheck` tool), or else one screenshot of the local file; if the session offers none of these, skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing it covers needs a check of your own. The look is optional: if you take it, make one pass of edits for what it shows, without a second look; then publish. For a page that charts real numbers, take the look rather than skip it, and spend it on the chart. A page whose point is logic (dates, money, scoring, parsing) may get one more check before publishing: one run of a pure function on a sample input, or, where no preview ran, one syntax check of its script; nothing more. None of this becomes a loop, because the user is waiting for a link: no second screenshot, no scripts that probe the DOM, no re-running a check that passed. Review happens on the live page, and further polish is for the user to request; if the user reports something visibly broken (a clipped column, unreadable text, a control that does nothing), fix that, take at most one more look if the session offers a way, and republish once.
 
 ## When the request is editorial
 

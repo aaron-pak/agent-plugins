@@ -10,7 +10,7 @@
     {
       "name": "artifact-design",
       "source": "./plugins/artifact-design",
-      "description": "Claude Code's artifact-design and dataviz skills for HTML artifacts, with local publish and preview scripts that stand in for the Artifact tool. From Anthropic's Claude Code."
+      "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with an Artifact MCP tool that publishes and previews them on this machine. From Anthropic's Claude Code."
     },
     {
       "name": "eli5",
