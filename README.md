@@ -70,6 +70,8 @@ Current mods:
 
 - `context-meter`: Clawd lives in the band above the prompt and walks a track that fills as the context window does, with the fill, tokens and cost beside him. He scuttles while Claude works, blinks when idle, sweats past 80% (the `warnAt` option in `/config`, which also raises a toast) and shows a heart when clicked. `/meter` prints the details.
 
+- `session-band`: a prototype that grows the band into a session dashboard with Clawd: model, project and branch with uncommitted changes, session time, context and rate-limit meters, cost, todos, and what Claude is doing right now. Clawd glances at files he reads, cheers when a turn ends, flinches at a failed tool and naps when you're away. `/band` switches between three styles: `cozy`, `trail` and `peek`. Load one band mod at a time, since both draw the same band.
+
 Try one in a session, check it, and run its tests:
 
 ```sh
