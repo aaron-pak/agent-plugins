@@ -64,11 +64,11 @@ Add a matching entry to `.claude-plugin/marketplace.json`. Pass secrets through 
 
 A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands). Mods are Claude Code only, so they stay out of `marketplace.json`, which Codex also reads.
 
-A mod folder holds `.claude-plugin/plugin.json`, `hooks/hooks.json` naming the module (`{ "modules": ["./register.ts"] }`), the module itself, and `tests/*.test.ts`. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
+A mod folder holds `.claude-plugin/plugin.json`, `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them, and an animation lives in a surface module that a `Client` element runs on the terminal's frame clock. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
 
 Current mods:
 
-- `context-meter`: a status line entry with the context window's fill and the session's cost, a toast when context passes 80% (the `warnAt` option in `/config`), and `/meter` for the details.
+- `context-meter`: Clawd lives in the band above the prompt and walks a track that fills as the context window does, with the fill, tokens and cost beside him. He scuttles while Claude works, blinks when idle, sweats past 80% (the `warnAt` option in `/config`, which also raises a toast) and shows a heart when clicked. `/meter` prints the details.
 
 Try one in a session, check it, and run its tests:
 

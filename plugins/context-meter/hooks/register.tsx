@@ -1,8 +1,13 @@
+import { atom, read, update } from 'claude-code'
 import type { Register, SessionUsage } from 'claude-code'
+
+import type { ClawdProps, Meter } from '../types'
 
 type Figures = Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>
 
 const DEFAULT_WARN_AT = 80
+
+const meter = atom({ plugin: 'context-meter', key: 'meter' } as const, null)
 
 export const register: Register = (on, options) => {
   const warnAt = typeof options.warnAt === 'number' ? options.warnAt : DEFAULT_WARN_AT
@@ -14,14 +19,15 @@ export const register: Register = (on, options) => {
       name: 'meter',
       description: 'Show context fill, session cost and rate limits',
     })
-    $.ui.status(statusLine(await $.session.usage()))
+    const figures = toMeter(await $.session.usage())
+    await update($, meter, () => figures)
 
     return next(e)
   })
 
   // Pushed after each main-thread turn and when a rate-limit window moves.
-  on('session.measure', ($, e, next) => {
-    $.ui.status(statusLine(e))
+  on('session.measure', async ($, e, next) => {
+    await update($, meter, () => toMeter(e))
 
     const percent = e.context.percent
     if (percent !== undefined && percent >= warnAt && !hasWarned) {
@@ -35,10 +41,10 @@ export const register: Register = (on, options) => {
   })
 
   // /clear starts a fresh conversation without a new session.start.
-  on('session.end', ($, e, next) => {
+  on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
       hasWarned = false
-      $.ui.status(undefined)
+      await update($, meter, () => null)
     }
 
     return next(e)
@@ -47,15 +53,43 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'meter' }, async $ => ({
     text: report(await $.session.usage()),
   }))
+
+  // The band above the prompt: Clawd's surface module animates on the surface's own clock.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || (e.surface !== 'terminal' && e.surface !== 'desktop')) {
+      return next(e)
+    }
+
+    const { Client } = $.ui.resolve(e)
+    const props = clawdProps(await read($, meter), e.props.isWorking, warnAt, e.props.bodyColumns)
+
+    return <Client key="clawd" module="./clawd.tsx" props={props} width={e.props.bodyColumns} height={3} />
+  })
 }
 
-function statusLine({ context, cost }: Figures): string | undefined {
-  const parts = [
-    context.percent === undefined ? undefined : `context ${context.percent}%`,
-    cost === undefined ? undefined : dollars(cost.usd),
-  ].filter(part => part !== undefined)
+function toMeter({ context, cost }: Figures): Meter {
+  return {
+    percent: context.percent ?? null,
+    tokens: context.tokens ?? null,
+    window: context.window,
+    usd: cost?.usd ?? null,
+  }
+}
 
-  return parts.length === 0 ? undefined : parts.join(' · ')
+function clawdProps(figures: Meter | null, isWorking: boolean, warnAt: number, columns: number): ClawdProps {
+  const percent = figures?.percent ?? null
+
+  return {
+    percent,
+    usage:
+      figures?.tokens == null
+        ? 'No reading yet'
+        : `${shortCount(figures.tokens)} of ${shortCount(figures.window)}`,
+    cost: figures?.usd == null ? null : dollars(figures.usd),
+    isWorking,
+    isHigh: percent !== null && percent >= warnAt,
+    columns,
+  }
 }
 
 function report({ context, rateLimits, cost }: Figures): string {

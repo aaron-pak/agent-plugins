@@ -1,10 +1,11 @@
 {
   "name": "context-meter",
   "version": "0.1.0",
-  "description": "Status line with context fill and session cost, a toast when context runs high, and /meter for the details.",
+  "description": "An animated Clawd walks a context track above the prompt, with a toast when context runs high and /meter for the details.",
   "author": {
     "name": "Aaron Pak"
   },
+  "types": "./types/index.d.ts",
   "userConfig": {
     "warnAt": {
       "type": "number",
