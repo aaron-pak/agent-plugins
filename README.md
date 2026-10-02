@@ -2,7 +2,7 @@
 
 Aaron's personal skills, packaged as a plugin marketplace that both Claude Code and Codex can install from. Each plugin is installed on its own, so each harness gets only the plugins you pick for it.
 
-Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `implement-with-notes`, `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
+Current plugins: `artifact-design` (`artifact-design` and `dataviz` together), `eli5`, `frontend-skill`, `implement-with-notes`, `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
 
 Changing this repository? [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks CI runs.
 
@@ -39,7 +39,7 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 
 ## Credits
 
-`artifact-design` is Anthropic's built-in Claude Code `artifact-design` skill, with its `artifact-diagramming` sibling as a reference file, captured from Claude Code 2.1.287. It is adapted to produce the same pages outside claude.ai: the Artifact tool's skeleton and rules are written out for the agent to follow, and only what nothing outside claude.ai can do is removed. The header comment in its `SKILL.md` lists each change.
+The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-design` skill (with its `artifact-diagramming` sibling as a reference file) and `dataviz` skill, captured from Claude Code 2.1.287. `dataviz` is unchanged. `artifact-design` keeps Claude Code's wording, and its `scripts/publish.py` and `scripts/preview.mjs` reproduce the Artifact tool's publish skeleton, CDN allowlist, mermaid rendering, and preview so the text can stay as written; only what nothing outside claude.ai can do is removed. The header comment in its `SKILL.md` lists each change.
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.
 
