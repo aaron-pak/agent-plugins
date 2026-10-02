@@ -16,7 +16,9 @@ local machine:
 Standard library only. Speaks MCP over stdio (newline-delimited JSON-RPC 2.0).
 """
 
+import contextlib
 import html
+import io
 import json
 import os
 import re
@@ -90,7 +92,7 @@ SCHEMA = {
         "files": {
             "type": "object",
             "additionalProperties": {"type": ["string", "null"]},
-            "description": "publish: supporting files as {\"published/path\": \"source/path\"}; null removes one.",
+            "description": "publish: supporting files as {\"published/path\": \"source/path\"}; null removes one. A relative source path is read from the working directory, or else from the page's folder.",
         },
         "url": {"type": "string", "description": "publish: an existing artifact's link to update. read and open: the artifact's link."},
         "intent": {"type": "string", "enum": ["document", "slides", "design", "other"], "description": "quickstart: what is being made. Only plain pages are supported here."},
@@ -201,7 +203,11 @@ def act_publish(args):
         published = raw
         page_name = "index.md"
     else:
-        content, old_description = page_publish.unwrap(raw)
+        with contextlib.redirect_stderr(io.StringIO()) as unwrap_notes:
+            content, old_description = page_publish.unwrap(raw)
+        if unwrap_notes.getvalue():
+            notes.append("The file was a full HTML document; publishing adds the skeleton, "
+                         "so write only the page content next time.")
         title = title_of(content)
         if not title and args.get("title"):
             title = args["title"]
@@ -240,7 +246,8 @@ def act_publish(args):
             continue
         origin = Path(from_path).expanduser()
         if not origin.is_absolute():
-            origin = source.parent / origin
+            origin = next((base / origin for base in (Path.cwd(), source.parent) if (base / origin).is_file()),
+                          Path.cwd() / origin)
         if not origin.is_file():
             raise ValueError(f"supporting file {origin} doesn't exist")
         target.parent.mkdir(parents=True, exist_ok=True)
