@@ -1,6 +1,6 @@
 {
   "name": "sessions",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Lets a Claude Code session start separate, full Claude Code sessions and talk to them",
   "author": {
     "name": "Aaron Pak"

@@ -127,7 +127,7 @@ const stop = async ($: EngineInterface, peer: Peer) => {
   else if (peer.pid) await run($, ['kill', String(peer.pid)])
 }
 
-// Deletes a background session and its worktree. claude rm refuses while the
+// Deletes a background session and any worktree it has. claude rm refuses while the
 // worktree holds commits that exist nowhere else, and that refusal is thrown.
 const remove = async ($: EngineInterface, peer: Peer) => {
   if (peer.kind !== 'background' || !peer.id) throw new Error('only background sessions can be removed')
@@ -221,7 +221,7 @@ const end = async ($: EngineInterface, name: string, isRemove: boolean): Promise
     const out = await remove($, peer)
     await update($, spawned, list => list.filter(one => one.name !== name))
 
-    return `Removed "${name}" and its worktree. ${out}`.trim()
+    return `Removed "${name}". ${out}`.trim()
   }
   if (!peer.pid) return `"${name}" is already stopped.`
   await stop($, peer)
@@ -290,7 +290,7 @@ export const register: Register = (on, options) => {
       description: [
         'Start a new, separate Claude Code session and hand it a task. It is a full session with its own context, tools and transcript, not a subagent, and it keeps running after this call returns.',
         'Talk to it with SendMessage({ to: name }). Its result comes back to you as a message. A session idle for a while is stopped to free memory, and a SendMessage to it wakes it with its conversation intact.',
-        'In a git repository each session gets its own worktree by default, so parallel sessions do not edit the same files; pass worktree: false for work that must happen in this checkout.',
+        'It works in this checkout unless worktree: true gives it its own git worktree, which keeps sessions that edit files in parallel from colliding.',
         'fork: true starts it as a copy of this conversation, so it already knows everything said here.',
         'Use it for long or independent work that deserves its own session; use the Agent tool for quick lookups.',
       ].join('\n'),
@@ -301,7 +301,7 @@ export const register: Register = (on, options) => {
           task: { type: 'string', description: 'Everything the session needs to do the work' },
           cwd: { type: 'string', description: 'Directory to run in; this session\'s when left out' },
           model: { type: 'string', description: 'Model alias or name; the default when left out' },
-          worktree: { type: 'boolean', description: 'Its own git worktree; on by default inside a git repository' },
+          worktree: { type: 'boolean', description: 'Give it its own git worktree and branch; off by default' },
           fork: { type: 'boolean', description: 'Start it as a copy of this conversation' },
         },
         required: ['name', 'task'],
@@ -309,12 +309,12 @@ export const register: Register = (on, options) => {
     })
     await $.tool.register({
       name: 'stop_session',
-      description: 'Stop a session this session started, or any background session, by name. Stopping keeps its conversation, and a SendMessage to it wakes it. remove: true also deletes it and its worktree, and is refused while the worktree has commits that exist nowhere else.',
+      description: 'Stop a session this session started, or any background session, by name. Stopping keeps its conversation, and a SendMessage to it wakes it. remove: true also deletes it and any worktree it has, and is refused while that worktree has commits that exist nowhere else.',
       inputSchema: {
         type: 'object',
         properties: {
           name: { type: 'string' },
-          remove: { type: 'boolean', description: 'Delete the session and its worktree instead of only stopping it' },
+          remove: { type: 'boolean', description: 'Delete the session and any worktree it has instead of only stopping it' },
         },
         required: ['name'],
       },
@@ -348,9 +348,11 @@ export const register: Register = (on, options) => {
     const parentName = before.find(peer => peer.sessionId === sessionId)?.name
     if (parentName === undefined) return { deny: 'This session is not in the local session registry, so a new session could not reply to it.' }
 
-    const worktree =
-      launcher !== 'headless' &&
-      (typeof args.worktree === 'boolean' ? args.worktree : await inGitRepo($, cwd ?? (await $.session.cwd())))
+    const worktree = args.worktree === true
+    if (worktree && launcher === 'headless') return { deny: 'worktree needs the bg or tmux launcher.' }
+    if (worktree && !(await inGitRepo($, cwd ?? (await $.session.cwd())))) {
+      return { deny: 'worktree needs a git repository, and this directory is not in one.' }
+    }
     const isAutoReport = await loadsEverywhere($)
     const text = brief({ name: parentName, sessionId }, name, task, isAutoReport)
 

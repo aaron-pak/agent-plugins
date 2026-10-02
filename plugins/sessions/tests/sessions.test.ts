@@ -63,33 +63,36 @@ const host = (on: On, { settings = {}, isGitRepo = true }: { settings?: Record<s
   return world
 }
 
-test('spawns a background session in its own worktree that knows whom to report to', { options: { launcher: 'bg' } }, async ($, on) => {
+test('spawns a background session in this checkout that knows whom to report to', { options: { launcher: 'bg' } }, async ($, on) => {
   const world = host(on)
   const answer = await $.tool.call({ tool: SPAWN, name: 'w1', task: 'Count the TODOs.' })
 
   const launched = world.claude().filter(argv => argv.includes('--bg'))
   expect(launched).toHaveLength(1)
   const argv = launched[0] ?? []
-  expect(argv.slice(0, 6)).toEqual(['claude', '--bg', '-n', 'w1', '-w', 'w1'])
+  expect(argv.slice(0, 4)).toEqual(['claude', '--bg', '-n', 'w1'])
+  expect(argv).not.toContain('-w')
   expect(world.ran.find(one => one.includes('--bg'))).toContain('CLAUDE_CODE_SESSION_ID')
   expect(argv.at(-1)).toContain('send your result to "lead" with SendMessage')
   expect(argv.at(-1)).toContain('Count the TODOs.')
   expect(String(answer.result)).toContain('reachable')
+  expect(String(answer.result)).not.toContain('worktree')
+})
+
+test('worktree: true gives it its own worktree', { options: { launcher: 'bg' } }, async ($, on) => {
+  const world = host(on)
+  const answer = await $.tool.call({ tool: SPAWN, name: 'w1', task: 'x', worktree: true })
+
+  expect(world.claude().find(argv => argv.includes('--bg'))?.slice(0, 6)).toEqual(['claude', '--bg', '-n', 'w1', '-w', 'w1'])
   expect(String(answer.result)).toContain('branch worktree-w1')
 })
 
-test('works in this checkout outside a git repository', { options: { launcher: 'bg' } }, async ($, on) => {
+test('worktree: true outside a git repository is refused', { options: { launcher: 'bg' } }, async ($, on) => {
   const world = host(on, { isGitRepo: false })
-  await $.tool.call({ tool: SPAWN, name: 'w1', task: 'x' })
+  const answer = await $.tool.call({ tool: SPAWN, name: 'w1', task: 'x', worktree: true })
 
-  expect(world.claude().find(argv => argv.includes('--bg'))).not.toContain('-w')
-})
-
-test('worktree: false keeps it in this checkout', { options: { launcher: 'bg' } }, async ($, on) => {
-  const world = host(on)
-  await $.tool.call({ tool: SPAWN, name: 'w1', task: 'x', worktree: false })
-
-  expect(world.claude().find(argv => argv.includes('--bg'))).not.toContain('-w')
+  expect(answer.deny).toContain('git repository')
+  expect(world.claude().some(argv => argv.includes('--bg'))).toBe(false)
 })
 
 test('fork starts it as a copy of this conversation', { options: { launcher: 'bg' } }, async ($, on) => {
@@ -248,7 +251,7 @@ test('stop_session stops, and remove deletes', { options: { launcher: 'bg' } }, 
 
   const removed = await $.tool.call({ tool: STOP, name: 'w1', remove: true })
   expect(world.claude()).toContainEqual(['claude', 'rm', 'b7f2c1'])
-  expect(String(removed.result)).toContain('Removed "w1"')
+  expect(String(removed.result)).toContain('Removed "w1".')
   expect(String((await $.tool.call({ tool: LIST })).result)).toContain('has not started any sessions')
 })
 
