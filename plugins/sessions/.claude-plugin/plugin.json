@@ -1,6 +1,6 @@
 {
   "name": "sessions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lets a Claude Code session start separate, full Claude Code sessions and talk to them",
   "author": {
     "name": "Aaron Pak"
@@ -17,6 +17,12 @@
         "tmux",
         "headless"
       ]
+    },
+    "stopAfterMinutes": {
+      "type": "number",
+      "title": "Stop idle sessions after (minutes)",
+      "description": "A background session started here that sits idle this long is stopped to free memory; messaging it wakes it. 0 never stops one.",
+      "default": 15
     }
   }
 }

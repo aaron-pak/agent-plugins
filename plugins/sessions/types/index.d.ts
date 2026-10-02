@@ -3,6 +3,9 @@ export type Spawned = {
   launcher: string
   startedAt: number
   hint: string
+  worktree?: string
+  lastReport?: string
+  reportedAt?: number
 }
 
 declare module 'claude-code' {
