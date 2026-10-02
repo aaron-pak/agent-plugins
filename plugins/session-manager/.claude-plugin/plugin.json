@@ -1,7 +1,6 @@
 {
   "name": "session-manager",
-  "version": "0.3.0",
-  "description": "Lets a Claude Code session start, message, stop and wake separate, full Claude Code sessions",
+  "description": "Let a Claude Code session start, message, stop and wake separate, full Claude Code sessions. Claude Code only.",
   "author": {
     "name": "Aaron Pak"
   },
