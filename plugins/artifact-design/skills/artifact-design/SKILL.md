@@ -7,9 +7,10 @@ description: Design guidance and fundamentals for Artifacts - HTML pages such as
 Anthropic's Claude Code built-in `artifact-design` skill, captured from Claude Code 2.1.287
 (2026-10-02), with its sibling `artifact-diagramming` skill carried as
 `references/diagramming.md`; `dataviz` ships beside it in this plugin. The text is
-Claude Code's, word for word, with the dataviz callout Claude Code adds when it has the
-dataviz skill. scripts/publish.py and scripts/preview.mjs stand in for the Artifact tool
-and its preview, so the text needs almost no changes. The only edits:
+Claude Code's, word for word: the page contract and guidance below match both the skill
+as Claude Code loads it and the plain-page payload of the Artifact tool's quickstart.
+scripts/publish.py and scripts/preview.mjs stand in for the Artifact tool and its
+preview, so the text needs almost no changes. The only edits:
   1. Frontmatter: `description` and `when_to_use` merged into one description, with
      example page types so the skill loads without a tool forcing it.
   2. "Outside claude.ai" section added: maps the Artifact tool, its preview, Claude and
@@ -24,7 +25,7 @@ and its preview, so the text needs almost no changes. The only edits:
 
 This is Claude Code's artifact-design skill. Read it with these substitutions:
 
-- **The Artifact tool, publishing:** `python3 scripts/publish.py <page.html> --description "<one sentence>"` (paths relative to this skill's directory). It wraps the page in the publish skeleton, applies the CDN allowlist as a Content-Security-Policy, renders mermaid blocks as the viewer does, writes the page in place, prints its path, and opens it in the browser. Publishing the same file again replaces the skeleton instead of nesting it. The tool's `title` and `description` parameters are `--title` and `--description`; the description becomes the page's meta description, since there is no gallery card.
+- **The Artifact tool, publishing:** `python3 scripts/publish.py <page.html> --description "<one sentence>"` (paths relative to this skill's directory). Your file stays as you wrote it; the published page goes beside it as `<name>.published.html`, wrapped in the publish skeleton, with the CDN allowlist applied as a Content-Security-Policy and mermaid blocks rendered as the viewer does. The script prints that path, which stands in for the artifact's link, and opens it in the browser. To update, edit your file and publish it again. The tool's `title` and `description` parameters are `--title` and `--description`; the description becomes the page's meta description, since there is no gallery card.
 - **The preview (`ArtifactCheck`):** `node scripts/preview.mjs <page.html>`. It needs Playwright and a Chromium; when it says they're missing, skip the look.
 - **Claude** means you, and **CLAUDE.md** means the project's agent instructions file (CLAUDE.md or AGENTS.md).
 - Runtime capabilities, the `db` store, Artifact types, icons, and live updates to open viewers exist only on claude.ai; the steps that need them are left out.
@@ -113,8 +114,6 @@ Fundamentals below apply to everything. Follow the editorial process after them 
 **Structure is information.** Structural devices (numbering, eyebrows, dividers, labels) should encode something true about the content instead of decorating it. Many generic designs use numbered markers (01 / 02 / 03), but those fit only if the content actually is a sequence, such as a real process or a typed timeline where the order is information the reader needs. Before adding numbered markers or similar devices, check that they actually make sense.
 
 **When the page is a UI (dashboard, tool).** It is scanned and operated instead of read top to bottom, so the craft shifts from typography to information design. Put the summary before the detail. Encode state in form as well as in numbers (a pill, a chip, a severity stripe) so that whatever needs attention is visible at a glance. Semantic color (good / warning / critical) is separate from the accent hue and doesn't count as your accent. Give sparklines and charts the same care as type: an area fill, a faint grid, an emphasized endpoint. Interactive elements should look interactive.
-
-**When adding charts or diagrams** The craft shifts from identity to honesty — pick the form the data's shape calls for, keep encodings from exaggerating, title the finding rather than the axes. Load the `dataviz` skill for the specifics; this skill continues to govern the page the chart sits in.
 
 ## Process
 

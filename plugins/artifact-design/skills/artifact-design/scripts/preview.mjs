@@ -3,7 +3,8 @@
 //
 //   node preview.mjs page.html [--out dir]
 //
-// Wraps the page with publish.py (without touching the file), renders it at desktop and
+// Wraps the page with publish.py (without touching the file), serves it over http from the
+// page's folder so its own files load as they do on claude.ai, renders it at desktop and
 // phone widths in light and dark, saves a screenshot of each, and lists horizontal
 // overflow, text too faint to read against its background (colors that ignore the
 // theme), loads the claude.ai allowlist blocks, and console errors, including a script
@@ -11,10 +12,11 @@
 // exits, and the skill skips the look.
 
 import { execFileSync, execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
@@ -54,11 +56,42 @@ mkdirSync(outDir, { recursive: true });
 const wrapped = join(outDir, `${stem}.html`);
 execFileSync("python3", [join(here, "publish.py"), page, "--out", wrapped, "--no-open", "--quiet"]);
 
+// Serve the wrapped page from the page's own folder, so relative images, scripts and
+// fetch() calls resolve the way they do for files published alongside an artifact.
+const pageDir = dirname(resolve(page));
+const route = `/${stem}.preview.html`;
+const types = {
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript",
+  ".css": "text/css", ".json": "application/json", ".csv": "text/csv", ".txt": "text/plain",
+  ".md": "text/markdown", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif",
+  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
+  ".mp3": "audio/mpeg", ".wav": "audio/wav", ".mp4": "video/mp4", ".webm": "video/webm",
+  ".pdf": "application/pdf", ".wasm": "application/wasm",
+};
+const server = createServer((req, res) => {
+  const path = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+  if (path === route) {
+    res.writeHead(200, { "content-type": types[".html"] });
+    return res.end(readFileSync(wrapped));
+  }
+  const file = resolve(pageDir, `.${path}`);
+  if (!file.startsWith(pageDir + sep) || !existsSync(file) || !statSync(file).isFile()) {
+    res.writeHead(404);
+    return res.end();
+  }
+  res.writeHead(200, { "content-type": types[extname(file).toLowerCase()] ?? "application/octet-stream" });
+  res.end(readFileSync(file));
+});
+await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
+const pageUrl = `http://127.0.0.1:${server.address().port}${encodeURI(route)}`;
+
 let browser;
 try {
   browser = await playwright.chromium.launch();
 } catch (error) {
   console.log(`No Chromium for Playwright here (${error.message.split("\n")[0]}). Skip the look and publish.`);
+  server.close();
   process.exit(0);
 }
 
@@ -100,8 +133,11 @@ for (const view of views) {
       const reason = req.failure()?.errorText ?? "failed";
       if (reason !== "csp") note(label, `load failed: ${req.url()} (${reason})`);
     });
+    tab.on("response", (response) => {
+      if (response.status() >= 400) note(label, `load failed: ${response.url()} (${response.status()})`);
+    });
 
-    await tab.goto(pathToFileURL(wrapped).href, { waitUntil: "load" });
+    await tab.goto(pageUrl, { waitUntil: "load" });
     await tab.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
     await tab.waitForTimeout(400);
 
@@ -189,6 +225,7 @@ for (const view of views) {
   }
 }
 await browser.close();
+server.close();
 
 if (backgrounds.light === backgrounds.dark) {
   note("all views", `the page looks the same in light and dark (background ${backgrounds.light}); fine only for a deliberate single-look design`);

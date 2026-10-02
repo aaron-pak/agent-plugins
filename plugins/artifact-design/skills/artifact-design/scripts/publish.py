@@ -7,11 +7,14 @@ Write the page content exactly as the skill describes for the Artifact tool: no 
     python3 publish.py page.html [--description "One sentence."] [--title "Name"]
                                  [--out other.html] [--no-open] [--quiet]
 
-It wraps the content in the tool's publish skeleton, adds a Content-Security-Policy that
-mirrors the claude.ai artifact allowlist (so a load that claude.ai blocks fails here too),
-renders <pre class="mermaid"> blocks the way the claude.ai viewer does, writes the page
-(in place unless --out is given), prints its path, and opens it in the browser.
-Publishing a file again recognizes the skeleton and replaces it instead of nesting it.
+Like the Artifact tool, it leaves page.html as written and publishes a copy: page.published.html
+beside it (or --out), so relative paths to the page's own files still resolve. The copy is
+wrapped in the tool's publish skeleton, carries a Content-Security-Policy that mirrors the
+claude.ai artifact allowlist (so a load that claude.ai blocks fails here too), and renders
+<pre class="mermaid"> blocks the way the claude.ai viewer does. The script prints the
+published path, the local stand-in for the artifact's link, and opens it in the browser.
+To update, edit page.html and publish it again. A file that already carries the skeleton
+is unwrapped first instead of nested.
 """
 
 import argparse
@@ -127,7 +130,7 @@ def main():
     parser.add_argument("page", type=Path, help="the page file to publish")
     parser.add_argument("--description", help="one sentence explaining the page (the Artifact tool's description)")
     parser.add_argument("--title", help="name to use when the page has no <title> (the Artifact tool's title)")
-    parser.add_argument("--out", type=Path, help="write here instead of publishing in place")
+    parser.add_argument("--out", type=Path, help="write the published page here instead of beside the file")
     parser.add_argument("--no-open", action="store_true", help="don't open the page in a browser")
     parser.add_argument("--quiet", action="store_true", help="print only the output path")
     args = parser.parse_args()
@@ -148,7 +151,15 @@ def main():
     if not description:
         warnings.append("no --description; give the page a one-sentence explanation")
 
-    out = args.out or page
+    if args.out:
+        out = args.out
+    elif page.name.endswith(".published.html"):
+        out = page
+    else:
+        out = page.with_name(page.stem + ".published.html")
+    if re.search(r"""fetch\(\s*[`'"](?![a-z]+:)""", content):
+        warnings.append("the page fetch()es its own files, which a browser refuses over file://; "
+                        "claude.ai serves them, and so does preview.mjs, but opening the file locally won't")
     published = wrap(content, description)
     out.write_text(published, encoding="utf-8")
     if len(published.encode("utf-8")) > SIZE_LIMIT:
@@ -158,7 +169,10 @@ def main():
     if args.quiet:
         print(resolved)
     else:
-        print(f"Published {resolved}\n{resolved.as_uri()}")
+        print(f"Published {page.resolve()} at {resolved.as_uri()}")
+        if out != page:
+            print(f"To update: edit {page} and publish it again; {out.name} is replaced. "
+                  "Give the user the published path, not the file you wrote.")
         for warning in warnings:
             print(f"warning: {warning}")
     if not args.no_open and not args.quiet and not open_in_browser(resolved):
