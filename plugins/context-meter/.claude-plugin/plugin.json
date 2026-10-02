@@ -1,0 +1,17 @@
+{
+  "name": "context-meter",
+  "version": "0.1.0",
+  "description": "An animated Clawd walks a context track above the prompt, with a toast when context runs high and /meter for the details.",
+  "author": {
+    "name": "Aaron Pak"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "warnAt": {
+      "type": "number",
+      "title": "Warn at",
+      "description": "Context fill, in percent, that shows a toast.",
+      "default": 80
+    }
+  }
+}

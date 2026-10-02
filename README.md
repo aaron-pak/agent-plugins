@@ -60,6 +60,28 @@ plugins/example-mcp/
 
 Add a matching entry to `.claude-plugin/marketplace.json`. Pass secrets through environment variables such as `${EXAMPLE_API_KEY}` and keep the values out of this repository. The two files describe the same servers in each harness's format. Agent Plugins `mcp.json` requires `type` and exposes `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` to the server. Confirm with `claude mcp list` and `codex mcp list` that each harness starts the server.
 
+## Mods
+
+A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands). Mods are Claude Code only, so they stay out of `marketplace.json`, which Codex also reads.
+
+A mod folder holds `.claude-plugin/plugin.json`, `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them, and an animation lives in a surface module that a `Client` element runs on the terminal's frame clock. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
+
+Current mods:
+
+- `context-meter`: Clawd lives in the band above the prompt and walks a track that fills as the context window does, with the fill, tokens and cost beside him. He scuttles while Claude works, blinks when idle, sweats past 80% (the `warnAt` option in `/config`, which also raises a toast) and shows a heart when clicked. `/meter` prints the details.
+
+- `session-band`: a prototype that grows the band into a session dashboard with Clawd: model, project and branch with uncommitted changes, session time, context and rate-limit meters, cost, todos, and what Claude is doing right now. Clawd glances at files he reads, cheers when a turn ends, flinches at a failed tool and naps when you're away. `/band` switches between three styles: `cozy`, `trail` and `peek`. Load one band mod at a time, since both draw the same band.
+
+Try one in a session, check it, and run its tests:
+
+```sh
+claude --plugin-dir ~/projects/agent-plugins/plugins/context-meter
+claude plugin validate plugins/context-meter
+claude plugin test plugins/context-meter
+```
+
+The session reloads the mod when its files change, so edits show up without a restart.
+
 ## Credits
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.
