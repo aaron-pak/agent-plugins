@@ -39,7 +39,7 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 
 ## Credits
 
-`artifact-design` is Anthropic's built-in Claude Code `artifact-design` skill, with its `artifact-diagramming` sibling as a reference file, captured from Claude Code 2.1.287. It is edited only to work outside Claude Code and to make every page light-themed; the header comment in its `SKILL.md` lists each change.
+`artifact-design` is Anthropic's built-in Claude Code `artifact-design` skill, with its `artifact-diagramming` sibling as a reference file, captured from Claude Code 2.1.287. It is adapted to produce the same pages outside claude.ai: the Artifact tool's skeleton and rules are written out for the agent to follow, and only what nothing outside claude.ai can do is removed. The header comment in its `SKILL.md` lists each change.
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.
 
