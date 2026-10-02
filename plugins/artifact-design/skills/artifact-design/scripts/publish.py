@@ -105,7 +105,7 @@ def wrap(content, description):
         head += f'<meta name="description" content="{html.escape(description, quote=True)}">'
     head += SKELETON_RESET + SKELETON_BODY
     tail = ""
-    if re.search(r"class\s*=\s*[\"'][^\"']*\bmermaid\b", content) and "mermaid.min.js" not in content:
+    if re.search(r"<[a-zA-Z][^<>]*\bclass\s*=\s*[\"'][^\"']*\bmermaid\b", content) and "mermaid.min.js" not in content:
         tail = "\n" + TAIL_MARK + "\n" + MERMAID
     return head + content + tail + SKELETON_END
 
