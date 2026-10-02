@@ -44,10 +44,12 @@ INSTRUCTIONS = (
     "tools, mockups) as local files and previews them, the way claude.ai's Artifact tool does. "
     "Before writing a new artifact, call Artifact with action \"quickstart\" (or load the "
     "artifact-design skill when it is installed); then write the page to a file and publish it "
-    "with Artifact, which wraps it in the page skeleton. Give the user the published link."
+    "with Artifact, which wraps it in the page skeleton. Give the user the published link. "
+    "Where a built-in Artifact tool that publishes to claude.ai is also available, use that one "
+    "instead; this server is for harnesses without it."
 )
 
-DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine and opened in the browser. Use it when a page would be clearer than terminal text, or when the person would use the page rather than only read it, such as a report, explainer, plan, dashboard, tool, or mockup, and whenever the person asks for an artifact or for an HTML page.
+DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine and opened in the browser. Use it when a page would be clearer than terminal text, or when the person would use the page rather than only read it, such as a report, explainer, plan, dashboard, tool, or mockup, and whenever the person asks for an artifact or for an HTML page. Where a built-in Artifact tool that publishes to claude.ai is also available, use that one instead.
 
 **Before writing the file, load the page-design guidance**: call this tool with `action: "quickstart"`, or load the `artifact-design` skill when it is installed (a quickstart result counts as loading it). Then write the content to a file and call Artifact with its path.
 
