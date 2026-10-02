@@ -23,15 +23,14 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-PLUGIN_ROOT = Path(os.environ.get("ARTIFACT_PLUGIN_ROOT") or HERE.parent)
-SKILL_DIR = PLUGIN_ROOT / "skills" / "artifact-design"
-# Bundled with the skill, the server reads the skill's text and scripts; on its own, its copies.
-GUIDANCE = SKILL_DIR / "SKILL.md" if (SKILL_DIR / "SKILL.md").is_file() else HERE / "guidance.md"
-SCRIPTS = SKILL_DIR / "scripts" if (SKILL_DIR / "scripts" / "publish.py").is_file() else HERE
+# The server reads the bundled artifact-design skill's text and scripts, so there is one copy of each.
+SKILL_DIR = Path(__file__).resolve().parent.parent / "skills" / "artifact-design"
+GUIDANCE = SKILL_DIR / "SKILL.md"
+SCRIPTS = SKILL_DIR / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 sys.dont_write_bytecode = True
 import publish as page_publish  # noqa: E402  (scripts/publish.py: skeleton, CSP, unwrap)
@@ -116,7 +115,8 @@ def save_index(index):
 
 
 def slugify(text):
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
     return slug[:48] or "artifact"
 
 
@@ -252,7 +252,7 @@ def act_publish(args):
     versions.mkdir(exist_ok=True)
     (versions / f"{entry['version']}{Path(page_name).suffix}").write_text(published, encoding="utf-8")
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    entry.update({"page": page_name, "title": title, "updated": now})
+    entry.update({"source": str(source), "page": page_name, "title": title, "updated": now})
     entry["created"] = entry["created"] or now
     if not is_markdown:
         entry["description"] = description

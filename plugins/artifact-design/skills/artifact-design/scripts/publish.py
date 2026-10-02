@@ -113,7 +113,7 @@ def wrap(content, description):
 def open_in_browser(path):
     try:
         if sys.platform == "darwin":
-            subprocess.Popen(["open", str(path)])
+            subprocess.Popen(["open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif os.name == "nt":
             os.startfile(str(path))  # noqa: S606
         elif os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
