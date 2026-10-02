@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "artifact-design",
-  "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups.",
+  "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups. From Anthropic's Claude Code.",
   "author": {
-    "name": "Aaron Pak"
+    "name": "Anthropic"
   }
 }

@@ -10,7 +10,7 @@
     {
       "name": "artifact-design",
       "source": "./plugins/artifact-design",
-      "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups."
+      "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups. From Anthropic's Claude Code."
     },
     {
       "name": "eli5",
