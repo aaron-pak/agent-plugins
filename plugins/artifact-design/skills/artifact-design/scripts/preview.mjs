@@ -12,6 +12,7 @@
 // exits, and the skill skips the look.
 
 import { execFileSync, execSync } from "node:child_process";
+import { X509Certificate, createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -86,9 +87,20 @@ const server = createServer((req, res) => {
 await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
 const pageUrl = `http://127.0.0.1:${server.address().port}${encodeURI(route)}`;
 
+// Behind a network that inspects TLS, ARTIFACT_PREVIEW_CA names its CA certificate (PEM)
+// so the preview can load web fonts and CDN scripts the way the person's browser does.
+const trustArgs = [];
+const caFile = process.env.ARTIFACT_PREVIEW_CA;
+if (caFile && existsSync(caFile)) {
+  const pems = readFileSync(caFile, "utf8").match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+  const keys = pems.map((pem) =>
+    createHash("sha256").update(new X509Certificate(pem).publicKey.export({ type: "spki", format: "der" })).digest("base64"));
+  if (keys.length) trustArgs.push(`--ignore-certificate-errors-spki-list=${keys.join(",")}`);
+}
+
 let browser;
 try {
-  browser = await playwright.chromium.launch();
+  browser = await playwright.chromium.launch({ args: trustArgs });
 } catch (error) {
   console.log(`No Chromium for Playwright here (${error.message.split("\n")[0]}). Skip the look and publish.`);
   server.close();
