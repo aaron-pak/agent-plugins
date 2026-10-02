@@ -120,10 +120,22 @@ const launch = async ($: EngineInterface, launcher: Launcher, spec: Launch, brie
   return `headless, log at ${log}`
 }
 
+// A headless session runs under an sh whose other child, tail -f /dev/null,
+// never gets SIGPIPE; ending both children ends the sh too. The pattern check
+// keeps it from touching the children of any other parent.
+const HEADLESS_STOP = [
+  'parent=$(ps -o ppid= -p "$1" | tr -d " ")',
+  'case "$(ps -o args= -p "$parent")" in',
+  '  *"tail -f /dev/null"*) pkill -P "$parent" ;;',
+  '  *) kill "$1" ;;',
+  'esac',
+].join('\n')
+
 // Ends the process. A background session keeps its conversation and wakes
 // with `wake`; any other kind is ended by its pid.
-const stop = async ($: EngineInterface, peer: Peer) => {
+const stop = async ($: EngineInterface, peer: Peer, launcher?: string) => {
   if (peer.kind === 'background' && peer.id) await run($, ['claude', 'stop', peer.id])
+  else if (peer.pid && launcher === 'headless') await run($, ['sh', '-c', HEADLESS_STOP, 'sh', String(peer.pid)])
   else if (peer.pid) await run($, ['kill', String(peer.pid)])
 }
 
@@ -169,24 +181,30 @@ const brief = (parent: Omit<Parent, 'self'>, self: string, task: string, isAutoR
     `Later messages from "${parent.name}" are follow-ups to this task.`,
   ].join('\n')
 
-const parentOf = async ($: EngineInterface): Promise<Parent | undefined> => {
+// The brief is the first thing a started session reads, so once the
+// transcript has anything in it the answer is settled; memo keeps it.
+const parentOf = async ($: EngineInterface, memo: { parent?: Parent | null }): Promise<Parent | undefined> => {
+  if (memo.parent !== undefined) return memo.parent ?? undefined
   const messages = await $.session.messages()
-  if (!Array.isArray(messages)) return undefined
+  if (!Array.isArray(messages) || messages.length === 0) return undefined
   let found: Parent | undefined
   for (const message of messages) {
     if (message.role !== 'user') continue
     for (const [, name = '', sessionId = '', self = ''] of message.text.matchAll(STARTED_BY)) found = { name, sessionId, self }
   }
+  memo.parent = found ?? null
 
   return found
 }
 
 // Whether the sessions this one starts load this mod too, so they can report
-// back on their own: it is installed for every session, not only this one.
+// back on their own: settings install it for every session. This process's
+// own environment does not count, since a background session gets the
+// daemon's and a tmux one the tmux server's.
 const loadsEverywhere = async ($: EngineInterface) => {
   const settings = await $.settings.read()
   const env = (settings.env ?? {}) as Record<string, string | undefined>
-  const dirs = `${env.CLAUDE_CODE_PLUGIN_DIRS ?? ''}:${(await $.env.get('CLAUDE_CODE_PLUGIN_DIRS')) ?? ''}`
+  const dirs = env.CLAUDE_CODE_PLUGIN_DIRS ?? ''
   const root = $.plugin.root.replace(/\/+$/, '')
   const enabled = Object.entries((settings.enabledPlugins ?? {}) as Record<string, unknown>)
 
@@ -199,22 +217,26 @@ const loadsEverywhere = async ($: EngineInterface) => {
 const describe = (peer: Peer | undefined) =>
   peer === undefined ? 'stopped' : peer.state === 'blocked' ? 'waiting for input' : (peer.status ?? 'running')
 
-const wakeIfStopped = async ($: EngineInterface, name: string) => {
-  if ((await peers($)).some(peer => peer.name === name)) return
-  const stopped = (await peers($, { all: true })).find(peer => peer.name === name && peer.kind === 'background')
+// The registry rows that are this started session: by its session id once
+// known, so a later session that takes the same name is never mistaken for it.
+const isSame = (one: Spawned) => (peer: Peer) => (one.sessionId ? peer.sessionId === one.sessionId : peer.name === one.name)
+
+const wakeIfStopped = async ($: EngineInterface, one: Spawned) => {
+  if ((await peers($)).some(isSame(one))) return
+  const stopped = (await peers($, { all: true })).find(peer => isSame(one)(peer) && peer.kind === 'background')
   if (stopped === undefined) return
-  $.ui.toast(`Waking ${name}`)
+  $.ui.toast(`Waking ${one.name}`)
   await wake($, stopped)
-  await waitFor($, name)
+  await waitFor($, one.name)
 }
 
 // Stop or remove one session by name: a background session, or one this
 // session started. Other people's interactive sessions are left alone.
 const end = async ($: EngineInterface, name: string, isRemove: boolean): Promise<string> => {
-  const isOurs = (await read($, spawned)).some(one => one.name === name)
-  const listed = await peers($, { all: true })
-  const peer = listed.find(one => one.name === name && one.pid) ?? listed.find(one => one.name === name)
-  if (peer === undefined || (peer.kind !== 'background' && !isOurs)) {
+  const ours = (await read($, spawned)).find(one => one.name === name)
+  const named = (await peers($, { all: true })).filter(ours ? isSame(ours) : peer => peer.name === name)
+  const peer = named.find(one => one.pid) ?? named[0]
+  if (peer === undefined || (peer.kind !== 'background' && ours === undefined)) {
     throw new Error(`No background session or session started here is named "${name}".`)
   }
   if (isRemove) {
@@ -224,7 +246,7 @@ const end = async ($: EngineInterface, name: string, isRemove: boolean): Promise
     return `Removed "${name}". ${out}`.trim()
   }
   if (!peer.pid) return `"${name}" is already stopped.`
-  await stop($, peer)
+  await stop($, peer, ours?.launcher)
 
   return `Stopped "${name}". Its conversation is kept, and a SendMessage to it wakes it.`
 }
@@ -234,16 +256,26 @@ type Watch = { stopAfterMinutes: number; idleSince: Map<string, number>; waiting
 
 // Keeps the pane and status line current, says when a session waits on a
 // person, and stops background sessions that have sat idle past the grace.
+// It never throws: the clock and every tool call run it.
 const tick = async ($: EngineInterface, watch: Watch) => {
   const { stopAfterMinutes, idleSince, waiting } = watch
   const list = await read($, spawned)
-  if (list.length === 0) return
+  if (list.length === 0) {
+    if (Object.keys(await read($, live)).length > 0) {
+      await update($, live, () => ({}))
+      $.ui.status(undefined)
+    }
+    return
+  }
   const listed = await peers($)
   const now = await $.clock.now()
-  const byName = new Map(listed.flatMap(peer => (peer.name ? [[peer.name, peer] as const] : [])))
+  const status: Record<string, string> = {}
+  const learned = new Map<string, string>()
 
-  for (const { name } of list) {
-    const peer = byName.get(name)
+  for (const one of list) {
+    const { name } = one
+    let peer = listed.find(isSame(one))
+    if (peer && !one.sessionId) learned.set(name, peer.sessionId)
     if (peer?.state === 'blocked' && !waiting.has(name)) {
       waiting.add(name)
       $.ui.toast(`${name} is waiting for input${peer.id ? `: claude attach ${peer.id}` : ''}`)
@@ -253,21 +285,30 @@ const tick = async ($: EngineInterface, watch: Watch) => {
     const isIdle = peer?.status === 'idle' && peer.state !== 'blocked'
     if (peer === undefined || !isIdle || peer.kind !== 'background' || stopAfterMinutes <= 0) {
       idleSince.delete(name)
-      continue
+    } else {
+      const since = idleSince.get(name) ?? now
+      idleSince.set(name, since)
+      if (now - since >= stopAfterMinutes * 60_000) {
+        idleSince.delete(name)
+        try {
+          await stop($, peer)
+          peer = undefined
+          $.ui.toast(`Stopped ${name} after ${stopAfterMinutes} idle minutes; a message to it wakes it`)
+        } catch (error) {
+          $.ui.log(`session-manager: could not stop ${name}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
     }
-    const since = idleSince.get(name) ?? now
-    idleSince.set(name, since)
-    if (now - since < stopAfterMinutes * 60_000) continue
-    idleSince.delete(name)
-    await stop($, peer)
-    byName.delete(name)
-    $.ui.toast(`Stopped ${name} after ${stopAfterMinutes} idle minutes; a message to it wakes it`)
+    status[name] = describe(peer)
   }
 
-  await update($, live, () => Object.fromEntries(list.map(one => [one.name, describe(byName.get(one.name))])))
+  if (learned.size > 0) {
+    await update($, spawned, all => all.map(one => (learned.has(one.name) ? { ...one, sessionId: learned.get(one.name) } : one)))
+  }
+  await update($, live, () => status)
   const counts = new Map<string, number>()
-  for (const status of Object.values(await read($, live))) counts.set(status, (counts.get(status) ?? 0) + 1)
-  $.ui.status(`sessions: ${[...counts].map(([status, count]) => `${count} ${status}`).join(', ')}`)
+  for (const one of Object.values(status)) counts.set(one, (counts.get(one) ?? 0) + 1)
+  $.ui.status(`sessions: ${[...counts].map(([one, count]) => `${count} ${one}`).join(', ')}`)
 }
 
 export const register: Register = (on, options) => {
@@ -277,6 +318,7 @@ export const register: Register = (on, options) => {
   let mode: string | undefined
   // Set when this session's model sent its parent a message itself this turn.
   let hasReported = false
+  const memo: { parent?: Parent | null } = {}
 
   on('classic.UserPromptSubmit', ($, e, next) => {
     mode = e.permission_mode
@@ -341,9 +383,11 @@ export const register: Register = (on, options) => {
     if (isFork && launcher !== 'bg') return { deny: 'fork needs the bg launcher.' }
 
     const sessionId = await $.session.id()
-    const before = await peers($)
-    if (before.some(peer => peer.name === name)) {
-      return { deny: `A session named "${name}" is already running; pick another name or message it.` }
+    const before = await peers($, { all: true })
+    const taken = before.find(peer => peer.name === name)
+    if (taken?.pid) return { deny: `A session named "${name}" is already running; pick another name or message it.` }
+    if (taken) {
+      return { deny: `A stopped session is named "${name}"; message it to wake it, remove it with stop_session, or pick another name.` }
     }
     const parentName = before.find(peer => peer.sessionId === sessionId)?.name
     if (parentName === undefined) return { deny: 'This session is not in the local session registry, so a new session could not reply to it.' }
@@ -371,6 +415,7 @@ export const register: Register = (on, options) => {
     }
     await update($, spawned, list => [...list.filter(one => one.name !== name), started])
     const peer = await waitFor($, name)
+    if (peer) await update($, spawned, list => list.map(one => (one.name === name ? { ...one, sessionId: peer.sessionId } : one)))
     await tick($, watch)
     $.ui.toast(`Started session ${name}`)
 
@@ -424,11 +469,11 @@ export const register: Register = (on, options) => {
   // parent, unless the model already messaged the parent itself.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId !== undefined || e.isAborted) return done
+    if (e.agentId !== undefined) return done
     const sentByModel = hasReported
     hasReported = false
-    if (sentByModel) return done
-    const parent = await parentOf($)
+    if (e.isAborted || sentByModel) return done
+    const parent = await parentOf($, memo)
     if (parent === undefined) return done
 
     const answer = e.answer.trim() || (e.reason === 'error' ? '(The turn ended on an API error.)' : '(The turn ended without a final message.)')
@@ -438,18 +483,24 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  // A message for a stopped background session wakes it first, so it lands.
-  // A message to the parent marks the turn as already reported.
+  // A message to the parent marks the turn as already reported. A message to
+  // a session started here restarts its idle time, and wakes it first if it
+  // was stopped, so it lands. A reply by socket address is not counted as a
+  // report: a duplicate report is better than a lost one.
   on('session.send', async ($, e, next) => {
     if (e.agentId !== undefined || (e.origin.kind === 'plugin' && e.origin.name === $.plugin.name)) return next(e)
     const target = e.to.replace(/ \[[^\]]+\]$/, '')
-    const parent = await parentOf($)
-    if (parent && (target === parent.name || /^(uds|bridge):/.test(target))) {
+    const parent = await parentOf($, memo)
+    if (parent && (target === parent.name || target === parent.sessionId)) {
       hasReported = true
 
       return next(e)
     }
-    await wakeIfStopped($, target)
+    const ours = (await read($, spawned)).find(one => one.name === target)
+    if (ours) {
+      watch.idleSince.delete(target)
+      await wakeIfStopped($, ours)
+    }
 
     return next(e)
   })
@@ -464,7 +515,10 @@ export const register: Register = (on, options) => {
       await update($, spawned, list =>
         list.map(one => (one.name === name ? ((isOurs = true), { ...one, lastReport: body.trim(), reportedAt }) : one)),
       )
-      if (isOurs) $.ui.toast(`${name} reported back`)
+      if (isOurs) {
+        watch.idleSince.delete(name)
+        $.ui.toast(`${name} reported back`)
+      }
     }
 
     return next(e)

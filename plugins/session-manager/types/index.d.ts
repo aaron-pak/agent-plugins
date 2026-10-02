@@ -3,6 +3,7 @@ export type Spawned = {
   launcher: string
   startedAt: number
   hint: string
+  sessionId?: string
   worktree?: string
   lastReport?: string
   reportedAt?: number
