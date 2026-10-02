@@ -1,5 +1,5 @@
 {
-  "name": "orchestrator",
+  "name": "sessions",
   "version": "0.1.0",
   "description": "Lets a Claude Code session start separate, full Claude Code sessions and talk to them",
   "author": {
@@ -9,7 +9,7 @@
   "userConfig": {
     "launcher": {
       "type": "string",
-      "title": "How worker sessions start",
+      "title": "How new sessions start",
       "description": "bg: a background session you can open with claude attach. tmux: an interactive session in a tmux window. headless: a claude -p process that logs to a file.",
       "default": "bg",
       "options": [

@@ -1,12 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Worker } from '../types'
+import type { Spawned } from '../types'
 
 const TOOL = 'spawn_session'
-const PANE = 'orchestrator-workers'
-const workers = atom({ plugin: 'orchestrator', key: 'workers' } as const, [])
-const live = atom({ plugin: 'orchestrator', key: 'live' } as const, {})
+const PANE = 'sessions-spawned'
+const spawned = atom({ plugin: 'sessions', key: 'spawned' } as const, [])
+const live = atom({ plugin: 'sessions', key: 'live' } as const, {})
 
 // Variables a session sets for itself. A child that inherits them would
 // claim the parent's identity instead of registering as a peer of its own.
@@ -23,8 +23,8 @@ const PARENT_ONLY_ENV = [
 const CLEAN_ENV = ['env', ...PARENT_ONLY_ENV.flatMap(name => ['-u', name])]
 const NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 // Sessions in different permission modes hold each other's messages for the
-// person's approval, so a worker takes the orchestrator's mode when it is one
-// of these. Plan and bypass stay the worker's own choice.
+// person's approval, so a new session takes its parent's mode when it is one
+// of these. Plan and bypass stay the new session's own choice.
 const SHARED_MODES = new Set(['acceptEdits', 'auto'])
 
 type Launcher = 'bg' | 'tmux' | 'headless'
@@ -40,7 +40,7 @@ const peers = async ($: EngineInterface): Promise<Peer[]> => {
 
 const brief = (parent: string, task: string) =>
   [
-    `You are a worker session started by the Claude Code session "${parent}", which is orchestrating several sessions.`,
+    `You are a Claude Code session started by the session "${parent}" to do the task below.`,
     '',
     task,
     '',
@@ -72,15 +72,15 @@ const launch = async (
     const dir = cwd ?? (await $.session.cwd())
     const inWindow = await $.process.run(['tmux', 'new-window', '-d', '-c', dir, '-n', name, ...command])
     if (inWindow.exitCode === 0) return `tmux window "${name}"`
-    const inSession = await $.process.run(['tmux', 'new-session', '-d', '-s', 'claude-workers', '-c', dir, '-n', name, ...command])
+    const inSession = await $.process.run(['tmux', 'new-session', '-d', '-s', 'claude-sessions', '-c', dir, '-n', name, ...command])
     if (inSession.exitCode !== 0) throw new Error(inSession.stderr)
 
-    return `tmux session "claude-workers", window "${name}" (tmux attach -t claude-workers)`
+    return `tmux session "claude-sessions", window "${name}" (tmux attach -t claude-sessions)`
   }
 
   // headless: a claude -p session that keeps reading stream-json from a stdin
   // that never closes, so it stays alive and reachable between messages.
-  const log = `${(await $.env.get('TMPDIR')) ?? '/tmp'}/claude-worker-${name}.jsonl`.replace('//', '/')
+  const log = `${(await $.env.get('TMPDIR')) ?? '/tmp'}/claude-session-${name}.jsonl`.replace('//', '/')
   const first = JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
   const command = [
     ...CLEAN_ENV, 'claude', '-p', '-n', name, ...sessionArgs,
@@ -135,15 +135,15 @@ export const register: Register = (on, options) => {
         required: ['name', 'task'],
       },
     })
-    await $.command.register({ name: 'workers', description: 'Show the sessions this orchestrator started' })
+    await $.command.register({ name: 'sessions', description: 'Show the sessions this session started' })
     $.clock.every(5_000, async () => {
-      if ((await read($, workers)).length > 0) await refresh($)
+      if ((await read($, spawned)).length > 0) await refresh($)
     })
 
     return next(e)
   })
 
-  on('tool.call', { tool: 'mcp__orchestrator__spawn_session' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__sessions__spawn_session' }, async ($, e) => {
     const args = e as unknown as Record<string, unknown>
     const spawn: Spawn = {
       name: String(args.name ?? ''),
@@ -161,7 +161,7 @@ export const register: Register = (on, options) => {
       return { deny: `A session named "${spawn.name}" is already running; pick another name or message it.` }
     }
     const parent = before.find(peer => peer.sessionId === sessionId)?.name
-    if (parent === undefined) return { deny: 'This session is not in the local session registry, so a worker could not reply to it.' }
+    if (parent === undefined) return { deny: 'This session is not in the local session registry, so a new session could not reply to it.' }
 
     let hint: string
     try {
@@ -169,10 +169,10 @@ export const register: Register = (on, options) => {
     } catch (error) {
       return { deny: `Could not start "${spawn.name}" (${launcher}): ${error instanceof Error ? error.message : String(error)}` }
     }
-    const worker: Worker = { name: spawn.name, launcher, startedAt: await $.clock.now(), hint }
-    await update($, workers, list => [...list.filter(one => one.name !== spawn.name), worker])
+    const started: Spawned = { name: spawn.name, launcher, startedAt: await $.clock.now(), hint }
+    await update($, spawned, list => [...list.filter(one => one.name !== spawn.name), started])
 
-    // Wait for the worker to register its messaging socket, so the model's
+    // Wait for the new session to register its messaging socket, so the model's
     // first SendMessage to it lands. process.run waits are off the hook's budget.
     let isReachable = false
     for (let attempt = 0; attempt < 20 && !isReachable; attempt += 1) {
@@ -191,27 +191,27 @@ export const register: Register = (on, options) => {
     }
   })
 
-  on('command.run', { command: 'workers' }, async $ => {
+  on('command.run', { command: 'sessions' }, async $ => {
     await refresh($)
-    await $.ui.open({ id: PANE, title: 'Worker sessions' })
+    await $.ui.open({ id: PANE, title: 'Sessions started here' })
 
-    return { text: 'Worker sessions pane opened.' }
+    return { text: 'Sessions pane opened.' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
-    const list = await read($, workers)
+    const list = await read($, spawned)
     const status = await read($, live)
 
     return (
       <Box flexDirection="column">
-        {list.length === 0 && <Text dimColor>No worker sessions yet.</Text>}
-        {list.map(worker => (
+        {list.length === 0 && <Text dimColor>No sessions started yet.</Text>}
+        {list.map(session => (
           <Box flexDirection="column">
             <Text bold>
-              {worker.name} <Text dimColor>{status[worker.name] ?? 'exited'}</Text>
+              {session.name} <Text dimColor>{status[session.name] ?? 'exited'}</Text>
             </Text>
-            <Text dimColor>{worker.hint}</Text>
+            <Text dimColor>{session.hint}</Text>
           </Box>
         ))}
       </Box>

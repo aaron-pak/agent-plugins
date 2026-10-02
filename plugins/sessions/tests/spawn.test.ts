@@ -7,7 +7,7 @@ const ran = (stdout: string) => ({
 })
 
 // Answers the host commands the mod runs: the session registry, and a
-// `claude --bg` launch that makes the worker appear in it.
+// `claude --bg` launch that makes the new session appear in it.
 const host = (on: On) => {
   const launched: (readonly string[])[] = []
   mock.clock(on)
@@ -30,7 +30,7 @@ const host = (on: On) => {
 
 test('spawns a background session that knows whom to report to', { options: { launcher: 'bg' } }, async ($, on) => {
   const launched = host(on)
-  const answer = await $.tool.call({ tool: 'mcp__orchestrator__spawn_session', name: 'w1', task: 'Count the TODOs.' })
+  const answer = await $.tool.call({ tool: 'mcp__sessions__spawn_session', name: 'w1', task: 'Count the TODOs.' })
 
   expect(launched).toHaveLength(1)
   const argv = launched[0] ?? []
@@ -43,31 +43,31 @@ test('spawns a background session that knows whom to report to', { options: { la
 
 test('refuses a name that cannot be an address', async ($, on) => {
   host(on)
-  const answer = await $.tool.call({ tool: 'mcp__orchestrator__spawn_session', name: 'Bad Name', task: 'x' })
+  const answer = await $.tool.call({ tool: 'mcp__sessions__spawn_session', name: 'Bad Name', task: 'x' })
 
   expect(answer.deny).toContain('kebab-case')
 })
 
 test('refuses a name a running session already has', async ($, on) => {
   host(on)
-  const answer = await $.tool.call({ tool: 'mcp__orchestrator__spawn_session', name: 'lead', task: 'x' })
+  const answer = await $.tool.call({ tool: 'mcp__sessions__spawn_session', name: 'lead', task: 'x' })
 
   expect(answer.deny).toContain('already running')
 })
 
-test('a worker shares the orchestrator\'s acceptEdits mode', { options: { launcher: 'bg' } }, async ($, on) => {
+test('a new session shares its parent\'s acceptEdits mode', { options: { launcher: 'bg' } }, async ($, on) => {
   const launched = host(on)
   await $.classic.UserPromptSubmit({ prompt: 'split this up', permission_mode: 'acceptEdits' })
-  await $.tool.call({ tool: 'mcp__orchestrator__spawn_session', name: 'w1', task: 'x' })
+  await $.tool.call({ tool: 'mcp__sessions__spawn_session', name: 'w1', task: 'x' })
 
   const argv = launched[0] ?? []
   expect(argv[argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits')
 })
 
-test('a worker does not inherit plan mode', { options: { launcher: 'bg' } }, async ($, on) => {
+test('a new session does not inherit plan mode', { options: { launcher: 'bg' } }, async ($, on) => {
   const launched = host(on)
   await $.classic.UserPromptSubmit({ prompt: 'plan it', permission_mode: 'plan' })
-  await $.tool.call({ tool: 'mcp__orchestrator__spawn_session', name: 'w1', task: 'x' })
+  await $.tool.call({ tool: 'mcp__sessions__spawn_session', name: 'w1', task: 'x' })
 
   expect(launched[0]).not.toContain('--permission-mode')
 })

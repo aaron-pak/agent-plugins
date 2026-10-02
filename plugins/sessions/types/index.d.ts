@@ -1,4 +1,4 @@
-export type Worker = {
+export type Spawned = {
   name: string
   launcher: string
   startedAt: number
@@ -7,6 +7,6 @@ export type Worker = {
 
 declare module 'claude-code' {
   interface PluginState {
-    orchestrator: { workers: Worker[]; live: Record<string, string> }
+    sessions: { spawned: Spawned[]; live: Record<string, string> }
   }
 }
