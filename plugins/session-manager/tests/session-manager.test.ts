@@ -7,9 +7,9 @@ type Message = { role: 'user' | 'assistant'; text: string; toolUses: [] }
 const ok = (stdout: string, exitCode = 0) => ({
   value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
 })
-const SPAWN = 'mcp__sessions__spawn_session'
-const STOP = 'mcp__sessions__stop_session'
-const LIST = 'mcp__sessions__list_sessions'
+const SPAWN = 'mcp__session-manager__spawn_session'
+const STOP = 'mcp__session-manager__stop_session'
+const LIST = 'mcp__session-manager__list_sessions'
 const BRIEF = 'You were started by the Claude Code session "lead" (id 0b0c3f7e-1d2a-4c5b-9e8f-7a6b5c4d3e2f) as "w1", to do the task below.\n\nCount the TODOs.'
 
 // A machine with one interactive session, "lead", in a git repository: the
@@ -112,7 +112,7 @@ test('fork needs the bg launcher', { options: { launcher: 'tmux' } }, async ($, 
 })
 
 test('briefs it to end its turns with the result when the mod loads there too', { options: { launcher: 'bg' } }, async ($, on) => {
-  const world = host(on, { settings: { enabledPlugins: { 'sessions@local': true } } })
+  const world = host(on, { settings: { enabledPlugins: { 'session-manager@local': true } } })
   const answer = await $.tool.call({ tool: SPAWN, name: 'w1', task: 'x' })
 
   expect(world.claude().find(argv => argv.includes('--bg'))?.at(-1)).toContain('sent to "lead" automatically')

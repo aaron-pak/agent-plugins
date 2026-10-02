@@ -143,9 +143,9 @@ const wake = async ($: EngineInterface, peer: Peer) => {
   await run($, [...CLEAN_ENV, 'claude', 'respawn', peer.id])
 }
 
-const PANE = 'sessions-spawned'
-const spawned = atom({ plugin: 'sessions', key: 'spawned' } as const, [])
-const live = atom({ plugin: 'sessions', key: 'live' } as const, {})
+const PANE = 'session-manager'
+const spawned = atom({ plugin: 'session-manager', key: 'spawned' } as const, [])
+const live = atom({ plugin: 'session-manager', key: 'live' } as const, {})
 const NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 // The opening line of every brief. A session started by this mod finds its
 // parent by it, in its own transcript, whichever way it was launched.
@@ -330,7 +330,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('tool.call', { tool: 'mcp__sessions__spawn_session' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__session-manager__spawn_session' }, async ($, e) => {
     const args = e as unknown as Record<string, unknown>
     const name = argument(args, 'name') ?? ''
     const task = argument(args, 'task') ?? ''
@@ -389,7 +389,7 @@ export const register: Register = (on, options) => {
     }
   })
 
-  on('tool.call', { tool: 'mcp__sessions__stop_session' }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__session-manager__stop_session' }, async ($, e) => {
     const args = e as unknown as Record<string, unknown>
     try {
       const result = await end($, argument(args, 'name') ?? '', args.remove === true)
@@ -401,7 +401,7 @@ export const register: Register = (on, options) => {
     }
   })
 
-  on('tool.call', { tool: 'mcp__sessions__list_sessions' }, async $ => {
+  on('tool.call', { tool: 'mcp__session-manager__list_sessions' }, async $ => {
     await tick($, watch)
     const list = await read($, spawned)
     const status = await read($, live)
@@ -433,7 +433,7 @@ export const register: Register = (on, options) => {
 
     const answer = e.answer.trim() || (e.reason === 'error' ? '(The turn ended on an API error.)' : '(The turn ended without a final message.)')
     const sent = await $.session.send({ to: { sessionId: parent.sessionId }, text: `Report from session "${parent.self}":\n\n${answer}` })
-    if (!sent.isDelivered) $.ui.log(`sessions: could not report to ${parent.name}: ${sent.reason}`)
+    if (!sent.isDelivered) $.ui.log(`session-manager: could not report to ${parent.name}: ${sent.reason}`)
 
     return done
   })

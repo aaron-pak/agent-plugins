@@ -60,6 +60,26 @@ plugins/example-mcp/
 
 Add a matching entry to `.claude-plugin/marketplace.json`. Pass secrets through environment variables such as `${EXAMPLE_API_KEY}` and keep the values out of this repository. The two files describe the same servers in each harness's format. Agent Plugins `mcp.json` requires `type` and exposes `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` to the server. Confirm with `claude mcp list` and `codex mcp list` that each harness starts the server.
 
+## Mods
+
+A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, panes, slash commands) or adds tools. Mods are Claude Code only, so they stay out of `marketplace.json`, which Codex also reads.
+
+A mod folder holds `.claude-plugin/plugin.json`, `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
+
+Current mods:
+
+- `session-manager`: lets a session start separate, full Claude Code sessions and manage them. The model gets `spawn_session` (optionally in its own git worktree, or as a fork of the current conversation), `stop_session` and `list_sessions`. Each new session's final message of a turn comes back to the session that started it, a background session idle past `stopAfterMinutes` (15 by default, in `/config`) is stopped, and a message to a stopped one restarts it first. `/sessions` opens a pane with each session's status, last report, and Stop and Remove buttons.
+
+Load `session-manager` for every session, so the sessions it starts load it too and report back on their own, by adding it to `CLAUDE_CODE_PLUGIN_DIRS` under `env` in `~/.claude/settings.json`. To try any mod in one session, check it, and run its tests:
+
+```sh
+claude --plugin-dir ~/projects/agent-plugins/plugins/session-manager
+claude plugin validate plugins/session-manager
+claude plugin test plugins/session-manager
+```
+
+The session reloads the mod when its files change, so edits show up without a restart.
+
 ## Credits
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.

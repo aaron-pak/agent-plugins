@@ -10,6 +10,6 @@ export type Spawned = {
 
 declare module 'claude-code' {
   interface PluginState {
-    sessions: { spawned: Spawned[]; live: Record<string, string> }
+    'session-manager': { spawned: Spawned[]; live: Record<string, string> }
   }
 }
