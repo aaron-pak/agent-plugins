@@ -16,6 +16,7 @@ local machine:
 Standard library only. Speaks MCP over stdio (newline-delimited JSON-RPC 2.0).
 """
 
+import html
 import json
 import os
 import re
@@ -136,7 +137,7 @@ def find(url, index):
 
 def title_of(content):
     match = re.search(r"<title[^>]*>(.*?)</title>", content[:8192], re.IGNORECASE | re.DOTALL)
-    return re.sub(r"\s+", " ", match.group(1)).strip() if match else None
+    return html.unescape(re.sub(r"\s+", " ", match.group(1)).strip()) if match else None
 
 
 ICON_SVG = (
@@ -204,7 +205,7 @@ def act_publish(args):
         title = title_of(content)
         if not title and args.get("title"):
             title = args["title"]
-            content = f"<title>{page_publish.html.escape(title)}</title>\n" + content
+            content = f"<title>{html.escape(title)}</title>\n" + content
         if not title:
             notes.append("The page has no <title> in its first 8KB, so it has no name: add one, or pass `title`.")
         description = args.get("description") or (entry or {}).get("description") or old_description
