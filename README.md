@@ -8,7 +8,7 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 - `plugins/<name>/`: one plugin per tool or workflow. `plugin.json` at the plugin root follows the open [Agent Plugins 1.0.0](https://agent-plugins.org) format, which Codex reads natively, and `skills/<skill>/` holds each skill with its references and license. Claude Code takes the plugin's name and description from the marketplace entry and finds `skills/` on its own, so plugins carry no `.claude-plugin/plugin.json`.
 - `instructions/`: the global agent instructions. Nothing installs these; link them by hand (see below).
 
-Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `implement-with-notes`, `session-manager` (a Claude Code mod, see [Mods](#mods)), `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
+Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `guidance` (Claude Code hooks, see [Guidance in any session](#guidance-in-any-session)), `implement-with-notes`, `session-manager` (a Claude Code mod, see [Mods](#mods)), `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
 
 To add a plugin, create `plugins/<name>/plugin.json` and `skills/`, then add a matching entry with the same name and description to `.claude-plugin/marketplace.json`.
 
@@ -46,6 +46,16 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 ```
 
 `CLAUDE.md` imports `~/.codex/AGENTS.md`, so both links are needed for Claude to see the shared text.
+
+### Guidance in any session
+
+The `guidance` plugin brings the subagent delegation and HTML artifact rules from `instructions/AGENTS.md` to Claude Code sessions that don't have the links above, such as cloud sessions and other machines. Its `SessionStart` and `SubagentStart` hooks add `plugins/guidance/instructions.md` to the context of every session and of every subagent the session starts.
+
+```sh
+claude plugin install guidance@agent-plugins --scope user
+```
+
+It works in Claude Code only, because Agent Plugins has no hooks; Codex already reads the same rules from `~/.codex/AGENTS.md`. When you change either rule in `instructions/AGENTS.md`, change `instructions.md` to match. On a machine with the links above, Claude already has the text, and the plugin would add it a second time.
 
 ## Adding an MCP server plugin
 

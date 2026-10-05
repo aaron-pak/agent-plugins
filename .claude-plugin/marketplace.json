@@ -23,6 +23,11 @@
       "description": "Design visually strong landing pages, websites, apps, prototypes, and game UI with restrained composition and tasteful motion. From OpenAI."
     },
     {
+      "name": "guidance",
+      "source": "./plugins/guidance",
+      "description": "Load Aaron's standing instructions on subagent delegation and light-only HTML artifacts into every session and subagent. Claude Code only."
+    },
+    {
       "name": "implement-with-notes",
       "source": "./plugins/implement-with-notes",
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
