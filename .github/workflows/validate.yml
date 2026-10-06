@@ -24,11 +24,18 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: Validate the marketplace with Claude Code
-        run: claude plugin validate --strict .
-
-      - name: Validate each plugin with Claude Code
+      # --strict fails on warnings. The one warning allowed is a missing version: a mod's
+      # .claude-plugin/plugin.json leaves it unset on purpose, like every manifest here.
+      - name: Validate the marketplace and each plugin with Claude Code
         run: |
-          for plugin in plugins/*/; do
-            claude plugin validate --strict "$plugin"
+          status=0
+          for target in . plugins/*/; do
+            out=$(claude plugin validate --strict "$target" 2>&1) && { echo "$out"; continue; }
+            echo "$out"
+            warnings=$(echo "$out" | sed -n 's/.*Found \([0-9]*\) warning.*/\1/p')
+            unset_versions=$(echo "$out" | grep -c 'No version specified' || true)
+            if echo "$out" | grep -q 'Found [0-9]* error' || [ "${warnings:-0}" != "$unset_versions" ]; then
+              status=1
+            fi
           done
+          exit $status

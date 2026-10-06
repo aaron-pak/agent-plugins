@@ -32,7 +32,7 @@ The `artifact-design` plugin copies Claude Code's built-in `artifact-design`, `a
 CI (`.github/workflows/validate.yml`) runs on every push to `main` and every pull request:
 
 - `python3 scripts/validate.py` checks that marketplace entries, `plugin.json` files, skill frontmatter, MCP config pairs, and the README plugin list agree.
-- `claude plugin validate --strict` checks the marketplace and each plugin the way Claude Code loads them.
+- `claude plugin validate --strict` checks the marketplace and each plugin the way Claude Code loads them. CI allows one warning, a missing version, which every mod's `.claude-plugin/plugin.json` gets because versions stay unset.
 
 Run both locally before pushing.
 
