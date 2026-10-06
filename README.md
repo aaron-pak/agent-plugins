@@ -2,7 +2,7 @@
 
 Aaron's personal skills, packaged as a plugin marketplace that both Claude Code and Codex can install from. Each plugin is installed on its own, so each harness gets only the plugins you pick for it.
 
-Current plugins: `artifact-design` (`artifact-design`, `artifact-diagramming` and `dataviz`, plus an `artifact` MCP server), `eli5`, `frontend-skill`, `implement-with-notes`, `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
+Current plugins: `artifact-design` (`artifact-design`, `artifact-diagramming` and `dataviz`, plus an `artifact` MCP server), `eli5`, `frontend-skill`, `implement-with-notes`, `session-manager` (a Claude Code mod, see [Mods](#mods)), `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
 
 Changing this repository? [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks CI runs.
 
@@ -36,6 +36,32 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 ```
 
 `CLAUDE.md` imports `~/.codex/AGENTS.md`, so both links are needed for Claude to see the shared text.
+
+## Mods
+
+A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, panes, slash commands) or adds tools. Mods are Claude Code only. They are listed in `marketplace.json` so Claude Code can install them like any other plugin, and their descriptions say Claude Code only for Codex, which reads the same catalog.
+
+A mod folder holds `.claude-plugin/plugin.json` (with `version` unset, as for every plugin here), `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
+
+Current mods:
+
+- `session-manager`: lets a session start separate, full Claude Code sessions and manage them. The model gets `spawn_session` (optionally in its own git worktree, or as a fork of the current conversation), `stop_session` and `list_sessions`. Each new session's final message of a turn comes back to the session that started it, a background session idle past `stopAfterMinutes` (15 by default, in `/config`) is stopped, and a message to a stopped one restarts it first. `/sessions` opens a pane with each session's status, last report, and Stop and Remove buttons.
+
+Install `session-manager` for your user, so every session loads it, including the sessions it starts, which then report back on their own:
+
+```sh
+claude plugin install session-manager@agent-plugins --scope user
+```
+
+To try a mod from a checkout in one session, check it, and run its tests:
+
+```sh
+claude --plugin-dir ~/projects/agent-plugins/plugins/session-manager
+claude plugin validate plugins/session-manager
+claude plugin test plugins/session-manager
+```
+
+The session reloads the mod when its files change, so edits show up without a restart.
 
 ## Credits
 

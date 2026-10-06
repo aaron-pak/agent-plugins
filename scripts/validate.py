@@ -102,6 +102,9 @@ def check_plugin(entry):
     if not plugin_dir.is_dir():
         error(where, "directory missing")
         return
+    if (plugin_dir / "hooks" / "hooks.json").is_file():
+        check_mod(entry, plugin_dir, where)
+        return
     if (plugin_dir / ".claude-plugin" / "plugin.json").exists():
         error(where, "has .claude-plugin/plugin.json; plugins carry only the root plugin.json")
 
@@ -122,6 +125,22 @@ def check_plugin(entry):
     has_mcp = check_mcp(plugin_dir, where)
     if not has_skills and not has_mcp:
         error(where, "has neither skills/ nor mcp.json")
+
+
+def check_mod(entry, plugin_dir, where):
+    """A mod is Claude Code only: its manifest lives in .claude-plugin/plugin.json."""
+    manifest = load_json(plugin_dir / ".claude-plugin" / "plugin.json")
+    if manifest is None:
+        return
+    where = f"{where}/.claude-plugin/plugin.json"
+    if manifest.get("name") != entry.get("name"):
+        error(where, f"name {manifest.get('name')!r} does not match the marketplace entry {entry.get('name')!r}")
+    if manifest.get("description") != entry.get("description"):
+        error(where, "description does not match the marketplace entry")
+    if "version" in manifest:
+        error(where, "version is set; leave it unset so the Git commit decides")
+    if not manifest.get("author", {}).get("name"):
+        error(where, "author.name is missing")
 
 
 def check_readme(names):

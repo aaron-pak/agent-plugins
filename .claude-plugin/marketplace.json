@@ -28,6 +28,11 @@
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
     },
     {
+      "name": "session-manager",
+      "source": "./plugins/session-manager",
+      "description": "Let a Claude Code session start, message, stop and wake separate, full Claude Code sessions. Claude Code only."
+    },
+    {
       "name": "show-me",
       "source": "./plugins/show-me",
       "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer."
