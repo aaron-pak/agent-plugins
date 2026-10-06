@@ -11,7 +11,7 @@ local machine:
   source file so publishing the same file again updates the same artifact.
 - preview: renders the page at desktop and phone widths in light and dark and lists what
   breaks (scripts/preview.mjs; needs Node and Playwright).
-- list, read, open: the published artifacts.
+- list, read, open, delete: the published artifacts.
 
 Standard library only. Speaks MCP over stdio (newline-delimited JSON-RPC 2.0).
 """
@@ -51,50 +51,59 @@ INSTRUCTIONS = (
     "instead; this server is for harnesses without it."
 )
 
-DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine and opened in the browser. Use it when a page would be clearer than terminal text, or when the person would use the page rather than only read it, such as a report, explainer, plan, dashboard, tool, or mockup, and whenever the person asks for an artifact or for an HTML page. Where a built-in Artifact tool that publishes to claude.ai is also available, use that one instead.
+# Claude Code's Artifact tool description (2.1.291), less what only claude.ai can do: runtime
+# capabilities, the shared database, Artifact types, watching, pinning and the asset store.
+DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}, and opened in the browser. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.
 
-**Before writing the file, load the page-design guidance**: call this tool with `action: "quickstart"`, or load the `artifact-design` skill when it is installed (a quickstart result counts as loading it). Then write the content to a file and call Artifact with its path.
+When a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as "can you write up the plan?". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as "should we ship this?", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as "just give me the .html file" or "save these notes as a .md file", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.
 
-**If you write a page before that guidance has loaded**, its contract still applies. Give the page a `<title>` that is a name of two to four words, never "Name: explainer", and put the explanation in `description`. Write only the page content: no doctype, `<html>`, `<head>` or `<body>` tags, because publishing wraps the page in a skeleton. Define colors as tokens on `:root`, redefine them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme="light"])` and again under `:root[data-theme="dark"]`, and give `body` an explicit background. Load external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, load stylesheets only from Google Fonts, and put everything else inline. Make the layout work at phone width, with a 16px side gutter and no horizontal page scroll.
+**Before writing the file, Claude must load the `artifact-design` skill**, or call this tool with `action: "quickstart"`, whose result carries the same guidance and counts as loading it, including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file and calls Artifact with its path, putting the file in its scratchpad directory when the system prompt lists one and the person names no other location.
 
-**Format**: always author the page as `.html`, and publish a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, build an HTML page from its content, keeping its substance and designing the page as you would any other artifact rather than transcribing the Markdown one to one.
+**If Claude writes a page before that guidance has loaded**, its contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never "Name: explainer", and puts the explanation in `description`. Claude writes only the page content, with no doctype, `<html>`, `<head>` or `<body>` tags, because publishing wraps the page in a skeleton. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme="light"])` and again under `:root[data-theme="dark"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.
 
-**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but what a page stores lives only in that viewer's browser. It can come back empty, or the accessor can throw, so wrap every read and write in try/catch and make the page render correctly without it. Use it only for per-viewer conveniences, such as a remembered tab or filter.
+**Format**: Claude always authors the page as `.html`, and publishes a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, Claude builds an HTML page from its content, keeping its substance and designing the page as it would any other artifact rather than transcribing the Markdown one to one.
 
-**Size**: keep the rendered page at 16MB or smaller; embedded `data:` URIs count toward that limit.
+**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but what a page stores lives only in that viewer's browser. It survives republishes to the same link and never reaches other viewers, other devices or Claude. It can come back empty, or the accessor can throw, in a private window, with cleared or blocked site data, or in previews, so Claude wraps every read and write in try/catch and makes the page render correctly without it. Claude uses it only for per-viewer conveniences, such as a remembered tab or filter, a collapsed section or an unsent draft, and never for state that must persist reliably, be shared between viewers or be read back by Claude.
 
-**Supporting files**: a multi-file artifact (stylesheets, scripts, data, images) publishes its other files through `files`, which maps each published path (relative, no leading slash, as the HTML references it) to a source file. Files left out of a later publish are kept.
+**Size**: Claude keeps the rendered page at 16MB or smaller, and embedded `data:` URIs count toward that limit.
+
+**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.
 
 **Calls**: `action` picks one (publish when omitted):
-- **publish**: takes `file_path`, plus `icon` on a first publish and a one-sentence `description`. Publishing the same `file_path` again updates that artifact in place and keeps its link; pass `url` to update a different one.
-- **quickstart**: returns the page contract and the design guidance for a plain page. Read-only.
-- **preview**: takes `file_path` (the page you wrote, before or after publishing) and renders it at desktop and phone widths in light and dark, returning screenshot paths and a list of overflow, unreadable colors, blocked loads and script errors. It needs Node and Playwright; when they are missing it says so.
-- **read**: takes `url` and returns the published page.
-- **list**: returns the published artifacts, newest first.
-- **open**: takes `url` and opens it in the browser.
+- **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place. A first publish opens the page in the browser.
+- **quickstart**: takes `intent` and returns the page contract and the design guidance for a plain page. It is read-only. Only plain pages can be made here; Slides, Design and Docs are claude.ai Artifact types.
+- **preview**: takes `file_path` (the page Claude wrote, before or after publishing) and renders it at desktop and phone widths in light and dark, returning screenshot paths and a list of overflow, colors that ignore the theme, blocked loads and script errors. It needs Node and Playwright; when they are missing it says so. This is the preview the `artifact-design` skill describes.
+- **read**: takes `url` and returns the published page's content.
+- **list**: returns the artifacts published on this machine, newest first, with title, link, last-updated time and source file.
+- **delete**: with `url`, permanently deletes a published artifact and its versions, which cannot be undone. Claude does this only when the person asks for that artifact to be deleted or unpublished, or says they did not want it published, never on its own initiative. The source file stays.
+- **open**: takes `url` and opens that existing artifact in the browser without changing it. Claude uses it when the person asks to see one. An artifact Claude just published needs no open.
 
-**To update** an artifact published earlier, call Artifact again with the same file path, which republishes it to the same link. A different path creates a new link.
+**To update** an artifact published earlier, Claude calls Artifact again with the same file path, which republishes it to the same link. A different path creates a new link, so Claude changes the path only when it wants a separate artifact.
 
-**Files you did not write**: read the whole file before publishing it."""
+**To update an artifact from another file**, Claude passes that artifact's link as `url`. Claude does this whenever the person wants an existing artifact changed or its link kept, and finds the link with `action: "list"` or by asking the person. Claude first reads the artifact with `action: "read"` and builds on the version that comes back. Publishing a new file without `url` creates a separate artifact. If the person asks where to find their artifacts again, `action: "list"` lists them, and each one is a folder in {store}.
+
+**Files Claude did not write**: Claude reads the whole file before publishing it, even when the person asks it not to. Publishing distributes the content, and Claude never distributes what it has not seen. A request for privacy is a reason to read before publishing, not an exemption. If Claude cannot read the file, it does not publish it.
+
+**Claude never publishes** a page that impersonates a real person or organization, for example by using their name, branding, byline or domain. Claude also never publishes fabricated records, receipts or reviews presented as genuine, forms or flows that collect credentials or payment details under false pretenses, or content that targets a private individual. Claude refuses whether it wrote the page or the person supplied it, and whatever purpose is claimed, such as a prop or a test, when the page would work as the real thing. If publishing is refused, Claude does not suggest other ways to host or share the page.""".replace("{store}", str(STORE))
 
 SCHEMA = {
     "type": "object",
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["publish", "quickstart", "preview", "read", "list", "open"],
+            "enum": ["publish", "quickstart", "preview", "read", "list", "open", "delete"],
             "description": "Omitting it means 'publish'.",
         },
         "file_path": {"type": "string", "description": "publish and preview: the page file (.html, or .md only when a skill says so)."},
         "description": {"type": "string", "description": "publish: one sentence explaining the page."},
         "title": {"type": "string", "description": "publish: the fallback title for an HTML page whose file has no <title>."},
-        "icon": {"type": "string", "description": "publish: one short generic word for the page's tab icon, such as chart, calendar, recipe, code or map. Pass it on a first publish only."},
+        "icon": {"type": "string", "description": "publish: one short generic word for the page's tab icon, such as chart, calendar, recipe, code or map: a plain signifier, never a product or brand name. Include it on every page's first publish and omit it on a redeploy so the artifact keeps its icon, passing a new one only when the person asks."},
         "files": {
             "type": "object",
             "additionalProperties": {"type": ["string", "null"]},
             "description": "publish: supporting files as {\"published/path\": \"source/path\"}; null removes one. A relative source path is read from the working directory, or else from the page's folder.",
         },
-        "url": {"type": "string", "description": "publish: an existing artifact's link to update. read and open: the artifact's link."},
+        "url": {"type": "string", "description": "publish: an existing artifact's link to update. read, open and delete: the artifact's link."},
         "intent": {"type": "string", "enum": ["document", "slides", "design", "other"], "description": "quickstart: what is being made. Only plain pages are supported here."},
     },
 }
@@ -111,9 +120,34 @@ def load_index():
 
 def save_index(index):
     STORE.mkdir(parents=True, exist_ok=True)
-    tmp = INDEX.with_suffix(".tmp")
+    tmp = INDEX.with_name(f"index.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(index, indent=2), encoding="utf-8")
     tmp.replace(INDEX)
+
+
+@contextlib.contextmanager
+def store_lock():
+    """Hold the artifacts folder's lock, so publishes from several sessions don't drop index entries."""
+    STORE.mkdir(parents=True, exist_ok=True)
+    with open(STORE / ".lock", "a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)  # msvcrt locks bytes from the current position; append mode starts at the end
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:  # LK_LOCK gives up after ten seconds; keep waiting
+                    pass
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 def slugify(text):
@@ -180,6 +214,11 @@ def act_quickstart(args):
 
 
 def act_publish(args):
+    with store_lock():
+        return publish(args)
+
+
+def publish(args):
     if not args.get("file_path"):
         raise ValueError("publish needs file_path: write the page to a file first")
     source = Path(args["file_path"]).expanduser().resolve()
@@ -217,7 +256,7 @@ def act_publish(args):
         description = args.get("description") or (entry or {}).get("description") or old_description
         if not description:
             notes.append("No `description`: pass a one-sentence explanation of the page.")
-        icon = (entry or {}).get("icon") or args.get("icon")
+        icon = args.get("icon") or (entry or {}).get("icon")
         published = wrap_page(content, description, icon)
         page_name = "index.html"
         if re.search(r"""fetch\(\s*[`'"](?![a-z]+:)""", content):
@@ -328,6 +367,18 @@ def act_read(args):
     return f"{link_of(slug, entry)} (Version {entry['version']}, source {entry.get('source')})\n\n" + page.read_text(encoding="utf-8")
 
 
+def act_delete(args):
+    with store_lock():
+        index = load_index()
+        slug, entry = find(args.get("url"), index)
+        if not slug:
+            raise ValueError("delete needs the `url` of a published artifact; list them with action \"list\"")
+        shutil.rmtree(STORE / slug, ignore_errors=True)
+        del index[slug]
+        save_index(index)
+    return f"Deleted {entry.get('title') or slug} and its versions; its link no longer opens. The source file {entry.get('source')} is untouched."
+
+
 def act_open(args):
     index = load_index()
     slug, entry = find(args.get("url"), index)
@@ -338,7 +389,7 @@ def act_open(args):
 
 
 ACTIONS = {"publish": act_publish, "quickstart": act_quickstart, "preview": act_preview,
-           "read": act_read, "list": act_list, "open": act_open}
+           "read": act_read, "list": act_list, "open": act_open, "delete": act_delete}
 
 
 # ---------------------------------------------------------------- MCP over stdio
