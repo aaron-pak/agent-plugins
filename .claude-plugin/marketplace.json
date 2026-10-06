@@ -38,6 +38,11 @@
       "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer."
     },
     {
+      "name": "teach",
+      "source": "./plugins/teach",
+      "description": "Teach a new skill or concept over several sessions, keeping lessons, reference sheets, and learning records in the current folder. From Matt Pocock."
+    },
+    {
       "name": "verification",
       "source": "./plugins/verification",
       "description": "Create a project-local verification skill that drives an app the way a user does, and keep it and its feature map accurate with periodic audits. From Lauren Tan's pstack."

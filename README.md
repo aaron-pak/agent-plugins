@@ -8,7 +8,7 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 - `plugins/<name>/`: one plugin per tool or workflow. `plugin.json` at the plugin root follows the open [Agent Plugins 1.0.0](https://agent-plugins.org) format, which Codex reads natively, and `skills/<skill>/` holds each skill with its references and license. Claude Code takes the plugin's name and description from the marketplace entry and finds `skills/` on its own, so plugins carry no `.claude-plugin/plugin.json`.
 - `instructions/`: the global agent instructions. Nothing installs these; link them by hand (see below).
 
-Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `implement-with-notes`, `session-manager` (a Claude Code mod, see [Mods](#mods)), `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
+Current plugins: `artifact-design`, `eli5`, `frontend-skill`, `implement-with-notes`, `session-manager` (a Claude Code mod, see [Mods](#mods)), `show-me`, `teach`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
 
 To add a plugin, create `plugins/<name>/plugin.json` and `skills/`, then add a matching entry with the same name and description to `.claude-plugin/marketplace.json`.
 
@@ -93,3 +93,5 @@ The session reloads the mod when its files change, so edits show up without a re
 `frontend-skill` is OpenAI's frontend design skill, originally installed through Codex's skill installer, under the Apache 2.0 license in its directory.
 
 `show-me` is HumanLayer's visual explanation skill, under the MIT license in its directory.
+
+`teach` is Matt Pocock's teaching skill from [mattpocock/skills](https://github.com/mattpocock/skills/tree/321658273cb1d20b76026717d027d505790106d4/skills/productivity/teach), revision `321658273cb1d20b76026717d027d505790106d4`, under the MIT license in its directory. The skill text matches upstream. It runs only when you call it, `/teach:teach` in Claude Code, as upstream intends.

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "teach",
+  "description": "Teach a new skill or concept over several sessions, keeping lessons, reference sheets, and learning records in the current folder. From Matt Pocock.",
+  "author": {
+    "name": "Matt Pocock"
+  },
+  "license": "MIT"
+}
