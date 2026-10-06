@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.291).
+# The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.292).
 # A page whose own viewport meta leaves out viewport-fit=cover gets the plain variant,
 # without the safe-area padding, as the tool does.
 SKELETON_START = "<!doctype html><html><head><meta charset=utf8>"

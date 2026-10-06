@@ -4,7 +4,7 @@ description: Design guidance and fundamentals for Artifacts - HTML pages such as
 ---
 
 <!--
-Anthropic's Claude Code built-in `artifact-design` skill, captured from Claude Code 2.1.291
+Anthropic's Claude Code built-in `artifact-design` skill, captured from Claude Code 2.1.292
 (2026-10-06). Its siblings `artifact-diagramming` and `dataviz` ship beside it, and this
 plugin's `artifact` MCP server stands in for the Artifact tool, as Claude Code pairs them.
 The text is Claude Code's, word for word: the page contract and guidance below are also

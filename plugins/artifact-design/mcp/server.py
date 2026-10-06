@@ -51,7 +51,7 @@ INSTRUCTIONS = (
     "instead; this server is for harnesses without it."
 )
 
-# Claude Code's Artifact tool description (2.1.291), less what only claude.ai can do: runtime
+# Claude Code's Artifact tool description (2.1.292), less what only claude.ai can do: runtime
 # capabilities, the shared database, Artifact types, watching, pinning and the asset store.
 DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}, and opened in the browser. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.
 
