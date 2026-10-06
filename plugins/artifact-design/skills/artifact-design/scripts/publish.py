@@ -25,22 +25,27 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.287).
-SKELETON_HEAD = (
-    '<!doctype html><html><head><meta charset=utf8>'
-    '<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">'
-)
-SKELETON_RESET = (
-    "<style>:root{color-scheme:light;box-sizing:border-box;"
-    "padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}"
-    "html{scroll-padding-top:env(safe-area-inset-top,0px)}"
+# The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.291).
+# A page whose own viewport meta leaves out viewport-fit=cover gets the plain variant,
+# without the safe-area padding, as the tool does.
+SKELETON_START = "<!doctype html><html><head><meta charset=utf8>"
+VIEWPORT_COVER = '<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">'
+VIEWPORT_PLAIN = '<meta name=viewport content="width=device-width,initial-scale=1">'
+SKELETON_HEAD = SKELETON_START + VIEWPORT_COVER
+RESET_BASE = (
     "body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;"
     "background:#faf9f5;color:#141413}"
     "img{max-width:100%}"
     "[hidden]:not([hidden=until-found i]){display:none!important}</style>"
 )
+SKELETON_RESET = (
+    "<style>:root{color-scheme:light;box-sizing:border-box;"
+    "padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}"
+    "html{scroll-padding-top:env(safe-area-inset-top,0px)}" + RESET_BASE
+)
+PLAIN_RESET = "<style>:root{color-scheme:light}" + RESET_BASE
 SKELETON_BODY = "</head><body>\n"
-SKELETON_END = "\n</body></html>\n"
+SKELETON_END = "\n</body></html>"
 
 # The claude.ai artifact allowlist from the skill's page contract, as a CSP.
 SCRIPT_HOSTS = (
@@ -76,7 +81,7 @@ SIZE_LIMIT = 16 * 1024 * 1024
 def unwrap(text):
     """Return (content, description) with any earlier publish skeleton removed."""
     description = None
-    if text.lstrip().startswith(SKELETON_HEAD) and GENERATOR in text:
+    if text.lstrip().startswith(SKELETON_START) and GENERATOR in text:
         head, _, rest = text.partition(SKELETON_BODY)
         match = re.search(r'<meta name="description" content="([^"]*)">', head)
         if match:
@@ -92,20 +97,45 @@ def unwrap(text):
         head = re.search(r"<head[^>]*>(.*?)</head>", text, re.IGNORECASE | re.DOTALL)
         body = re.search(r"<body[^>]*>(.*)</body>", text, re.IGNORECASE | re.DOTALL)
         head_html = head.group(1) if head else ""
-        head_html = re.sub(r"<meta\s+(charset|name=[\"']?viewport)[^>]*>", "", head_html, flags=re.IGNORECASE)
+        head_html = re.sub(r"<meta\s+charset[^>]*>", "", head_html, flags=re.IGNORECASE)
         print("note: the file was a full HTML document; publish.py adds the skeleton, "
               "so write only the page content next time.", file=sys.stderr)
         text = head_html.strip() + "\n" + (body.group(1).strip() if body else "")
     return text.strip("\n"), description
 
 
+def covers_safe_area(content):
+    """Whether the page runs edge to edge: true unless its own viewport meta leaves out viewport-fit=cover."""
+    viewports = re.findall(r"<meta\b[^>]*\bname\s*=\s*[\"']?viewport\b[^>]*>", content, re.IGNORECASE)
+    return not viewports or any(re.search(r"viewport-fit\s*=\s*cover", tag, re.IGNORECASE) for tag in viewports)
+
+
+def uses_mermaid(content):
+    """Whether the page has a real element with the class mermaid, which the claude.ai viewer draws as a diagram.
+
+    Comments and the raw text of script, style, textarea and template elements can mention
+    class="mermaid" without making a diagram, so they are left out.
+    """
+    if "mermaid.min.js" in content:
+        return False
+    markup = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    markup = re.sub(r"<(script|style|textarea|template|title)\b[^>]*>.*?</\1\s*>", "", markup,
+                    flags=re.DOTALL | re.IGNORECASE)
+    for match in re.finditer(r"""<[a-zA-Z][^<>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", markup):
+        if "mermaid" in (match.group(1) or match.group(2) or match.group(3) or "").split():
+            return True
+    return False
+
+
 def wrap(content, description):
-    head = SKELETON_HEAD + f'<meta http-equiv="Content-Security-Policy" content="{CSP}">' + GENERATOR
+    cover = covers_safe_area(content)
+    head = SKELETON_START + (VIEWPORT_COVER if cover else VIEWPORT_PLAIN)
+    head += f'<meta http-equiv="Content-Security-Policy" content="{CSP}">' + GENERATOR
     if description:
         head += f'<meta name="description" content="{html.escape(description, quote=True)}">'
-    head += SKELETON_RESET + SKELETON_BODY
+    head += (SKELETON_RESET if cover else PLAIN_RESET) + SKELETON_BODY
     tail = ""
-    if re.search(r"<[a-zA-Z][^<>]*\bclass\s*=\s*[\"'][^\"']*\bmermaid\b", content) and "mermaid.min.js" not in content:
+    if uses_mermaid(content):
         tail = "\n" + TAIL_MARK + "\n" + MERMAID
     return head + content + tail + SKELETON_END
 
