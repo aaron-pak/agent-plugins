@@ -9,13 +9,15 @@ local machine:
 - publish: wraps the page in the claude.ai publish skeleton and writes it to an artifacts
   folder (ARTIFACTS_DIR, default ~/artifacts), one folder per artifact, keyed by the
   source file so publishing the same file again updates the same artifact.
-- preview: renders the page at desktop and phone widths in light and dark and lists what
-  breaks (scripts/preview.mjs; needs Node and Playwright).
+- preview: renders the page at 1280 and 390px wide in light and dark, as Claude Code's
+  ArtifactCheck does, and returns the captures and what breaks (scripts/preview.mjs; needs
+  Node and Playwright).
 - list, read, open, delete: the published artifacts.
 
 Standard library only. Speaks MCP over stdio (newline-delimited JSON-RPC 2.0).
 """
 
+import base64
 import contextlib
 import html
 import io
@@ -72,7 +74,7 @@ When a finished piece of work is meant for other people or agents, such as a rep
 **Calls**: `action` picks one (publish when omitted):
 - **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place. A first publish opens the page in the browser.
 - **quickstart**: takes `intent` and returns the page contract and the design guidance for a plain page. It is read-only. Only plain pages can be made here; Slides, Design and Docs are claude.ai Artifact types.
-- **preview**: takes `file_path` (the page Claude wrote, before or after publishing) and renders it at desktop and phone widths in light and dark, returning screenshot paths and a list of overflow, colors that ignore the theme, blocked loads and script errors. It needs Node and Playwright; when they are missing it says so. This is the preview the `artifact-design` skill describes.
+- **preview**: takes `file_path` (the page Claude wrote, before or after publishing) and renders it at 1280 and 390px wide in light and dark, returning a capture of each render and a list of overflow, clipped SVG labels, colors set for one theme only, failed diagrams, blocked loads and script errors. It needs Node and Playwright; when they are missing it says so. This is the preview the `artifact-design` skill describes.
 - **read**: takes `url` and returns the published page's content.
 - **list**: returns the artifacts published on this machine, newest first, with title, link, last-updated time and source file.
 - **delete**: with `url`, permanently deletes a published artifact and its versions, which cannot be undone. Claude does this only when the person asks for that artifact to be deleted or unpublished, or says they did not want it published, never on its own initiative. The source file stays.
@@ -340,11 +342,25 @@ def act_preview(args):
     except (OSError, subprocess.SubprocessError):
         pass
     result = subprocess.run(
-        ["node", str(SCRIPTS / "preview.mjs"), str(source)],
+        ["node", str(SCRIPTS / "preview.mjs"), str(source), "--json", "--files-note"],
         capture_output=True, text=True, timeout=240, env=env,
     )
-    output = (result.stdout + result.stderr).strip()
-    return output or "The preview produced no output."
+    try:
+        report = json.loads(result.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        output = (result.stdout + result.stderr).strip()
+        return output or "The preview produced no output."
+    # Like Claude Code's preview, the result carries each capture as an image after the report,
+    # and a preview that captured nothing is an error.
+    content = [{"type": "text", "text": report["text"]}]
+    for number, shot in enumerate(report.get("shots", []), 1):
+        try:
+            data = base64.b64encode(Path(shot["path"]).read_bytes()).decode("ascii")
+        except OSError:
+            continue
+        content.append({"type": "text", "text": f"Capture {number} ({shot['label']}):"})
+        content.append({"type": "image", "data": data, "mimeType": "image/jpeg"})
+    return {"content": content, "isError": bool(report.get("failed"))}
 
 
 def act_list(_args):
@@ -416,8 +432,8 @@ def handle(message):
         if action not in ACTIONS:
             return {"content": [{"type": "text", "text": f"Unknown action {action!r}."}], "isError": True}
         try:
-            text = ACTIONS[action](args)
-            return {"content": [{"type": "text", "text": text}]}
+            result = ACTIONS[action](args)
+            return result if isinstance(result, dict) else {"content": [{"type": "text", "text": result}]}
         except Exception as error:  # reported to the model as a tool error
             return {"content": [{"type": "text", "text": f"{action} failed: {error}"}], "isError": True}
     raise LookupError(f"method not found: {method}")
