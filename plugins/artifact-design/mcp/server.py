@@ -342,7 +342,7 @@ def act_preview(args):
     except (OSError, subprocess.SubprocessError):
         pass
     result = subprocess.run(
-        ["node", str(SCRIPTS / "preview.mjs"), str(source), "--json", "--files-note"],
+        ["node", str(SCRIPTS / "preview.mjs"), str(source), "--json"],
         capture_output=True, text=True, timeout=240, env=env,
     )
     try:
