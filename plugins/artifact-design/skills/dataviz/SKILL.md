@@ -4,8 +4,8 @@ description: 'Use this skill whenever you are about to create ANY chart, graph, 
 ---
 
 <!--
-Anthropic's Claude Code built-in `dataviz` skill, captured verbatim from Claude Code 2.1.292
-(2026-10-06), with its references/ and scripts/ unchanged.
+Anthropic's Claude Code built-in `dataviz` skill, captured verbatim from Claude Code 2.1.293
+(2026-10-07), with its references/ and scripts/ unchanged.
 -->
 
 # Data Visualization

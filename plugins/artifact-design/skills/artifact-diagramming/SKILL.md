@@ -5,7 +5,7 @@ description: Diagramming know-how for Artifacts - when a picture earns its place
 
 <!--
 Anthropic's Claude Code built-in `artifact-diagramming` skill, captured verbatim from
-Claude Code 2.1.292 (2026-10-06).
+Claude Code 2.1.293 (2026-10-07).
 -->
 
 Draw as the engineer who has to live with the decision, not as a decorator: a diagram earns its place when it lets a cold reader see a mechanism they would otherwise have to assemble from prose - where data flows, which components talk, what changes between two options, what state a request moves through. If a sentence says it faster, write the sentence.
