@@ -94,11 +94,11 @@ SCHEMA = {
         "action": {
             "type": "string",
             "enum": ["publish", "quickstart", "preview", "read", "list", "open", "delete"],
-            "description": "Omitting it means 'publish'.",
+            "description": "One of 'publish', 'quickstart', 'preview', 'read', 'list', 'open', 'delete'. Omitting it means 'publish'. **Calls** in the description says what each one does and takes, except as noted here.",
         },
         "file_path": {"type": "string", "description": "publish and preview: the page file (.html, or .md only when a skill says so)."},
         "description": {"type": "string", "description": "publish: one sentence explaining the page."},
-        "title": {"type": "string", "description": "publish: the fallback title for an HTML page whose file has no <title>."},
+        "title": {"type": "string", "description": "publish: the fallback title for an HTML page whose file has no <title>. It is a name, not a summary, and Claude keeps it the same across redeploys."},
         "icon": {"type": "string", "description": "publish: one short generic word for the page's tab icon, such as chart, calendar, recipe, code or map: a plain signifier, never a product or brand name. Include it on every page's first publish and omit it on a redeploy so the artifact keeps its icon, passing a new one only when the person asks."},
         "files": {
             "type": "object",
@@ -106,8 +106,20 @@ SCHEMA = {
             "description": "publish: supporting files as {\"published/path\": \"source/path\"}; null removes one. A relative source path is read from the working directory, or else from the page's folder.",
         },
         "url": {"type": "string", "description": "publish: an existing artifact's link to update. read, open and delete: the artifact's link."},
-        "intent": {"type": "string", "enum": ["document", "slides", "design", "other"], "description": "quickstart: what is being made. Only plain pages are supported here."},
+        "intent": {"type": "string", "enum": ["document", "slides", "design", "other"], "description": "quickstart: what is being made: 'document' (text to read or edit together), 'slides' (a deck or one slide), 'design' (a visual design or prototype on a canvas), 'other' (anything else, or unsure). Only plain pages are made here."},
     },
+}
+
+# Claude Code cuts an MCP tool's description at 2048 characters (CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH)
+# but passes its input schema whole, so the description keeps its first paragraph and the rest follows,
+# in order, as the input schema's description. Claude Code also defers MCP tools behind tool search
+# unless they ask to load up front; its own Artifact tool is always loaded.
+LEAD, _, REST = DESCRIPTION.partition("\n\n")
+TOOL = {
+    "name": "Artifact",
+    "description": LEAD + " The rest of this description is the `description` of the tool's input schema.",
+    "inputSchema": {"description": REST, **SCHEMA},
+    "_meta": {"anthropic/alwaysLoad": True},
 }
 
 
@@ -423,7 +435,7 @@ def handle(message):
     if method == "ping":
         return {}
     if method == "tools/list":
-        return {"tools": [{"name": "Artifact", "description": DESCRIPTION, "inputSchema": SCHEMA}]}
+        return {"tools": [TOOL]}
     if method == "tools/call":
         if params.get("name") != "Artifact":
             raise LookupError(f"unknown tool {params.get('name')!r}")
