@@ -10,8 +10,8 @@ Write the page content exactly as the skill describes for the Artifact tool: no 
 Like the Artifact tool, it leaves page.html as written and publishes a copy: page.published.html
 beside it (or --out), so relative paths to the page's own files still resolve. The copy is
 wrapped in the tool's publish skeleton, carries a Content-Security-Policy that mirrors the
-claude.ai artifact allowlist (so a load that claude.ai blocks fails here too), and renders
-<pre class="mermaid"> blocks the way the claude.ai viewer does. The script prints the
+claude.ai artifact allowlist (so a load that claude.ai blocks fails here too), and draws
+<pre class="mermaid"> blocks with the Mermaid runtime Claude Code adds. The script prints the
 published path, the local stand-in for the artifact's link, and opens it in the browser.
 To update, edit page.html and publish it again. A file that already carries the skeleton
 is unwrapped first instead of nested.
@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.292).
+# The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.293).
 # A page whose own viewport meta leaves out viewport-fit=cover gets the plain variant,
 # without the safe-area padding, as the tool does.
 SKELETON_START = "<!doctype html><html><head><meta charset=utf8>"
@@ -69,12 +69,10 @@ CSP = "; ".join([
 
 GENERATOR = '<meta name="generator" content="artifact-design publish.py">'
 TAIL_MARK = "<!-- artifact-design publish.py -->"
-MERMAID = (
-    '<script src="https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js"></script>\n'
-    "<script>mermaid.initialize({startOnLoad:true,theme:"
-    "(document.documentElement.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))"
-    "==='dark'?'dark':'default'});</script>"
-)
+# The Mermaid runtime Claude Code 2.1.293 adds to a page with a <pre class="mermaid"> block,
+# byte for byte, except that Mermaid 11.16.1 loads from jsDelivr (the same file, checked by
+# sha256) instead of claude.ai's /_runtime/ path.
+MERMAID = (Path(__file__).with_name("mermaid-runtime.html")).read_text(encoding="utf-8")
 SIZE_LIMIT = 16 * 1024 * 1024
 
 
@@ -111,17 +109,18 @@ def covers_safe_area(content):
 
 
 def uses_mermaid(content):
-    """Whether the page has a real element with the class mermaid, which the claude.ai viewer draws as a diagram.
+    """Whether the page has a <pre> element with the class mermaid, the only element Claude Code draws as a diagram.
 
     Comments and the raw text of script, style, textarea and template elements can mention
-    class="mermaid" without making a diagram, so they are left out.
+    <pre class="mermaid"> without making a diagram, so they are left out.
     """
     if "mermaid.min.js" in content:
         return False
     markup = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
     markup = re.sub(r"<(script|style|textarea|template|title)\b[^>]*>.*?</\1\s*>", "", markup,
                     flags=re.DOTALL | re.IGNORECASE)
-    for match in re.finditer(r"""<[a-zA-Z][^<>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""", markup):
+    for match in re.finditer(r"""<pre(?=[\s/>])[^<>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""",
+                             markup, re.IGNORECASE):
         if "mermaid" in (match.group(1) or match.group(2) or match.group(3) or "").split():
             return True
     return False
@@ -136,7 +135,7 @@ def wrap(content, description):
     head += (SKELETON_RESET if cover else PLAIN_RESET) + SKELETON_BODY
     tail = ""
     if uses_mermaid(content):
-        tail = "\n" + TAIL_MARK + "\n" + MERMAID
+        tail = "\n" + TAIL_MARK + "\n" + MERMAID.rstrip("\n")
     return head + content + tail + SKELETON_END
 
 
