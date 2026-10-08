@@ -102,11 +102,17 @@ def check_plugin(entry):
     if not plugin_dir.is_dir():
         error(where, "directory missing")
         return
-    if (plugin_dir / "hooks" / "hooks.json").is_file():
-        check_mod(entry, plugin_dir, where)
-        return
     if (plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        error(where, "has .claude-plugin/plugin.json; plugins carry only the root plugin.json")
+        if (plugin_dir / "plugin.json").exists():
+            error(where, "has .claude-plugin/plugin.json; plugins carry only the root plugin.json")
+        else:
+            check_mod(entry, plugin_dir, where)
+            return
+    hooks = plugin_dir / "hooks" / "hooks.json"
+    if hooks.is_file():
+        config = load_json(hooks)
+        if config is not None and not isinstance(config.get("hooks"), dict):
+            error(f"{where}/hooks/hooks.json", "has no hooks object")
 
     manifest = load_json(plugin_dir / "plugin.json")
     if manifest is not None:
