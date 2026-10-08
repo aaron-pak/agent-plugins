@@ -3,21 +3,6 @@ name: artifact-design
 description: Design guidance and fundamentals for Artifacts - HTML pages such as a report, explainer, plan, dashboard, tool, or mockup. Load before writing any artifact, including a skill-instructed Markdown one - Markdown is never a shortcut past the design pass.
 ---
 
-<!--
-Anthropic's Claude Code built-in `artifact-design` skill, captured from Claude Code 2.1.293
-(2026-10-07). Its siblings `artifact-diagramming` and `dataviz` ship beside it, and this
-plugin's `artifact` MCP server stands in for the Artifact tool, as Claude Code pairs them.
-The text is Claude Code's, word for word: the page contract and guidance below are also
-what the Artifact tool's quickstart returns for a plain page. The only edits:
-  1. Frontmatter: `description` and `when_to_use` merged into one description, with
-     example page types so the skill loads without a tool forcing it.
-  2. "Outside claude.ai" section added: names the tool that stands in for the Artifact
-     tool, and maps Claude and CLAUDE.md to this harness.
-  3. Removed, because only claude.ai can do them: the pointers to runtime capabilities
-     and the `db` store, the Artifact-type note, and Open viewers. The device-API
-     sentence in the page contract takes the wording Claude Code itself substitutes
-     when no runtime capabilities apply.
--->
 
 ## Outside claude.ai
 

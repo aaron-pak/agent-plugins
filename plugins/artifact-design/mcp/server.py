@@ -46,22 +46,23 @@ PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 INSTRUCTIONS = (
     "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, "
     "tools, mockups) as local files and previews them, the way claude.ai's Artifact tool does. "
-    "Before writing a new artifact, call Artifact with action \"quickstart\" (or load the "
-    "artifact-design skill when it is installed); then write the page to a file and publish it "
-    "with Artifact, which wraps it in the page skeleton. Give the user the published link. "
+    "Before writing a new artifact, call Artifact with action \"quickstart\"; then write the page "
+    "to a file and publish it with Artifact in the same message, which wraps it in the page "
+    "skeleton. Give the user the published link. "
     "Where a built-in Artifact tool that publishes to claude.ai is also available, use that one "
     "instead; this server is for harnesses without it."
 )
 
 # Claude Code's Artifact tool description (2.1.293), less what only claude.ai can do: runtime
-# capabilities, the shared database, Artifact types, watching, pinning and the asset store.
+# capabilities, the shared database, watching, pinning, the asset store, and Artifact types beyond
+# the rule that a new artifact starts with quickstart.
 DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}, and opened in the browser. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.
 
 When a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as "can you write up the plan?". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as "should we ship this?", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as "just give me the .html file" or "save these notes as a .md file", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.
 
-**Before writing the file, Claude must load the `artifact-design` skill**, or call this tool with `action: "quickstart"`, whose result carries the same guidance and counts as loading it, including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file and calls Artifact with its path, putting the file in its scratchpad directory when the system prompt lists one and the person names no other location.
+**Before writing the file, Claude must load the `artifact-design` skill**, including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file (via Write/Edit) and calls Artifact with its path, putting the file in its scratchpad directory when the system prompt lists one and the person names no other location. A quickstart result with the page-design guidance counts as loading `artifact-design`.
 
-**If Claude writes a page before that guidance has loaded**, its contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never "Name: explainer", and puts the explanation in `description`. Claude writes only the page content, with no doctype, `<html>`, `<head>` or `<body>` tags, because publishing wraps the page in a skeleton. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme="light"])` and again under `:root[data-theme="dark"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.
+**If Claude writes a page before that skill has loaded**, the skill's contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never "Name: explainer", and puts the explanation in `description`. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme="light"])` and again under `:root[data-theme="dark"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.
 
 **Format**: Claude always authors the page as `.html`, and publishes a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, Claude builds an HTML page from its content, keeping its substance and designing the page as it would any other artifact rather than transcribing the Markdown one to one.
 
@@ -85,6 +86,8 @@ When a finished piece of work is meant for other people or agents, such as a rep
 **To update an artifact from another file**, Claude passes that artifact's link as `url`. Claude does this whenever the person wants an existing artifact changed or its link kept, and finds the link with `action: "list"` or by asking the person. Claude first reads the artifact with `action: "read"` and builds on the version that comes back. Publishing a new file without `url` creates a separate artifact. If the person asks where to find their artifacts again, `action: "list"` lists them, and each one is a folder in {store}.
 
 **Files Claude did not write**: Claude reads the whole file before publishing it, even when the person asks it not to. Publishing distributes the content, and Claude never distributes what it has not seen. A request for privacy is a reason to read before publishing, not an exemption. If Claude cannot read the file, it does not publish it.
+
+**Artifact types**: published Artifact types (ready-made pages, such as slide decks, documents or designs, that take Claude's content as data) exist only on claude.ai, so every artifact here is a plain page. When the person wants something new made, in whatever words — a document for others to read (not one that belongs in the codebase), a visual design or any other page — Claude's first call is `action: "quickstart"` with the fitting `intent`, before loading a skill or writing a file, once per new artifact. The quickstart result replaces, for a plain page, loading the artifact-design skill.
 
 **Claude never publishes** a page that impersonates a real person or organization, for example by using their name, branding, byline or domain. Claude also never publishes fabricated records, receipts or reviews presented as genuine, forms or flows that collect credentials or payment details under false pretenses, or content that targets a private individual. Claude refuses whether it wrote the page or the person supplied it, and whatever purpose is claimed, such as a prop or a test, when the page would work as the real thing. If publishing is refused, Claude does not suggest other ways to host or share the page.""".replace("{store}", str(STORE))
 
@@ -115,9 +118,11 @@ SCHEMA = {
 # in order, as the input schema's description. Claude Code also defers MCP tools behind tool search
 # unless they ask to load up front; its own Artifact tool is always loaded.
 LEAD, _, REST = DESCRIPTION.partition("\n\n")
+FIRST_CALL = (' When the person wants something new made, Claude\'s first call is `action: "quickstart"`, before'
+              ' loading a skill or writing a file (see **Artifact types**).')
 TOOL = {
     "name": "Artifact",
-    "description": LEAD + " The rest of this description is the `description` of the tool's input schema.",
+    "description": LEAD + FIRST_CALL + " The rest of this description is the `description` of the tool's input schema.",
     "inputSchema": {"description": REST, **SCHEMA},
     "_meta": {"anthropic/alwaysLoad": True},
 }
@@ -211,19 +216,21 @@ def wrap_page(content, description, icon):
 def act_quickstart(args):
     text = GUIDANCE.read_text(encoding="utf-8")
     start = text.index("## Page contract")
-    guidance = text[start:].strip()
-    intro = (
-        "Quickstart. Only plain pages can be made here: Slides, Design, Docs and Design System "
-        "Artifact types exist only on claude.ai.\n\n"
-        if args.get("intent") not in (None, "other")
-        else "Quickstart. "
+    # Claude Code's quickstart leaves the empty dataviz callout's blank lines before "## Process".
+    guidance = text[start:].strip().replace("\n\n## Process", "\n\n\n\n## Process", 1)
+    only_plain = (
+        "Only plain pages can be made here: Slides, Design, Docs and Design System Artifact types exist "
+        "only on claude.ai.\n\n" if args.get("intent") not in (None, "other") else ""
     )
     return (
-        intro
+        "Quickstart. This one result stands in for listing the Artifact types — do not make that call as well.\n\n"
+        "No published Artifact types are listed for this account (the type catalog isn't available to this account).\n\n"
+        + only_plain
         + "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own "
         "text, so do not load that skill as well. Write the page to a file and publish it in the same "
         "message: the two calls run in order.\n\n"
         + guidance
+        + "\n\n\n[Design systems not listed: this account lists no Design System type, so there are none to choose from.]"
     )
 
 
