@@ -48,10 +48,11 @@ const stop = async (text, failed = false) => {
   process.exit(0);
 };
 
-// Playwright as the person installed it: beside this script, in the project the preview runs
-// from, or globally (Node's own global folder, then whatever `npm root -g` names).
+// Playwright as the person installed it: beside this script or globally (Node's own global
+// folder, then whatever `npm root -g` names). Never the project's own node_modules: the server
+// runs --check at startup, and loading it would run the project's code before anyone asked.
 function loadPlaywright() {
-  const roots = [import.meta.url, pathToFileURL(join(process.cwd(), "noop.js")).href];
+  const roots = [import.meta.url];
   const prefix = dirname(dirname(process.execPath));
   roots.push(pathToFileURL(join(process.platform === "win32" ? dirname(process.execPath) : join(prefix, "lib"), "node_modules", "noop.js")).href);
   const tryRoot = (root) => {
@@ -106,11 +107,22 @@ function bundledChromium(pw) {
     return null;
   }
 }
+// Playwright's headless shell, which a plain launch uses, installed beside its full Chromium
+// (chromium-<rev> and chromium_headless_shell-<rev> share a folder) or on its own.
+function headlessShell(pw) {
+  try {
+    const match = pw.chromium.executablePath().match(/^(.*)[\\/]chromium-(\d+)[\\/]/);
+    const path = match && join(match[1], `chromium_headless_shell-${match[2]}`);
+    return path && existsSync(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
 
 const playwright = loadPlaywright();
 if (checkOnly) {
   // A fast check for the MCP server, which lists preview only when it can run.
-  const browserPath = playwright ? bundledChromium(playwright) ?? systemBrowsers().find(isExecutable) : null;
+  const browserPath = playwright ? headlessShell(playwright) ?? bundledChromium(playwright) ?? systemBrowsers().find(isExecutable) : null;
   const reason = !playwright ? "Playwright isn't installed" : !browserPath ? "Playwright has no Chromium and no Chrome, Chromium, Edge or Brave is installed" : undefined;
   console.log(JSON.stringify({ ok: !reason, reason, browser: browserPath ?? undefined }));
   await new Promise((done) => process.stdout.write("", done));
@@ -172,7 +184,7 @@ const wrapped = join(outDir, `${stem}.html`);
 const python = process.env.ARTIFACT_PYTHON || (process.platform === "win32" ? "python" : "python3");
 try {
   execFileSync(python, [join(here, "publish.py"), page, "--out", wrapped, "--no-open", "--quiet"],
-    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
 } catch (error) {
   const why = String(error.stderr || error.message).trim().split("\n").at(-1).replace(/^publish\.py: .*?: (?=the source file)/, "")
     .replace("then publish again. Nothing was published.", "then preview again.");

@@ -57,11 +57,30 @@ INDEX = STORE / "index.json"
 # Claude Code shows the model a scratchpad only when its own Artifact tool is on, so page files
 # written for this tool would land in the person's project. They go here instead, one folder per
 # server process (one session), as a scratchpad is, so two sessions' plan.html don't collide.
-DRAFTS = (Path(tempfile.gettempdir()) / (f"artifact-drafts-{os.getuid()}" if hasattr(os, "getuid") else "artifact-drafts")
-          / f"{datetime.now():%Y%m%d-%H%M%S}-{os.getpid()}")
-with contextlib.suppress(OSError):
-    DRAFTS.mkdir(parents=True, exist_ok=True)
+DRAFTS_ROOT = Path(tempfile.gettempdir()) / (f"artifact-drafts-{os.getuid()}" if hasattr(os, "getuid") else "artifact-drafts")
+
+
+def make_drafts():
+    """A private (0700) folder for this session under DRAFTS_ROOT, which must be a real folder this
+    user owns, so nobody else can read the drafts or plant the folder; empty folders a day old go."""
+    try:
+        DRAFTS_ROOT.mkdir(mode=0o700, exist_ok=True)
+        info = DRAFTS_ROOT.lstat()
+        if DRAFTS_ROOT.is_symlink() or not DRAFTS_ROOT.is_dir() or (hasattr(os, "getuid") and info.st_uid != os.getuid()):
+            raise OSError(f"{DRAFTS_ROOT} isn't a folder of this user's own")
+        for old in DRAFTS_ROOT.iterdir():
+            with contextlib.suppress(OSError):
+                if old.is_dir() and time.time() - old.stat().st_mtime > 86400:
+                    old.rmdir()  # only empty ones
+        return Path(tempfile.mkdtemp(prefix=f"{datetime.now():%Y%m%d-%H%M%S}-", dir=DRAFTS_ROOT))
+    except OSError:
+        return Path(tempfile.mkdtemp(prefix="artifact-drafts-"))
+
+
+DRAFTS = make_drafts()
 OPEN_PAGES = os.environ.get("ARTIFACT_OPEN", "1") != "0"
+# What publish.open_in_browser can open: macOS, Windows, or a Linux desktop session.
+CAN_OPEN = sys.platform == "darwin" or os.name == "nt" or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 PREVIEW_SWITCH = os.environ.get("ARTIFACT_PREVIEW", "1") != "0"
 PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 STARTED = time.monotonic()
@@ -70,7 +89,7 @@ PREVIEW_WAIT = 10  # seconds tools/list waits for the startup preview check
 INSTRUCTIONS = (
     "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, "
     "tools, mockups) as local files, the way claude.ai's Artifact tool publishes them. "
-    "It stands in for Claude Code's own Artifact tool, which is off or absent here: its full name "
+    "It stands in for Claude Code's own Artifact tool where that tool is off or absent: its full name "
     "carries a server prefix (mcp__plugin_artifact-design_artifact__Artifact in Claude Code, "
     "mcp__artifact__Artifact in Codex), and "
     "\"Artifact\" in its description, in quickstart's result and in the skills means this tool. "
@@ -85,7 +104,7 @@ INSTRUCTIONS = (
 # capabilities, the shared database, watching, pinning, the asset store, and Artifact types beyond
 # the rule that a new artifact starts with quickstart. {opened}, {open_note}, {preview} and the
 # folders are filled in by describe().
-DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}{opened}. It stands in for Claude Code's own Artifact tool, which is off or absent here: its full name carries a server prefix (in Claude Code, `mcp__plugin_artifact-design_artifact__Artifact`), and "Artifact" in this text, in quickstart's result and in the skills means this tool, so a call to the bare name `Artifact` that fails as unavailable or disabled goes to this tool's full name instead. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.
+DESCRIPTION = """The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}{opened}. It stands in for Claude Code's own Artifact tool where that tool is off or absent: its full name carries a server prefix (in Claude Code, `mcp__plugin_artifact-design_artifact__Artifact`), and "Artifact" in this text, in quickstart's result and in the skills means this tool, so a call to the bare name `Artifact` that fails as unavailable or disabled goes to this tool's full name instead. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.
 
 When a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as "can you write up the plan?". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as "should we ship this?", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as "just give me the .html file" or "save these notes as a .md file", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.
 
@@ -99,7 +118,7 @@ When a finished piece of work is meant for other people or agents, such as a rep
 
 **Size**: Claude keeps the rendered page at 16MB or smaller, and embedded `data:` URIs count toward that limit.
 
-**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.
+**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. The page opens from a `file://` link, so it can link to these files and load them as images, stylesheets and classic scripts, but it cannot `fetch()`, import or start Workers from them: data a script reads goes inline. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.
 
 **Calls**: `action` picks one (publish when omitted):
 - **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place.{open_note}
@@ -166,8 +185,8 @@ CLAUDE_AI_PARAMS = {"after", "auto_open", "contract", "design_systems", "favicon
 def describe(preview):
     """The tool's description, with the preview bullet only when preview is offered."""
     return (DESCRIPTION
-            .replace("{opened}", ", and opened in the browser" if OPEN_PAGES else "")
-            .replace("{open_note}", " A first publish opens the page in the browser." if OPEN_PAGES else "")
+            .replace("{opened}", ", and opened in the browser" if OPEN_PAGES and CAN_OPEN else "")
+            .replace("{open_note}", " A first publish opens the page in the browser." if OPEN_PAGES and CAN_OPEN else "")
             .replace("{preview}", PREVIEW_BULLET if preview else "")
             .replace("{drafts}", str(DRAFTS))
             .replace("{store}", str(STORE)))
@@ -218,8 +237,8 @@ def schema(preview, compact=False):
 
 def tool(preview, client):
     if "codex" in (client or "").lower():
-        fill = lambda text: (text.replace("{opened}", " and opened in the browser" if OPEN_PAGES else "")
-                             .replace("{open_note}", " A first publish opens the page." if OPEN_PAGES else "")
+        fill = lambda text: (text.replace("{opened}", " and opened in the browser" if OPEN_PAGES and CAN_OPEN else "")
+                             .replace("{open_note}", " A first publish opens the page." if OPEN_PAGES and CAN_OPEN else "")
                              .replace("{preview}", CODEX_PREVIEW if preview else "")
                              .replace("{drafts}", str(DRAFTS)).replace("{store}", str(STORE)))
         return {"name": "Artifact", "description": fill(CODEX_LEAD),
@@ -310,13 +329,15 @@ def load_index(repair=False):
     except ValueError:
         pass
     note = None
+    index = rebuild_index()
     if repair:
         backup = INDEX.with_name(f"index.json.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
         with contextlib.suppress(OSError):
             INDEX.replace(backup)
+            save_index(index)
             note = (f"The artifacts index ({INDEX}) could not be read; it was moved to {backup.name} and "
                     "rebuilt from the artifact folders, which keep their pages but not their source files.")
-    return rebuild_index(), note
+    return index, note
 
 
 def save_index(index):
@@ -437,8 +458,11 @@ def plan_files(files, folder, page_dir, page_name):
         relative = target.relative_to(folder.resolve()).as_posix() if folder.resolve() in target.parents else None
         if relative is None:
             raise ValueError(f"supporting file path {published_path!r} must stay inside the artifact")
-        if relative in (page_name, "index.html", "index.md") or relative.startswith(".versions/"):
+        if relative in (page_name, "index.html", "index.md", ".versions") or relative.startswith(".versions/"):
             raise ValueError(f"supporting file path {published_path!r} is the artifact's own page; pick another name")
+        if target.is_dir() or any(parent.is_file() for parent in target.parents if folder.resolve() in parent.parents):
+            raise ValueError(f"supporting file path {published_path!r} collides with a folder or file already in the "
+                             "artifact; pick another path, or remove the old one with null first")
         if origin is None:
             plan.append((target, None))
             continue
@@ -484,7 +508,8 @@ def act_quickstart(args):
         + only_plain
         + "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own "
         "text, so do not load that skill as well. Write the page to a file and publish it in the same "
-        "message: the two calls run in order.\n\n"
+        "message: the two calls run in order. Unless the person named a location, the file goes in "
+        f"{DRAFTS} (or in the scratchpad directory, when the system prompt lists one), not in the project.\n\n"
         + guidance
         + "\n\n\n[Design systems not listed: this account lists no Design System type, so there are none to choose from.]"
     )
@@ -527,7 +552,8 @@ def publish(args):
             slug = SESSION_SOURCES[str(source)]
             entry = index[slug]
         else:
-            earlier = next(((s, e) for s, e in index.items() if e.get("source") == str(source)), None)
+            earlier = max(((s, e) for s, e in index.items() if e.get("source") == str(source)),
+                          key=lambda item: item[1].get("updated") or "", default=None)
             if earlier:
                 notes.append(f"This path was published before as {link_of(*earlier)}, in an earlier session; "
                              "that artifact is unchanged. Pass `url` to update that one instead.")
@@ -632,10 +658,17 @@ def act_preview(args):
     source = absolute(args["file_path"], "file_path")
     if not source.is_file():
         raise ValueError(f"{source} doesn't exist")
-    env = dict(os.environ, ARTIFACT_PYTHON=sys.executable)
+    env = dict(os.environ, ARTIFACT_PYTHON=sys.executable, PYTHONIOENCODING="utf-8")
+    # Captures stay on disk, as Claude Code's do, in this session's private drafts folder.
+    previews = DRAFTS / ".previews"
+    previews.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return run_preview(source, tempfile.mkdtemp(prefix=f"{source.stem[:40]}-", dir=previews), env)
+
+
+def run_preview(source, out, env):
     try:
         result = subprocess.run(
-            [shutil.which("node") or "node", str(SCRIPTS / "preview.mjs"), str(source), "--json"],
+            [shutil.which("node") or "node", str(SCRIPTS / "preview.mjs"), str(source), "--json", "--out", out],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240, env=env,
             stdin=subprocess.DEVNULL,
         )
