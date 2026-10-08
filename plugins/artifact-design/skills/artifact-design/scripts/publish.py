@@ -112,15 +112,17 @@ def page_title(content):
 # What publishing puts around a page: the skeleton, with this script's metas when it published
 # the page, and the diagram runtimes before the end. A page that carries exactly this (one this
 # script or the Artifact tool published, read back or downloaded) is unwrapped before it is
-# wrapped again, as the Artifact tool unwraps its own skeleton; nothing else is.
+# wrapped again, as the Artifact tool unwraps its own skeleton; nothing else is. Its line breaks
+# may be CRLF, as a page written as text on Windows has them.
 SKELETON_RE = re.compile(
     r'(?i:<!doctype html>)<html(?: lang="([^"]{1,35})")?><head><meta charset=utf8>'
     r'<meta name=viewport content="width=device-width,initial-scale=1(,viewport-fit=cover)?">'
     r'((?:<meta http-equiv="Content-Security-Policy" content="[^"]*">)?(?:' + re.escape(GENERATOR) + r')?'
     r'(?:<link rel="icon" href="[^"]*">)?(?:<meta name="description" content="([^"]*)">)?)'
-    r'<style>[^<]*</style></head><body>\n')
+    r'<style>[^<]*</style></head><body>\r?\n')
+TAIL_RE = re.compile(r"\r?\n" + re.escape(TAIL_MARK) + r"\r?\n")
 RUNTIME_BLOCKS = re.compile(
-    r"\n?<!--claude-(mermaid|hljs|chart)-runtime-begin:\d+-->[\s\S]*?<!--claude-\1-runtime-end-->\n?")
+    r"(?:\r?\n)?<!--claude-(mermaid|hljs|chart)-runtime-begin:\d+-->[\s\S]*?<!--claude-\1-runtime-end-->(?:\r?\n)?")
 
 
 def unwrap(text):
@@ -130,14 +132,14 @@ def unwrap(text):
     rest = text.lstrip()
     match = SKELETON_RE.match(rest)
     if not match or not rest.rstrip().endswith("</body></html>"):
-        return text.strip("\n"), None, None, None
+        return text.strip("\r\n"), None, None, None
     body = rest[match.end():rest.rstrip().rfind("</body></html>")]
-    tail = body.find("\n" + TAIL_MARK + "\n")
-    if tail != -1:
-        body = body[:tail]
+    tail = TAIL_RE.search(body)
+    if tail:
+        body = body[:tail.start()]
     body = RUNTIME_BLOCKS.sub("", body)
     description = html.unescape(match.group(4)) if match.group(4) is not None else None
-    return body.strip("\n"), description, match.group(1), bool(match.group(2))
+    return body.strip("\r\n"), description, match.group(1), bool(match.group(2))
 
 
 def is_full_document(content):
@@ -266,7 +268,7 @@ def main():
     if fetches_own_files(content):
         warnings.append(OWN_FILES_FETCH_NOTE.replace("preview doesn't", "preview.mjs doesn't"))
     published = wrap(content, description, lang, cover)
-    out.write_text(published, encoding="utf-8")
+    out.write_bytes(published.encode("utf-8"))  # as written: write_text would turn \n into \r\n on Windows
     if len(published.encode("utf-8")) > SIZE_LIMIT:
         warnings.append("the page is over 16MB, which claude.ai would refuse")
 

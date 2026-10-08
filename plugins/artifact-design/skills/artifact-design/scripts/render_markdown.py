@@ -29,9 +29,16 @@ PUNCT = re.escape("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
 ENTITY = re.compile(r"&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});")
 RAW_TAG = re.compile(
     r"<!--[\s\S]*?-->|<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'=<>`]+))?)*\s*/?>"
-    r"|</[A-Za-z][A-Za-z0-9-]*\s*>")
+    r"|</[A-Za-z][A-Za-z0-9-]*\s*>|<\?[\s\S]*?\?>|<![A-Za-z]+\s[\s\S]*?>|<!\[CDATA\[[\s\S]*?\]\]>")
 AUTOLINK = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*)>|<([\w.!#$%&'*+/=?^`{|}~-]+@[\w-]+(?:\.[\w-]+)+)>")
 BARE_URL = re.compile(r"(?:https?://|www\.)[^\s<]+")
+# GFM's bare e-mail address, as marked links it: from the first character of the run of address
+# characters before the @ that its local part allows.
+EMAIL = re.compile(r"[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*[A-Za-z0-9])+(?![-_])")
+EMAIL_LOCAL = re.compile(r"[A-Za-z0-9._+-]")
+EMAIL_AT = re.compile(r"[A-Za-z0-9._+-]+@")
+EM_UNDERSCORE = re.compile(r"(_+)(?=[^\s_])[\s\S]*?[^\s_]\1(?![\w_])")
+PLACEHOLDER = re.compile(r"\x00(\d+)\x00")
 LINK_DEST = r"(?:<([^<>\n]*)>|((?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))*))"
 LINK_TAIL = re.compile(r"\(\s*" + LINK_DEST + r"(?:\s+(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)")
 
@@ -62,9 +69,10 @@ class Inline:
     """Inline rendering: code spans, links, raw HTML and escapes become placeholders first, so
     emphasis never reaches inside them; then emphasis runs over what is left."""
 
-    def __init__(self, refs):
+    def __init__(self, refs, in_link=False):
         self.refs = refs
         self.slots = []
+        self.in_link = in_link  # as in marked, no bare URL or e-mail autolinks inside a link's text
 
     def hold(self, rendered):
         self.slots.append(rendered)
@@ -73,17 +81,18 @@ class Inline:
     def render(self, text):
         text = self.tokens(text)
         text = self.emphasis(text)
-        while "\x00" in text:
-            text = re.sub(r"\x00(\d+)\x00", lambda m: self.slots[int(m.group(1))], text)
-        return text
+        # One pass: every slot holds finished HTML. render() and page() turn a NUL in the source
+        # into U+FFFD, and a stray one that names no slot is left as it is.
+        return PLACEHOLDER.sub(lambda m: self.slots[int(m.group(1))] if int(m.group(1)) < len(self.slots)
+                               else m.group(0), text)
 
     def link(self, label, dest, title, image):
         href = escape(html.unescape(unescape_md(dest or "")))
         attrs = f' title="{escape(html.unescape(unescape_md(title)))}"' if title else ""
         if image:
-            alt = re.sub(r"<[^>]*>", "", Inline(self.refs).render(label))
+            alt = re.sub(r"<[^>]*>", "", Inline(self.refs, True).render(label))
             return f'<img src="{href}" alt="{escape(html.unescape(alt))}"{attrs}>'
-        return f'<a href="{href}"{attrs}>{Inline(self.refs).render(label)}</a>'
+        return f'<a href="{href}"{attrs}>{Inline(self.refs, True).render(label)}</a>'
 
     def bracket(self, text, start):
         """Match [label] from start, allowing nested brackets; return the end index or -1."""
@@ -145,6 +154,11 @@ class Inline:
                 tag = RAW_TAG.match(text, i)
                 if tag:
                     out.append(self.hold(tag.group(0)))
+                    # Like marked, no autolinks between a raw <a ...> and its </a> either.
+                    if re.match(r"<a ", tag.group(0), re.IGNORECASE):
+                        self.in_link = True
+                    elif re.match(r"</a>", tag.group(0), re.IGNORECASE):
+                        self.in_link = False
                     i = tag.end()
                     continue
             if ch in "![" and (ch == "[" or text.startswith("![", i)):
@@ -167,13 +181,24 @@ class Inline:
                         out.append(self.hold(self.link(label, dest, title, image)))
                         i = end + 1 + (ref.end() if ref else 0)
                         continue
-            if ch in "hHwW":
+            if ch in "hHwW" and not self.in_link:
                 bare = BARE_URL.match(text, i)
                 url = trim_url(bare.group(0)) if bare else ""
                 if url and "." in url.split("//")[-1] and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "/_")):
                     href = url if "://" in url else "http://" + url
                     out.append(self.hold(f'<a href="{escape(href)}">{escape(url)}</a>'))
                     i += len(url)
+                    continue
+            if EMAIL_LOCAL.match(ch) and not self.in_link and (i == 0 or not EMAIL_LOCAL.match(text[i - 1])):
+                start, end = i, len(text)
+                opener = EM_UNDERSCORE.match(text, i) if ch == "_" and EMAIL_AT.match(text, i) else None
+                if opener:  # marked tries emphasis first: the address is what the _emphasis_ holds
+                    start, end = i + len(opener.group(1)), opener.end() - len(opener.group(1))
+                mail = EMAIL.match(text, start, end)
+                if mail:
+                    out.append(text[i:start])
+                    out.append(self.hold(f'<a href="mailto:{escape(mail.group(0))}">{escape(mail.group(0))}</a>'))
+                    i = mail.end()
                     continue
             if ch == "\n":
                 # A line ending in two or more spaces is a hard break; other line breaks stay.
@@ -217,26 +242,52 @@ def normalize_label(label):
 FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})[ \t]*([^\n]*?)[ \t]*$")
 ATX = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
 HR = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
-QUOTE = re.compile(r"^ {0,3}> ?")
+QUOTE = re.compile(r"^ {0,3}>[ \t]?")
 BULLET = re.compile(r"^( {0,3})([*+-])([ \t]+|$)")
 ORDERED = re.compile(r"^( {0,3})(\d{1,9})([.)])([ \t]+|$)")
 SETEXT = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 TABLE_DELIM = re.compile(r"^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$")
 REF_DEF = re.compile(r"^ {0,3}\[([^\]]+)\]:[ \t]*(?:<([^<>\n]*)>|(\S+))(?:[ \t]+(\"[^\"]*\"|'[^']*'|\([^)]*\)))?[ \t]*$")
+# Tabs stay as written. Indentation is measured as marked measures it: an indented code line starts
+# with four spaces or a tab, and a list item's continuation lines have each tab read as four spaces.
+INDENTED = re.compile(r"^(?: {4}| {0,3}\t)")
+UNINDENT = re.compile(r"^(?: {1,4}| {0,3}\t)")
+# HTML blocks, CommonMark's seven kinds as marked reads them. Kinds 1-5 (<pre>, <script>, <style>
+# and <textarea>; comments; <?...?>; <!X...>; CDATA) run to the line holding their end marker. Kind 6
+# (a block-level tag name) and kind 7 (a line that is one whole open or closing tag of any other
+# name, such as <img ...> or </span>) run to a blank line. Inline tags that start a line of text
+# leave it a paragraph. Only kinds 1, 2 and 6 interrupt a paragraph, and only from the first column.
+BLOCK_TAGS = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|"
+              "div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|"
+              "legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|"
+              "summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul")
 HTML_BLOCK = re.compile(
-    r"^ {0,3}(?:<!--|<\?|<![A-Za-z]|<!\[CDATA\[|</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul|pre|script|style|textarea|svg|canvas|video|audio|picture|img|figure|span|a|button|input|label|select|small|details)(?:[\s/>]|$))",
+    r"^ {0,3}(?:<(script|pre|style|textarea)(?:[\s>]|$)|(<!--|<\?|<!\[CDATA\[|<![A-Za-z])"
+    r"|</?(?:" + BLOCK_TAGS + r")(?: |/?>|$)"
+    r"|(?:<(?!script|pre|style|textarea)[A-Za-z][A-Za-z0-9_-]*"
+    r"(?: +[A-Za-z_:][A-Za-z0-9_.:-]*(?: *= *\"[^\"]*\"| *= *'[^']*'| *= *[^\s\"'=<>`]+)?)* */?>"
+    r"|</(?!script|pre|style|textarea)[A-Za-z][A-Za-z0-9_-]*\s*>)[ \t]*$)",
     re.IGNORECASE)
-
-
-def expand_tabs(line):
-    return line.expandtabs(4) if "\t" in line[:8] else line
+HTML_ENDS = {"<!--": "-->", "<?": "?>", "<![CDATA[": "]]>"}  # and ">" for <!X
+HTML_INTERRUPT = re.compile(r"^(?:</?(?:" + BLOCK_TAGS + r")(?: |/?>|$)|<(?:script|pre|style|textarea|!--))")
+# marked ends a list item at a line, outside the item, that starts with anything like a tag.
+LIST_HTML = re.compile(r"^ {0,3}<(?:[a-z].*>|!--)", re.IGNORECASE)
 
 
 def starts_block(line):
     """Whether a line interrupts a paragraph."""
     return bool(FENCE.match(line) or ATX.match(line) or HR.match(line) or QUOTE.match(line)
-                or HTML_BLOCK.match(line) or BULLET.match(line) and line[BULLET.match(line).end():].strip()
+                or HTML_INTERRUPT.match(line) or BULLET.match(line) and line[BULLET.match(line).end():].strip()
                 or ORDERED.match(line) and ORDERED.match(line).group(2) == "1" and line[ORDERED.match(line).end():].strip())
+
+
+def html_block_end(start):
+    """The marker that ends an HTML block opened by this HTML_BLOCK match, or None for one that runs to a blank line."""
+    if start.group(1):
+        return f"</{start.group(1).lower()}>"
+    if start.group(2):
+        return HTML_ENDS.get(start.group(2), ">")
+    return None
 
 
 def split_cells(row):
@@ -271,11 +322,18 @@ class Blocks:
         return Inline(self.refs).render(text)
 
     def render(self, lines):
-        return self.blocks(lines)[0]
+        return self.join(self.blocks(lines)[0])
 
-    def blocks(self, lines, tight=False):
-        """Render block lines; also say whether a blank line separates two of the top-level blocks.
-        In a tight list item (tight=True) top-level paragraphs lose their <p>."""
+    @staticmethod
+    def join(parts, tight=False):
+        """The HTML of rendered blocks. Paragraphs are held as ("p", html) until here, because in a
+        tight list item (tight=True) top-level paragraphs lose their <p>."""
+        return "".join(part if isinstance(part, str) else part[1] if tight else f"<p>{part[1]}</p>\n"
+                       for part in parts)
+
+    def blocks(self, lines):
+        """Render block lines into parts for join(); also say whether a blank line separates two of
+        the top-level blocks."""
         out, i, spaced, gap = [], 0, False, False
         while i < len(lines):
             line = lines[i]
@@ -286,14 +344,18 @@ class Blocks:
             spaced, gap = spaced or gap, False
             fence = FENCE.match(line)
             if fence and not (fence.group(2)[0] == "`" and "`" in fence.group(3)):
-                indent, marker, info = len(fence.group(1)), fence.group(2), fence.group(3)
+                marker, info = fence.group(2), fence.group(3)
+                # Like marked, take a ``` fence's own indentation off each line indented at least as
+                # far (spaces or tabs, a character each), and leave ~~~ fence lines as they are.
+                indent = len(fence.group(1)) if marker[0] == "`" else 0
                 body, i = [], i + 1
                 while i < len(lines):
                     close = re.match(r"^ {0,3}(" + re.escape(marker[0]) + "{" + str(len(marker)) + r",})[ \t]*$", lines[i])
                     if close:
                         i += 1
                         break
-                    body.append(re.sub(r"^ {0," + str(indent) + "}", "", lines[i]))
+                    lead = len(lines[i]) - len(lines[i].lstrip())
+                    body.append(lines[i][indent:] if lead >= indent else lines[i])
                     i += 1
                 code = "\n".join(body)
                 lang = unescape_md(info).split()[0] if info.strip() else ""
@@ -318,7 +380,7 @@ class Blocks:
                 while i < len(lines) and lines[i].strip():
                     if QUOTE.match(lines[i]):
                         body.append(QUOTE.sub("", lines[i], count=1))
-                    elif body and not starts_block(lines[i]):
+                    elif body and body[-1].strip() and not starts_block(lines[i]):
                         body.append(lines[i])  # lazy continuation
                     else:
                         break
@@ -329,23 +391,30 @@ class Blocks:
                 html_list, i = self.list(lines, i)
                 out.append(html_list)
                 continue
-            if line.startswith("    "):
+            if INDENTED.match(line):
                 body = []
-                while i < len(lines) and (lines[i].startswith("    ") or not lines[i].strip()):
-                    body.append(lines[i][4:])
+                while i < len(lines) and (INDENTED.match(lines[i]) or not lines[i].strip()):
+                    body.append(UNINDENT.sub("", lines[i], count=1))
                     i += 1
                 while body and not body[-1].strip():
                     body.pop()
                 out.append(f"<pre><code>{escape(chr(10).join(body))}\n</code></pre>\n")
                 continue
-            if HTML_BLOCK.match(line):
-                body = []
-                comment = line.lstrip().startswith("<!--")
-                while i < len(lines) and (lines[i].strip() or comment):
-                    body.append(lines[i])
-                    i += 1
-                    if comment and "-->" in body[-1]:
-                        break
+            start = HTML_BLOCK.match(line)
+            if start:
+                end, body = html_block_end(start), [line]
+                i += 1
+                if end:  # to the line holding the end marker (marked's <!--> and <!---> end at once)
+                    rest = line[start.end():].lower()
+                    done = end in rest or end == "-->" and re.match(r"-?>", rest)
+                    while not done and i < len(lines):
+                        body.append(lines[i])
+                        done = end in lines[i].lower()
+                        i += 1
+                else:  # to a blank line
+                    while i < len(lines) and lines[i].strip():
+                        body.append(lines[i])
+                        i += 1
                 out.append("\n".join(body) + "\n")
                 continue
             if "|" in line and i + 1 < len(lines) and TABLE_DELIM.match(lines[i + 1]):
@@ -370,11 +439,9 @@ class Blocks:
             text = "\n".join(part.lstrip() for part in para).rstrip()
             if level:
                 out.append(f"<h{level}>{self.inline(text)}</h{level}>\n")
-            elif tight:
-                out.append(self.inline(text))
             else:
-                out.append(f"<p>{self.inline(text)}</p>\n")
-        return "".join(out), spaced
+                out.append(("p", self.inline(text)))
+        return out, spaced
 
     def table(self, lines, i, header, aligns):
         def align(cell):
@@ -409,9 +476,18 @@ class Blocks:
             if not match or (match.group(3) if ordered else match.group(2)) != kind:
                 break
             loose = loose or gap
-            spacing = match.group(4) if ordered else match.group(3)
-            content_col = match.end() if 1 <= len(spacing) <= 4 else match.end() - len(spacing) + 1
-            body = [lines[i][match.end():] if len(spacing) <= 4 else lines[i][content_col:]]
+            # The content column, as marked finds it: after the spaces that follow the marker (a tab
+            # there counts as content, and its leading tabs read as three spaces each), or one column
+            # after the marker when more than four spaces follow it or the line is blank.
+            marker_end = match.end() - len(match.group(4) if ordered else match.group(3))
+            rest = lines[i][marker_end:]
+            if rest.strip():
+                lead = len(rest) - len(rest.lstrip(" "))
+                content_col = lead if lead <= 4 else 1
+                body = [re.sub(r"^\t+", lambda m: "   " * len(m.group(0)), rest)[content_col:]]
+                content_col += marker_end
+            else:
+                content_col, body = marker_end + 1, [""]
             i += 1
             gap = False
             while i < len(lines):
@@ -421,13 +497,15 @@ class Blocks:
                     gap = True
                     i += 1
                     continue
-                indent = len(line) - len(line.lstrip(" "))
+                expanded = line.replace("\t", "    ")  # as marked reads (and keeps) an item's lines
+                indent = len(expanded) - len(expanded.lstrip(" "))
                 if indent >= content_col:
-                    body.append(line[content_col:])
+                    body.append(expanded[content_col:])
                     gap = False
                     i += 1
                     continue
-                if not gap and not starts_block(line) and not (BULLET.match(line) or ORDERED.match(line)):
+                if (not gap and not starts_block(line) and not LIST_HTML.match(line)
+                        and not (BULLET.match(line) or ORDERED.match(line))):
                     body.append(line.lstrip())  # lazy continuation of the item's paragraph
                     i += 1
                     continue
@@ -435,19 +513,22 @@ class Blocks:
             while body and not body[-1].strip():
                 body.pop()
             items.append(body)
-        tasks = []
+        # Each item is rendered once; whether the list is loose only decides how its paragraphs join.
+        tasks, item_parts = [], []
         for body in items:
             check = re.match(r"^\[([ xX])\][ \t]+", body[0]) if body else None
             checked = 'checked="" ' if check and check.group(1) != " " else ""
             tasks.append(f'<input {checked}disabled="" type="checkbox"> ' if check else "")
             if check:
                 body[0] = body[0][check.end():]
-            loose = loose or self.blocks(body)[1]
+            parts, spaced = self.blocks(body)
+            loose = loose or spaced
+            item_parts.append(parts)
         tag = "ol" if ordered else "ul"
         attr = f' start="{start}"' if ordered and start != 1 else ""
         out = [f"<{tag}{attr}>\n"]
-        for task, body in zip(tasks, items):
-            rendered = self.blocks(body, tight=not loose)[0]
+        for task, parts in zip(tasks, item_parts):
+            rendered = self.join(parts, tight=not loose)
             if not loose:
                 rendered = task + rendered.rstrip("\n")
             elif task:
@@ -479,9 +560,9 @@ def collect_refs(lines):
 
 
 def render(text):
-    """Markdown to HTML, the shapes marked produces for the same input."""
-    lines = [expand_tabs(line) for line in text.split("\n")]
-    refs, lines = collect_refs(lines)
+    """Markdown to HTML, the shapes marked produces for the same input. As in CommonMark, a NUL
+    character becomes U+FFFD."""
+    refs, lines = collect_refs(text.replace("\x00", "\ufffd").split("\n"))
     return Blocks(refs).render(lines)
 
 
@@ -525,17 +606,20 @@ def page(text, filename):
     """The published page content for a Markdown file: (html, title). As in Claude Code, a heading
     that opens the document becomes the template's <h1> and leaves the body; with no heading at all
     the <h1> shows the file name; otherwise the <h1> stays empty and the first heading names the page."""
-    text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
-    lines = [expand_tabs(line) for line in text.split("\n")]
-    refs, _ = collect_refs(lines)
+    text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "\ufffd")
+    refs, _ = collect_refs(text.split("\n"))
     heading = opening_heading(text)
     body_text = text[:heading[0]] + text[heading[1]:] if heading else text
     body = render(body_text)
     plain = lambda fragment: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]*>", "", fragment))).strip()
     if heading:
-        title_html = Inline(refs).render(heading[3])
+        # As Claude Code fills the <h1>: the heading's HTML with whitespace collapsed, or, when that
+        # holds a <section> tag (which would take the template's own section), its text escaped.
+        title_html = re.sub(r"\s+", " ", Inline(refs).render(heading[3]).strip())
+        if re.search(r"</?section\b", title_html, re.IGNORECASE):
+            title_html = escape(re.sub(r"\s+", " ", heading[3]).strip())
         title = plain(title_html)
-        if not title and not re.search(r"<\w", title_html):
+        if not title and not re.search(r"<\w", re.sub(r"<!--[\s\S]*?-->", "", title_html)):
             title_html, title = escape(filename), filename
     else:
         first = re.search(r"<h[1-6]>([\s\S]*?)</h[1-6]>", body)

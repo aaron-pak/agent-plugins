@@ -607,11 +607,11 @@ def publish(args):
         shutil.copyfile(origin, target)
     if entry.get("page") == "index.md":  # an artifact published before Markdown was rendered
         (folder / "index.md").unlink(missing_ok=True)
-    (folder / "index.html").write_text(published, encoding="utf-8")
+    (folder / "index.html").write_bytes(published.encode("utf-8"))
     entry["version"] = entry.get("version", 0) + 1
     versions = folder / ".versions"
     versions.mkdir(exist_ok=True)
-    (versions / f"{entry['version']}.html").write_text(published, encoding="utf-8")
+    (versions / f"{entry['version']}.html").write_bytes(published.encode("utf-8"))
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if first or not store_page_of(source, index)[1]:
         entry["source"] = str(source)
