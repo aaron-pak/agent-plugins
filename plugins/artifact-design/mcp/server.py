@@ -140,7 +140,7 @@ When a finished piece of work is meant for other people or agents, such as a rep
 
 # Claude Code's ArtifactCheck wording (2.1.294) for its preview, where it applies here.
 PREVIEW_BULLET = """
-- **preview**: takes `file_path` (one .html page, before or after publishing) and renders that one page file locally the way publish wraps it, in light and dark themes at desktop and phone widths (1280 and 390px), and returns the screenshots (each shows at most the top 1568px of the page) with a mechanical checklist of layout and load problems (horizontal overflow, clipped content, theme-only color variables, blocked or local-only loads, diagram and console errors), so Claude can see the page and fix what they show before publishing. Files published beside it are not loaded. Nothing is published."""
+- **preview**: takes `file_path` (one .html page, before or after publishing) and renders that one page file locally the way publish wraps it, in light and dark themes at desktop and phone widths (1280 and 390px), and returns the screenshots (each shows at most the top 1568px of the page) with a mechanical checklist of layout and load problems (horizontal overflow, clipped content, text split by a grid or flex parent, SVG text too small for a phone, theme-only color variables, blocked or local-only loads, diagram and console errors), so Claude can see the page and fix what they show before publishing. Files published beside it are not loaded. Nothing is published."""
 
 # Codex shows at most 1,000 bytes of an MCP tool's description (codex-rs/tools/src/mcp_tool.rs)
 # and drops every description from an input schema over 5,000 bytes (tools/src/json_schema/
