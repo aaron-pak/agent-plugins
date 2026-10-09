@@ -1,0 +1,8 @@
+{
+  // Tests and build scripts, which run on Bun. session-manager's tests are a mod's, checked by Claude Code.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  "include": ["plugins/*/src", "plugins/artifact-design/tests", "scripts"]
+}
