@@ -3,8 +3,8 @@
   "mcpServers": {
     "artifact": {
       "type": "stdio",
-      "command": "python3",
-      "args": ["${PLUGIN_ROOT}/mcp/server.py"]
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/mcp/server.mjs"]
     }
   }
 }

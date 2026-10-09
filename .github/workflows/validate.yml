@@ -21,6 +21,33 @@ jobs:
         with:
           node-version: 22
 
+      # Bun's version comes from packageManager in package.json.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install the TypeScript toolchain
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting and lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # The bundles plugins run are committed; a fresh build must reproduce them.
+      - name: Check the committed bundles are up to date
+        run: |
+          bun run build
+          if [ -n "$(git status --porcelain -- plugins)" ]; then
+            git status --short -- plugins
+            echo "Run bun run build and commit the bundles."
+            exit 1
+          fi
+
+      - name: Test
+        run: bun run test
+
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 

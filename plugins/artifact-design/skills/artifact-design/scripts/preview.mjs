@@ -4,7 +4,7 @@
 //   node preview.mjs page.html [--out dir] [--json]
 //   node preview.mjs --check        (whether a preview can run here, as JSON)
 //
-// Wraps the page with publish.py (without touching the file), serves it over http and
+// Wraps the page with publish.mjs (without touching the file), serves it over http and
 // renders it at 1280 and 390px wide in light and dark, with the same viewports, theme
 // attribute, settling, content policy, request filter, step timeouts and in-page checks as
 // Claude Code 2.1.294's preview: page and element overflow, SVG labels clipped by their
@@ -18,8 +18,7 @@
 // Code sizes them. --json prints the report and capture paths as JSON for the artifact MCP
 // server, whose publish takes the page's own files through `files`, as the Artifact tool's does.
 // Needs Playwright and a Chromium (Playwright's own, or an installed Chrome, Chromium, Edge or
-// Brave); without them it says so and exits, and the skill skips the look. publish.py runs
-// under ARTIFACT_PYTHON when that is set (the MCP server sets it to its own Python).
+// Brave); without them it says so and exits, and the skill skips the look.
 
 import { execFileSync, execSync } from "node:child_process";
 import { X509Certificate, createHash, randomUUID } from "node:crypto";
@@ -184,12 +183,11 @@ const stem = basename(page, extname(page));
 const outDir = outIndex !== -1 ? resolve(args[outIndex + 1]) : mkdtempSync(join(tmpdir(), `artifact-preview-${stem}-`));
 mkdirSync(outDir, { recursive: true });
 const wrapped = join(outDir, `${stem}.html`);
-const python = process.env.ARTIFACT_PYTHON || (process.platform === "win32" ? "python" : "python3");
 try {
-  execFileSync(python, [join(here, "publish.py"), page, "--out", wrapped, "--no-open", "--quiet"],
-    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  execFileSync(process.execPath, [join(here, "publish.mjs"), page, "--out", wrapped, "--no-open", "--quiet"],
+    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
 } catch (error) {
-  const why = String(error.stderr || error.message).trim().split("\n").at(-1).replace(/^publish\.py: .*?: (?=the source file)/, "")
+  const why = String(error.stderr || error.message).trim().split("\n").at(-1).replace(/^publish\.mjs: .*?: (?=the source file)/, "")
     .replace("then publish again. Nothing was published.", "then preview again.");
   await stop(`Could not preview ${basename(page)}: ${why}`, true);
 }
@@ -919,7 +917,7 @@ if (ownFiles.length) {
   const listed = ownFiles.slice(0, MAX_FILES).map((f) => clip(f, 60));
   const more = n - listed.length;
   notes.push(`${n} ${plural(n, "file")} referenced relative to the page ${plural(n, "is", "are")} not loaded in preview (${listed.join(", ")}${more > 0 ? `, … ${more} more` : ""}); once published `
-    + (asJson ? `${plural(n, "it exists", "they exist")} only if passed in \`files\`` : `publish.py's copy beside the page loads ${plural(n, "it", "them")}`));
+    + (asJson ? `${plural(n, "it exists", "they exist")} only if passed in \`files\`` : `publish.mjs's copy beside the page loads ${plural(n, "it", "them")}`));
 }
 const issueCount = issues.length + Math.min(dropped, MAX_DROPPED);
 const captured = shots.filter((s) => s.path && !s.error);
