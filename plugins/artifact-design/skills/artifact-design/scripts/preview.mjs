@@ -182,7 +182,8 @@ if (statSync(page).size === 0) await stop("the file is empty \u2014 write the pa
 const stem = basename(page, extname(page));
 const outDir = outIndex !== -1 ? resolve(args[outIndex + 1]) : mkdtempSync(join(tmpdir(), `artifact-preview-${stem}-`));
 mkdirSync(outDir, { recursive: true });
-const wrapped = join(outDir, `${stem}.html`);
+// The wrapped copy never takes the page's own path, which --out pointing at the page's folder would give it.
+const wrapped = join(outDir, resolve(outDir, `${stem}.html`) === resolve(page) ? `${stem}.wrapped.html` : `${stem}.html`);
 try {
   execFileSync(process.execPath, [join(here, "publish.mjs"), page, "--out", wrapped, "--no-open", "--quiet"],
     { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
