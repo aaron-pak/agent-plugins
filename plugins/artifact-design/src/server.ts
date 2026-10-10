@@ -244,7 +244,7 @@ function publish(args: Args): string {
             `its source file ${entry.source} doesn't have this change.`,
         );
       }
-    } else if (known !== undefined && index.has(known)) {
+    } else if (known !== undefined && index.get(known)?.source === source) {
       slug = known;
       entry = index.get(known)!;
     } else {
@@ -450,8 +450,8 @@ function actRead(args: Args): string {
   );
 }
 
-function actDelete(args: Args): string {
-  const [slug, entry, repaired] = withStoreLock(() => {
+async function actDelete(args: Args): Promise<string> {
+  const [slug, entry, repaired] = await withStoreLock(() => {
     const [index, note] = loadIndex(true);
     const [found, foundEntry] = find(args.url, index);
     if (!found) throw new Error('delete needs the `url` of a published artifact; list them with action "list"');

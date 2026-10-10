@@ -24044,6 +24044,7 @@ function makeDrafts() {
 import {
   closeSync,
   copyFileSync,
+  lstatSync as lstatSync2,
   mkdirSync as mkdirSync2,
   openSync,
   readdirSync as readdirSync2,
@@ -24144,14 +24145,14 @@ function loadIndex(repair = false) {
     text = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync2(INDEX));
   } catch (error) {
     if (error.code === "ENOENT")
-      return [new Map, null];
+      return [rebuildIndex(), null];
     text = null;
   }
   try {
     const parsed = text !== null ? JSON.parse(text) : null;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const entries = Object.entries(parsed);
-      if (entries.every(([, entry]) => !!entry && typeof entry === "object" && !Array.isArray(entry) && ("page" in entry))) {
+      if (entries.every(([slug, entry]) => isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && ("page" in entry))) {
         return [new Map(entries), null];
       }
     }
@@ -24168,6 +24169,9 @@ function loadIndex(repair = false) {
   }
   return [index, note];
 }
+function isSlug(key) {
+  return key !== "" && key !== "." && key !== ".." && !/[\\/\0]/.test(key);
+}
 function saveIndex(index) {
   mkdirSync2(STORE, { recursive: true });
   const tmp = join4(STORE, `index.${process.pid}.tmp`);
@@ -24175,23 +24179,32 @@ function saveIndex(index) {
   renameSync(tmp, INDEX);
 }
 var LOCK = join4(STORE, ".publish-lock");
-var LOCK_STALE_MS = 120000;
-var sleep2 = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+var LOCK_STALE_MS = 30000;
 function lockIsStale() {
+  let age;
   try {
-    const age = Date.now() - statSync2(LOCK).mtimeMs;
-    const pid = Number(readFileSync2(LOCK, "utf8"));
-    if (age > LOCK_STALE_MS)
-      return true;
-    if (!pid)
-      return age > 1000;
+    age = Date.now() - statSync2(LOCK).mtimeMs;
+  } catch {
+    return false;
+  }
+  if (Math.abs(age) > LOCK_STALE_MS)
+    return true;
+  let pid;
+  try {
+    pid = Number(readFileSync2(LOCK, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!pid)
+    return age > 1000;
+  try {
     process.kill(pid, 0);
     return false;
   } catch (error) {
     return error.code === "ESRCH";
   }
 }
-function withStoreLock(fn) {
+async function withStoreLock(fn) {
   mkdirSync2(STORE, { recursive: true });
   for (;; ) {
     try {
@@ -24205,7 +24218,7 @@ function withStoreLock(fn) {
       if (lockIsStale())
         rmSync(LOCK, { force: true });
       else
-        sleep2(50);
+        await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
   try {
@@ -24323,6 +24336,9 @@ function planFiles(files, folder, pageDir, pageName) {
     if (origin === null) {
       plan.push([target, null]);
       continue;
+    }
+    if (lstatSync2(target, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      throw new Error(`supporting file path ${repr(published)} is a link to a file that doesn't exist; remove it with null first`);
     }
     const source = absolute(origin, `files[${repr(published)}]`);
     if (!isFile(source)) {
@@ -24638,7 +24654,7 @@ function publish(args) {
       if (entry.source && entry.source !== source) {
         notes.push("That file is the artifact's published page, so the artifact was updated in place; " + `its source file ${entry.source} doesn't have this change.`);
       }
-    } else if (known !== undefined && index.has(known)) {
+    } else if (known !== undefined && index.get(known)?.source === source) {
       slug = known;
       entry = index.get(known);
     } else {
@@ -24813,8 +24829,8 @@ function actRead(args) {
 
 ` + content;
 }
-function actDelete(args) {
-  const [slug, entry, repaired] = withStoreLock(() => {
+async function actDelete(args) {
+  const [slug, entry, repaired] = await withStoreLock(() => {
     const [index, note] = loadIndex(true);
     const [found, foundEntry] = find(args.url, index);
     if (!found)

@@ -4,7 +4,7 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -17,15 +17,22 @@ afterAll(() => rmSync(TEMP, { recursive: true, force: true }));
 
 type Reply = { id: number; result?: any; error?: { code: number; message: string } };
 
-class Client {
-  private child = spawn("node", [SERVER], {
-    env: { ...process.env, ARTIFACTS_DIR: STORE, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP },
+const spawnServer = (store: string) =>
+  spawn("node", [SERVER], {
+    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP },
     stdio: ["pipe", "pipe", "inherit"],
   });
+
+class Client {
+  private child: ReturnType<typeof spawnServer>;
   private waiting = new Map<number, (reply: Reply) => void>();
   private next = 0;
 
-  constructor(private meta?: Record<string, unknown>) {
+  constructor(
+    private meta?: Record<string, unknown>,
+    store = STORE,
+  ) {
+    this.child = spawnServer(store);
     createInterface({ input: this.child.stdout }).on("line", (line) => {
       const reply = JSON.parse(line) as Reply;
       this.waiting.get(reply.id)?.(reply);
@@ -55,8 +62,8 @@ class Client {
   }
 }
 
-async function legacy(client: string): Promise<Client> {
-  const server = new Client();
+async function legacy(client: string, store = STORE): Promise<Client> {
+  const server = new Client(undefined, store);
   const reply = await server.request("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
@@ -146,6 +153,25 @@ describe("Artifact tool", () => {
     const page = readFileSync(join(STORE, "notes", "index.html"), "utf8");
     expect(page).toContain("<title>notes.md</title>");
     expect(page).toContain("<strong>text</strong>");
+    await server.close();
+  });
+
+  test("keeps a damaged store from reaching outside it or stalling the server", async () => {
+    const home = join(TEMP, "damaged");
+    const store = join(home, "artifacts");
+    mkdirSync(join(home, "keep"), { recursive: true });
+    mkdirSync(store);
+    writeFileSync(join(home, "keep", "file.txt"), "keep");
+    // A hand-edited index naming the store's parent, and a lock a crashed publish left with the clock since set back.
+    const entry = { source: null, version: 1, created: null, page: "index.html" };
+    writeFileSync(join(store, "index.json"), JSON.stringify({ "..": entry }));
+    const lock = join(store, ".publish-lock");
+    writeFileSync(lock, "");
+    const later = new Date(Date.now() + 3_600_000);
+    utimesSync(lock, later, later);
+    const server = await legacy("claude-code", store);
+    expect((await server.call({ action: "delete", url: ".." })).isError).toBe(true);
+    expect(existsSync(join(home, "keep", "file.txt"))).toBe(true);
     await server.close();
   });
 
