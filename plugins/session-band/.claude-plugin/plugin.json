@@ -1,0 +1,16 @@
+{
+  "name": "session-band",
+  "description": "Clawd and the session at a glance in the band above the prompt: context, limits, cost, branch, todos and what Claude is doing. /band switches between styles. Claude Code only.",
+  "author": {
+    "name": "Aaron Pak"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "warnAt": {
+      "type": "number",
+      "title": "Warn at",
+      "description": "Context fill, in percent, where Clawd starts to sweat and a toast suggests /compact.",
+      "default": 80
+    }
+  }
+}
