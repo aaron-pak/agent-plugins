@@ -1,13 +1,16 @@
 // Publish an HTML artifact as a local file, the way Claude Code's Artifact tool publishes one: the
-// page skeleton, the content policy, the Mermaid runtime, the page's name, and Markdown pages.
+// page skeleton, the content policy, the Mermaid and highlight.js runtimes, the page's name, and
+// Markdown pages.
 // The MCP server and the publish.mjs script both build on this.
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { escape, unescape } from "./html.ts";
 import { page as renderMarkdownPage } from "./render-markdown.ts";
+import HLJS_LANGUAGES from "../skills/artifact-design/scripts/hljs-languages.json" with { type: "json" };
 import MERMAID_RUNTIME from "../skills/artifact-design/scripts/mermaid-runtime.html" with { type: "text" };
 
 // The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.296).
@@ -59,6 +62,21 @@ const GENERATOR_MARKS = /<meta name="generator" content="artifact-design(?: publ
 // byte for byte, except that Mermaid 11.16.1 loads from jsDelivr (the same file, checked by
 // sha256) instead of claude.ai's /_runtime/ path.
 const MERMAID = String(MERMAID_RUNTIME).replace(/\n+$/, "");
+// The highlight.js runtime Claude Code 2.1.296 inlines in a page with a language-tagged code block,
+// byte for byte: its 186-grammar highlight.js 11.11.1 bundle, then the script that highlights the
+// page's <pre><code> blocks. At about 600 KB it is read from disk only for a page that needs it.
+let hljsRuntime: string | undefined;
+function highlightRuntime(): string {
+  if (hljsRuntime === undefined) {
+    // Beside this code in the publish.mjs bundle; in the plugin's scripts folder from mcp/ or src/.
+    const path = ["./", "../skills/artifact-design/scripts/"]
+      .map((dir) => fileURLToPath(new URL(dir + "hljs-runtime.html", import.meta.url)))
+      .find((candidate) => existsSync(candidate));
+    if (!path) throw new Error("the plugin's hljs-runtime.html is missing");
+    hljsRuntime = readFileSync(path, "utf8").replace(/\n+$/, "");
+  }
+  return hljsRuntime;
+}
 export const SIZE_LIMIT = 16 * 1024 * 1024;
 const TITLE_SCAN = 8192; // the Artifact tool reads a page's <title> from this many characters
 const TITLE_MAX = 280;
@@ -121,7 +139,7 @@ export function pageTitle(content: string): string | null {
     .replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return text.slice(0, TITLE_MAX) || null;
+  return [...text].slice(0, TITLE_MAX).join("") || null;
 }
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -210,6 +228,29 @@ export function usesMermaid(content: string): boolean {
   return false;
 }
 
+const HIGHLIGHTED = new Set<string>(HLJS_LANGUAGES);
+const TAG_END = new Set([" ", "\t", "\n", "\f", "\r", "/", ">"]);
+
+/** Whether the page has a <code> element whose class names a language highlight.js knows, as
+ * language-<name>, which makes Claude Code add highlight.js. */
+export function usesHighlight(content: string): boolean {
+  const lower = content.toLowerCase();
+  for (let at = lower.indexOf("<code"); at !== -1; at = lower.indexOf("<code", at)) {
+    if (!TAG_END.has(lower[at + 5] ?? "")) {
+      at += 5;
+      continue;
+    }
+    const limit = Math.min(at + 4096, lower.length);
+    const close = lower.indexOf(">", at + 5);
+    const end = close !== -1 && close < limit ? close : limit;
+    for (const match of lower.slice(at + 5, end).matchAll(/language-([\w.+#-]+)/g)) {
+      if (HIGHLIGHTED.has(match[1]!)) return true;
+    }
+    at = end;
+  }
+  return false;
+}
+
 /** The published page: the skeleton around the content as it is (a full document included,
  * whose <html> and <body> attributes the browser then carries over), as the Artifact tool wraps
  * it. lang and cover come from an unwrapped skeleton, as the tool keeps them on a round trip. */
@@ -225,7 +266,8 @@ export function wrap(
   head += `<meta http-equiv="Content-Security-Policy" content="${CSP}">` + GENERATOR;
   if (description) head += `<meta name="description" content="${escape(description)}">`;
   head += (covers ? SKELETON_RESET : PLAIN_RESET) + SKELETON_BODY;
-  const tail = usesMermaid(content) ? "\n" + TAIL_MARK + "\n" + MERMAID : "";
+  const runtimes = [usesMermaid(content) && MERMAID, usesHighlight(content) && highlightRuntime()].filter(Boolean);
+  const tail = runtimes.length ? "\n" + TAIL_MARK + "\n" + runtimes.join("\n") : "";
   return head + content + tail + SKELETON_END;
 }
 
