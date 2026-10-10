@@ -4,7 +4,7 @@
 import { execFile } from "node:child_process";
 import { existsSync as existsSync2, mkdirSync as mkdirSync3, mkdtempSync as mkdtempSync2, readFileSync as readFileSync3, rmSync as rmSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { basename as basename3, dirname as dirname3, extname, join as join5 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // node_modules/@modelcontextprotocol/server/dist/chunk-Br0eD_fh.mjs
 var __create = Object.create;
@@ -21452,480 +21452,54 @@ function toError(value) {
   return value instanceof Error ? value : new Error(String(value));
 }
 
-// node_modules/entities/dist/decode-codepoint.js
-var c1 = [
-  8364,
-  0,
-  8218,
-  402,
-  8222,
-  8230,
-  8224,
-  8225,
-  710,
-  8240,
-  352,
-  8249,
-  338,
-  0,
-  381,
-  0,
-  0,
-  8216,
-  8217,
-  8220,
-  8221,
-  8226,
-  8211,
-  8212,
-  732,
-  8482,
-  353,
-  8250,
-  339,
-  0,
-  382,
-  376
-];
-function isInvalidCodePoint(codePoint) {
-  return codePoint === 0 || codePoint >= 55296 && codePoint <= 57343 || codePoint > 1114111;
-}
-function replaceCodePoint(codePoint) {
-  if (isInvalidCodePoint(codePoint)) {
-    return 65533;
-  }
-  if (codePoint >= 128 && codePoint <= 159) {
-    return c1[codePoint - 128] || codePoint;
-  }
-  return codePoint;
-}
-function codePointToString(codePoint) {
-  return codePoint - 1 >>> 0 < 127 || codePoint - 160 >>> 0 < 55136 ? String.fromCharCode(codePoint) : String.fromCodePoint(replaceCodePoint(codePoint));
-}
-
-// node_modules/entities/dist/internal/decode-shared.js
-var BASE91_INVERSE = /* @__PURE__ */ (() => {
-  const table = new Uint8Array(127);
-  let code = 0;
-  for (let char = 33;char <= 126; char++) {
-    if (char !== 34 && char !== 36 && char !== 92) {
-      table[char] = code++;
-    }
-  }
-  return table;
-})();
-function decodeTrieDict(input, resultLength, atomCount, dict1AtomCount, ngramCount, dictSize) {
-  const base = 91;
-  const inputLength = input.length;
-  const twoCharBias = dictSize * (base - 1);
-  let pos = 0;
-  const readSlotCode = () => {
-    const c1 = BASE91_INVERSE[input.charCodeAt(pos++)];
-    return c1 < dictSize ? c1 : c1 * base - twoCharBias + BASE91_INVERSE[input.charCodeAt(pos++)];
-  };
-  const dict2AtomCount = atomCount - dict1AtomCount;
-  const slotCount = atomCount + ngramCount;
-  const single = new Int32Array(slotCount);
-  single.fill(-1, dict1AtomCount, dictSize);
-  single.fill(-1, dictSize + dict2AtomCount, slotCount);
-  const start = new Int32Array(slotCount);
-  const length = new Int32Array(slotCount);
-  function decodeDelta(count, off) {
-    let previous = 0;
-    let slot = off;
-    const end = off + count;
-    while (slot < end) {
-      const code = BASE91_INVERSE[input.charCodeAt(pos++)];
-      if (code < 89) {
-        previous += code;
-        single[slot++] = previous;
-      } else if (code === 89) {
-        let runLength = BASE91_INVERSE[input.charCodeAt(pos++)] + 2;
-        while (runLength--)
-          single[slot++] = ++previous;
-      } else {
-        const next = BASE91_INVERSE[input.charCodeAt(pos++)];
-        previous += 89 + (next < 90 ? next * base + BASE91_INVERSE[input.charCodeAt(pos++)] : BASE91_INVERSE[input.charCodeAt(pos++)] * 8281 + BASE91_INVERSE[input.charCodeAt(pos++)] * base + BASE91_INVERSE[input.charCodeAt(pos++)]);
-        single[slot++] = previous;
-      }
-    }
-  }
-  decodeDelta(dict1AtomCount, 0);
-  decodeDelta(dict2AtomCount, dictSize);
-  const references = new Int32Array(ngramCount * 2);
-  let poolSize = 0;
-  let ngramIndex = 0;
-  function readNgramReferences(count, startSlot) {
-    for (let index = 0;index < count; index++) {
-      const slot = startSlot + index;
-      const a = readSlotCode();
-      const b = readSlotCode();
-      references[ngramIndex * 2] = a;
-      references[ngramIndex * 2 + 1] = b;
-      ngramIndex += 1;
-      start[slot] = poolSize;
-      const entryLength = (single[a] < 0 ? length[a] : 1) + (single[b] < 0 ? length[b] : 1);
-      length[slot] = entryLength;
-      poolSize += entryLength;
-    }
-  }
-  readNgramReferences(ngramCount - dictSize + dict1AtomCount, dictSize + dict2AtomCount);
-  readNgramReferences(dictSize - dict1AtomCount, dict1AtomCount);
-  const pool = new Uint16Array(poolSize);
-  let write = 0;
-  for (let index = 0;index < ngramIndex; index++) {
-    for (let half = 0;half < 2; half++) {
-      const source = references[index * 2 + half];
-      const value = single[source];
-      if (value < 0) {
-        let read = start[source];
-        const readEnd = read + length[source];
-        while (read < readEnd)
-          pool[write++] = pool[read++];
-      } else {
-        pool[write++] = value;
-      }
-    }
-  }
-  const out = new Uint16Array(resultLength);
-  let outIndex = 0;
-  while (pos < inputLength) {
-    let slot = BASE91_INVERSE[input.charCodeAt(pos++)];
-    if (slot >= dictSize) {
-      slot = slot * base - twoCharBias + BASE91_INVERSE[input.charCodeAt(pos++)];
-    }
-    const value = single[slot];
-    if (value < 0) {
-      let read = start[slot];
-      const readEnd = read + length[slot];
-      while (read < readEnd)
-        out[outIndex++] = pool[read++];
-    } else {
-      out[outIndex++] = value;
-    }
-  }
-  return out;
-}
-
-// node_modules/entities/dist/generated/decode-data-html.js
-var htmlDecodeTree = /* @__PURE__ */ decodeTrieDict("!}.&u%}'&}*'~!6*)%&,~!J~!J~%L~y<~!R,~~%Lu~~#GD~~#|)1#%}^%}2%+#.##%##%}&%##%'#%##&%#%#'%#&#%#&#'#%%#&#%##%#)%''%&%#%#'%#%%#%%}%%%#%#&(23#%%#&-%0%('1#(##%#'##+%'*.:1}#%#6-+(%'%%#%%%}#L'2351&('%}&/N'(0(/*-%(%%}#'+&T%7.2}#&%&#%#36/5##%&%%#&#%%#))2%%##%&&'0~!#*+&'%1~!%).'3q?&%'1~!.##%6(~!+%%%(Gw'rT~!E#<nA%#jZ~!H%(~!42##~!*31&~!G%U~#)5~#`3~!J~!Z~%]~%Y~%C~!q~!u~#kz~%#~!6'~!D~!U~!?~#T~!c%~!G#'~%7|~!G~!J~!G&~#pb~(Df}#%}*&}#%##%##%##&#-}&'#'&%#.++}%mI,#,@&(}*%}*'%&##&#%##%}&0}#.},U},%}+%}&%}#%##&}B%(}(%}+%)})%##%#&}&%##%&}<%}>%#%&}*%}(%}9%}/%})%}*%}*%}?&}&%}3%}&*#%})%#%#)}#&#-#+*%E%%'%'#%}#*V##&##I}#&&##%&%#&&Qf%%))w/0+&%#(#.%-''''++++7}>%4'',##1,#%#&%##&#'##&#*#9)%&%}#*}%,#+P(%A&%#'&##wSD',9E00#y#@}(+}&%&>~!#~!X}#*}(&&}(&}(,%}%&#+&}#&}I%#%}%)#(},'%#*}4%%#%}(''}#/##(##),%-##%%)#&}(.}&%#&}%%}*&#%},&&}&%}#%*'#%})%}D&}&%}-&}6&#&}-,%}#%})-(~+`~,=?~I9'9%~!,#%})%})%}@%}?%}(~!?~#<~#pP~#BG~#=1#%K+~#?#~%;)~#A~#mF1~#A'~'X%'~#lR~#N~'N~#r~#m#-~#i'?%#'%~#B%##%,%#~#_%#0%~#]732~,w~2+#:&#%&'0%&>%}#>##F+)#%&&#(+_}4&}-%}(&}@&}O7Fdf0@+/v4}&WU##&/0#&'('B#%}.%}'+#%}#%%&#&%#%##+#&#)#6#'#.},%}c%},%#%##%&#&%#&~#>'*-.%##%##%}#%%}%'~#)D1}#%*&~#_%%'(~#S2%'.}#~#=##*'*-%}&'%'##&&~'E%.#&~#M4}%%##&'%#~#O1##%&#'+~#<B%##%%'%+~#;#@%}#&%#&&%#(~#H1}'%'##&&~#?A}&'~#D#%32}'&&&&~#[}'(#%}'~#;C})&}%%#%~#=&%,3}%'(#%%~#^'#&&)#%'~#Y%-~#d-%'~#^%%&#&&&}#~#b~2t*&'~&(~&@~0%~e~3}%*''0})&}+~!9##-}#%-hD*)1fC#%/&/fB#40~!+#)*4~!+~!K'&:~!/*7~!.#~!H~!L':~%x&~!H#~!*~%1~!I#~!+A~#p'~!F~~#-#~,,(~.Z~!V~%;'B'mq-W~!N~%I%#&&#&}#%},%%}'%}+X#%}#&}(%}'%}<%}#%}%%'}'%}:~![)9@~%>~#UA%-%##&~!C%~!-.9:~!1~!-^2/:a~!y,D*J#-5)/4~%23,~#G~!L1~!0X3`~!2+~!!0-~&E~!W~!o,>Y&]~%cZx_&~#O*9#A#'#+I'%#)~!0B*-5A+-((F&*M#)(-7-5+'-3a5Vi~!Y~!?+[)%3),ERHm~!+:D,VG.+)?fB%%*(%)'(#&80%1'8`K8?`+'Z#&O&'H5#*9)A%%5&3))0%39+.*7#()&&*=4@**L)<'_&*+..;(#*+)./&0#3)%')-8(4ixD(&.}%,('aI:,)%,k2231T)I'#/-W7,/'Q#.'Y24+h')37</31&83##&0#),H(?'&?/1##%#&&#%''-%&&&#(&''&#.-'%#%%(,')*'&#&#'##%(%(#%('#&##%%%%('%#%#%%#%#&%##h>w+v<ayvyvcg.uuhKr}g/v|g>u9i[~>g5uI~=RvdwEg;v/g;uk!!TTSx]@RT!U!#!@VBRUU!'UTe-d0c`e&gSdicedFcrdTaqb.kYcAohdYd@a3e+d}dMdtd.aJ#bqcK`dle/e.e'dwdPdodddjbEb}ogd^ofdpduc6j?l%d{drdqc)d7bacOdQ%T#Y)X.sR[yH>6Vyv3[xwLu>vo'!*.[yBacahoj>6Rew3[xqdZa#!a&#^(X-[yG>6Vyu3[xvg3sEr|g.u/Ri9db0T#^(Xa)!-[y;>6Vylg4wKs{JwNZt3@3r=c4Z([xlg;wKt!cpq's@v7A'*a(a+!-a#[y<3Dt?3Dt'>6Vym3[xmg9rxsNJwLZt4~?r?db1T#`-!(Xa,!0[yS>6Vz%NuQs.g4wKtnJwNZtS@3r>c4Z([y%g;wKtrdga8!a(!#&T*Y-Xa#!a0<or[yc3Dtq>6Vz43[y3JwNZtf@3s!Ju}!%Dti:pm3c_%X#tjB5pkd6q!r]u?voC'*-a.a2!0a&a+[yI3DtI3Ds~3DtH>6Vyw3[xx;:s#~<5pKJwNZtE@3r~d`a)!a2T#a.(!+U.X1[yT3Dt`3Dtv>6Vz&3[y&g9rxwzcxstPu.<rAJwLZtT~?r@dZa%!a.&^*Za(/Reu[ya>6Vz23[y1g3sEr}wkg{NuQRg{ci(U#5@b`~,cg#U(2WnH5wugcRh7dX#T(Y,a'Ta!!a,[yZ<]mj>6Vz,3[y+Pv#5ReZKu+=,%!H}7ABwkaS?Rh:BcW(X#<]mrj:ubv/ARekdg%!(!a.*Ta(Y.X1!#sP>Rl*Dt6[y>>6Vyo3Wf*jOvuumvuRgRJuq*!:9<B@bX~3jVv&v@s@5Re[d/rQt{uAvo&a&a*)a2!,0Wf!3Dt0=Bs'>6Re}3[xy~<5s%JwJZt1~Gs)c;&!#2sJkNuXvzq7rxu,Re8dka4!a8(aEZ+a@Y.X1Xa)[yd=Bs(3DtP>6Vz53[y4cX#X&Re:avRe9~<5s&JwJZtQ~Gs*i^rzvdRg+Jv{%!2sbB@bX}kdga,!Za?&^*T1/!a'Dt+[y6>6Vyf3Wf%g/u;s4hGu6?Rh-JvZ,!c%#&RoX54Rivj7uyvf8RgTKvZB%*!2sGh<vu5Rgq<=C::9bb~#dZ#T&Ta6Y.X*Dt>[y93Wf)coZ(T,6VyifluvRgC@95@B@bX~/hFu34cC#T,k/unq8w8Q5RkUklwQuzunq8w8Q5Rk8d/rJu?v8w9)-&!a0a;a&aIWejg3sEr/h1s<DtDJvyZqY5aws3Jvy!&Wei~Hr1:au5@Bag>23E~5c:Z&bX};kKv?w&unuVu5Rjc;>bs)#~@:Rh.=ay<a]C;b`}Vd6s/t{uAvoaxa()!a,a7%-a#a2Dt,[yF2Wo[>6Vyt3[xuNuPRi&NuPwpi#RoWh?vf8Ri%Jv]!%Ri:KvxD!.'2WeAjZu`q9rxu,Re7woeAg-unLq(qA_/*2Wg_g3u5q^9:4E}/jTrxrzv=Wkkd~0UX#^^Xa-a1a5T&a=U1a'*aEa]!a*aPaA-adok[y54Rn>;:p3~Dp5g9rpsFNvZqjg3uJp4~<5p0Pw;5qlJwNZt*@3p1Pw:5p/Ou!5p2JvG'!6Vye=<qnJvh_[xhg3v,Rh3kOwOw-sDuev/Re^dha[a%!%!a+#Ta7)-5TaCaO!aka!a)sf[yb2>Rl!9ARiq5E}Qg=ucRkBE|oJrJ_@Wk~@Wk{JrJ_@Wk|@WkyJrJ_@Wk}@WkzJvO_[y2g-vMRmiKuYC!)&>Ri;>Ri<@3RkNc](X#@9Rk=g5vuRmhKvDB!+'=]meg3u4Rmgd)#Y'Vz3CARmfd`a+!%T'!+#Ta1Ta6TaM-sTDt9[yA9sYd'%Y#s[[xpj:ueunaXRgEjRq,v-vuqdd2'`#6Rev<32@5>:2<E}5xIo9a*X#Y(;5RePJvD_g>vyRgNj8w)v8<wggs:RgXiZt|vjx,hSq3ah!-(~@:Ro/Ou!5RhWj^v(pyw8unRhUdx-UY#^Ua.a3a70!)%UX1TaDa)'omRiRRhE[y:3Dsz=Br,>6Vyj3[xkg6ruwjcqsrPw;5r*Ku]D'Zt-@3r(~?r.i[vwv]dU1a--U#`a4(g/vsRhPOu!5RhLj:rmu9Wo!~@:wdh@g/vsRiTjXuvvNr}:RhBj^v(pyw8unRn]dz1UYa'a+^Y(!aETZalaRY.Ta?a4[yDJw1!#qLsW>6Vyrfzq-pLflpwRe|Js>%!Dt@3Dt&Jvy_[xs~HrnjMuwpsw'RecKu+D#'!t<~Grl~?rjg5u-x,gwp{ah!-(~@:Rg~Ou!5Rh'jXuvvNr}:Rh#cW#X/c;&!#2sLi[v7u7RgpJv)(!iLrxu,Re6j7v@s@5Se[e7d`aW!Za(a`T.a#!a3!&aDa-!9)Dt_=6s+3[x~~DR|h~DS6avhGun5RkZj3w)v-]mkKunB!&*]kb97R|i<ARk<c:Z(6Vy}Juh'!wziMRoS:F|vkLuauJv5vtvQRh1d='T+Y#VyO~DR|jcF#T'7R|g97R|kJv3'!ay<Rj,Jvh&!:ReXcsa6*a+#a#_aIRf9aLRf?c,Z&Rf5Rf7c.Z&Rf;Rf>cQ#%T'p-Rf8Rf=ct#%'(*!,p,Rf4p+Rf6Rf:Rf<d~'Ua%U*^UYa(!a,-!#a4YaTalaEX0a8a<Weo3Dt/3Dsx=Br93Wen~Dr;~<5p<JwNZt2@3p=Pw:5p;Ou!5r3c7&!#:p>3Ds}KvGB)_6Vyk2sM=<r7x'eovA(!hFu1ARf}cV#X&@r5j6rvwQa^Rf3c=Za'wkghJv__g;unRggA53B9=b^}%j6uduo5Jq;!(hIv%2Re`Ou4ARe_e%a#^^^Xa&!a*a2!&a6YaP!*ad!#a:aE/5Rn?[y@>6Vyp;:pE~DrY~<5pBJwNZt8@3pCh=rt3rWPw:5pAJup_[xoNuPpF9c!#'45pD5ARn)d8#X'X*3@rU72s]h>v<<sSjJpqvewOJq/(!hNw'5ReBk0s2u3w/w'5ReE5@Jq.!a+JQ!&WeU23d(#Y&RjG5]jBk!u7w&u0udARjEe#+^^^Ub#!a2/a`Z(agT1!a-a;|@TaG!aS[yV=Re~fow'RguNuPRe?bz#'>RoUWeL>:Cbb|?JwPZtVg6ruRmzJvD'!6Vz(g/vmRh~Jvy_[y(g9voRgyx*cy(#2>Ri2B9b]~9kIw9u7rluJu3Rg]dI#a%UY'@=p%CAx.gQZ&RhwwygtRm{x5g_Z'+ABqR9Woa=Bp&dV#^*Xa'!&@o{g4v]Rk;Jv{!%Rk[wkkiA5RkiwwfUB=x,fUuqC&*!>RfTg8v0RfV~ARfSd;rJsAuAv9wR'ae+/aO!a@aza/a#[yQ@Wg!2Wemg3sEr0JvB_g>uvReWg2v+Re=KupB_+[y!2AbY~-~Hr2AJwD!(h<~El>h<~El?Kun@+_:9b`}Kg-v/Ri3g;vtwyk_9]k_d=&T#*U.6qh@Ab`|K9:H|CJv[!&3Dtex'fDwC%!Rf[9WlMd[(^X,!a%Z06Vz!@WgBg=v~Rgvg,QRe@awd,#Y+jTv|Q~EfWj]uNr|~FRfXdy#Y&^Ua%!aO.!(a)Ua;=!a@aKap!a-,a!Ta]a[rSa]p?[y82sK=Bq~;:p:~<5p8Pw:5p7d'#Y'Wf(;RnRi[u4w&RgJJvG'!6Vyh=<r#ijuuv/sIKuYD'ZtG@3p9~Gr&d2#`(g<vtRgFj`u5w&rqpxRf2CJuY!+:wfnTOu!5Rg}jNs1ucv&RfwJvA!&3@q|BDcC#T,k/unq8w8Q5RkTklwQuzunq8w8Q5Rk9dga#!a'!a=#a0!:+Tb*b@aO.a4!aba8aFJv^}?!VyR~Dr<g;u%Rn.~<5p[x'e`wNZtR@3p]Pw:5pZhNvjBp.woe_g5u-r4JwF!%DtO3:ooc7&!#:p^3DtpLuGw(!+%)Dtk6Vz#2sd=<r8d'#Y([y#<x3gJt`w@!)%}MRiowzikRij=]ilxAf3,U(#B2Rf#g0v-Rm[ck{`U#]giKv3>)!&6Ri154s,KuGB_%@r68r:dJ|t`#X(9<E|u2@H|rx3gJu?w'!+'1Nu7Reg4=H~+9<wxgY95Rm]xLggZ-`(X}U2:Ri4h<uOawRmsJv__5@bb{jbV~3dka#a'a]!,#a+U=a>b6a3b%!/aKa/)!arwve^VyJ;:pR~DpTg3uJpS~<5pOPw;5qmPw:5pNOu!5pQJvG'!6Vyx=<qoJvA!{~Jup!%@qk7Rn/KvyD!}''[xz;>wkh'?Rh,x8gyt`w5D!&),(SgyccRgztJ@3pPB5p#d'(Y#<]mmifubw&RgoJvE&!82s^JvF&!8Rf,ADb]~;x=h'rNu]vK!,%'*0RnORh)4Rh*AqQg-vaRnNg;wHwkh'ba~4cE#Ta*x3gctyw@'!+%RnFRnD<4Rn@hFvK5RnCxWg[#`&a0Ua()`1Rm75Rg[c]%X#qi8Rg^NvdRj>BwzgZauwji7Rm6A4wgg]d1#&(*,.0a#Rm;Rm<Rm=Rm>Rm?Rm@RmARmBe%#^^^Xaea?aC/b+(,!a+a#!a/!>a&Ta<aKbD!2wphBRnk[yPw}hE|.=Br-3Dtm>6Vy~g6urRf.x,hPrNav!%'RnqRo%Ro#Nu;q[Pw;5r+JwNZtM@3r)d'#Y'Weh;xChL#`&RnmRnoKu}>%(!Rne~Bs-;2wjcussJv+'!aYSO}6@B<5?ba~8LrNvj!.%*ROwungw~ng~:9;Ri^>wtnig;wHRnixDh@|(UZ.x1h@|)!#:2<H|*xHn]#-UX'3Ro)z=iT}6ARns=Bwsn_wpnaRncw]aR(#UXa&Ua*a/=]iPd'#Y&Ro'WnXf{QRm2hNvj]nZd`'T~&1`{|`#9b]{}c:'!#Wl{>@=be}]?cl{{U#:5Abb}Jds#^YaF!a*b4a#a3aPa>&Tb!bH!*a_!Eau?/a&RjY<]gj>6Vz*;:pe~DrZg,QRj1JwNZtX@wihspcJvZ&!VyX9WmOJu|!|N2WmHJvh&!]ht~Bpbcn&T(!#RmQ<s7Nu;padH#X'`+WmJ@>RmKCARhnKup=!)&Wf+:RhqNuPpf9c!#'45pd5AwghpARn(Ls@w!%,)!RmP@Wfe<E|IJva!&WmNg8vsRmLd`*.`#Y'Xa!axRn*]hrA8Rhug5s@rXg8u!RmMd8#X'X*3@rV72smdI*#UY&RmICARho~GsgxVgd)Ta'U-Y&Xa!T#RnEWnA@Wffg1uDRi0hFvK5RnBxGnG&#`%owp)@wsf+bX}Ze-*1!a*^^^Ua|!#a.aq&Ya2!a>.a6!a:aO`aJDtL[y`@Wg#>6Vz12@wzoYRoZNuPRi!NuPRhzg=ucRi,@=b`{Yg=ucRi-ACJvB!&Sh[ebSh]ebi`wUuFRm4Jw2_[y0JvB!.<Ju(!&SoG}6Shd}6<Ju(!&SoH}6She}6Kur@._g5vHRieJvx!{L2G{Kx6gd'T#?Rh82Wi5cZ#X(g1w)Rm5dW-Y(Ta#!a)!#aYa=wnfE=su2>>bU{0j9udv:<svj8uQv-7RgHdE%#^'sq9sp=>Bb_{TJv`!&g/r|snj6v(us5d,#Y(56H}[978H}]Jw5!&g1rushJvB!+j;v{u5?zDhd}6}bj;v{u5?zDhe}6}ce*#`(^^^a[aea!=!a6a*aoXb1a.!aAbL!b>,b'aL!aV@Wf|2Wlg3[y/JwNZt^@3piPw:5pgJunZou3@rsJva&!Vy_g<v~Rm#JvG'!6Vz0=<r{Ju{%!:pj@WfsiXuJu3Rm:JvZ&!WfA~Bph@c4Z&Dtwax5rubx(#:awRk1@d,#Y&RfjRfid1#,Y(@Wfp2Wlrg5s@ryKu[@!,'=]ig9wlk?Rk>g5u-rqJvy'!@9RkQcH(T#=>Ri~@<wkj(Wj(KuZB*!&<7rw@9RkRcH(T#=>Ri}@<wkj)Wj)dg(Ta2Xa9X#`-!a*CARhg@@=I}d9x;c~#X%so=<sj>2@@=aybb}XjWv0Q~EfEj3vLv;<d,#Y(56H}`978H}_dgaPaFa'a/!#a3Y0a_a;a|!1(a7-[yE3[xt;:pJNvZrrg3uJrvJwNZt=@3pIh=rt3rxPw:5pGOu!5rpJvG'!6Vys=<rz@c4Z&Dt(ax5rtJvZ!&~BpH@wsfNg-vaRlNci*U#=<wei<F}a5@Jq.!a*JQ!%@qZ23d(#Y&RjH5]jCk!u7w&u0udARjFd/prq=tyvpaEa(a:.!a1aZ(@@=I}:9wpd%=<sX55w_h}@@=I{t=ay<aU@@=I}T=ay<2@@=I})?C9:9au@9Cb]}DP~=x-fAZ(2Wl1=ay<aU@@=I}>5@d##Y+jTv|vV~EfFj]uNpn~FRfGdgaK!Z2&!a8a-Tb({E!acTbM*!a(DtY[yYd'%Y#sl[y*hHvh>Re5x2c{Z}.j4uCvcawRiMd+#X+_x&d!},<5RkX;2Hzw@x,gavfB-!{CcF&T#Roe;RodwWbBg5urRgaKvHC*_6Vz+<4opieuew&Rmq@d]&Y)X,T#X0Rh}<BqP=4qS9:ReMg/ujReNJw0!/<Jui%!bd{kawwnemRelAxUa?a3#*.&UX(Ya+a/RhvRnQ<o}9Wmtd-#Y&RgSRmw9;Rmxay=Rmyg-vaRmuxEhSrNu,v-voC!%(aR.a(a7+1Ro1>Ro5CE{A9b]{@;5x#eO{:g;urRi+KrNA!%(Ro3>Ro79;Ri_Ku@>{;&!x%gX|{KunA_+g5QRj/g3u5Rj#g>uERj%wio/xRhS&!,!#^1U}wba{8>>@=be}qC@:D5ba{7Ku+A&!}x?ba}t>>@=be}se(aA^^^Uat!b0#{pa+awUazbGa#aLb9bgaWac'a5TbS=Br!d1#`%scp_Jvl!#rT>Re0JvX&!VyN=H{Fcm#U&:pY=ReaJv2&!]h0=]nUJvG'!6Vy|=<r%JrM_=]h2@Wlud'#)U'Wf'b]{i=]h/Jvh!&~BpWg=v]RnMx+ny#'Nu;pVwjnu=]nwxJnx,T#`&Reqwjnt=]nvieu9vrRjLLuYwP(#+!th@wih5pX~Gr'g5v/Rh4KunA'!-CARnP@wwiN:Rm_9x'cvw>!|l=<saKvAA!0&3@q}>w^e1bp#&Re2Re3BDx7gH#T|f5H|eKuZ>!%(:qNAH{]Jv6!+3B2B9=b^{X<5<B92:E{ZLvhwA(a;a%!igQuyRmad+#Y}m@3Rh5d8#X'X*:AqUAHzmaxwbh<aXRnVcF}RT#Nw&cj#U(BWnug/vsRntdka)(a3+.Zb7aYYan1!bVa@Xa}[y^@b[{G=H{+hFu73Rj&Pv#5ReQcK%T#sig1v{Rj'Ku+D#'!t]~Grm~?rkKuMB!01d5#`'Vy.ta3Dtu~Hroc8#'{^45s85AwZbP&!#Rn!wghxWn#KvEA!)&2RlA2RlBx:h|#(T,=]j09Wobz>x]z/@awRoTd+#Y(az]hFhCrm4d,#Y+jTv|Q~EfMj]uNr|~FRfOdCa!Xa9_X#@<plJvf!%b`{(9;Rgwc;.!#2x7cw#T|UDb]|T5Ju={(!=@E{&Jv)&!Ab`{'awJvf!~*>>@=be{#KuY>!+&4Ezyi[ugv&RjIdea+T)#UXa&T-T&a!Rh9auRmW=]kLg5vuRn+g3u4Rn-Ow6ARn,hHus5xNk?#UX(U~)/g8v0RkD~AwkkF?Ri.OuNBwkkA?Ri/d|a2`a*^UYa.!aBTZaTa'Xa;!(!2!-a#b2[yC>6Vyq3[xr2Wi?g1rusVh%s?DtF~<5rbJs;%!DtBfswKtCj[uvuSsEu3RgVx3o:u+wN'*Zt;@3rd~Grh~?rfg8w)Lq)qE&-a%!>bI|`jWv0vV~EfCjTv|vV~Ef@j]uNpn~FRfBcK#T']gWNu7x,k7q4ai(0!hHv8<RhmkMu9vrsBuev/RhlCJvB!,g<v{wchh~@:Rhji[vrv{wchi~@:RhkdS&a5UY#Ta!RgPwwiI5BwciI~@:Rh`x'iJvj'!5]iJPu8Bwch]~@:Rhach)U#h3rp]gLh@t|Ax,hTq3ah!-(~@:Ro0Ou!5RhXj^v(pyw8unRhVd|)`,^UYas!a?/a2Z'a^Ta{Tb7Ta(a#!a,Wf&9sZ3DtAadamov=Bqt3[xig8vsRm~>waiL2b`{QJv*_Ouv2qgj<v]v2BqfdR'X*X#Y-@3qr~Gqv~?p6hHv-]glPup5Lq+q?_%*b_{qF{n9b^{rOu4ARhpKvCD!+&~Bqp:5Dbb}nwoiKl&unuTuBv]v+ueunaXRf0=Jvh!0nKufu8v1w&w7q%w&uHrz:Rgnj5w,uxDJq/(!hNw'5ReCk0s2u3w/w'5ReFd>Za&!*UaA=<wkgsRnSJv^!%Refifw3vyRgOKu_B'!,<]gkiiu:w&Rh<=C@a^<B57@2F{[<B5@aW:=3away9A5aW=<B=C@a^<B57@2F{Ie-#`(^^^bCara.b8aza6!/bZ,!adTbnTbOb+aFaS!aAT9@Wf~2Wli3Dtl2@d,#Y&RfnRfmJwJZtN~GqyJva&!VyMg<v~Rm%iXuJu3Rm9Jv[_=]ih9wlkDRkCd1#`(@Wg>2Wls3cH#T(@<Rj*=>Ri|b~'#23s9h<~El.d'#Y&Dtxi^rzvdRl#d*#U%(o|B2s`hJwSaxRmDKv4B&!1:Rmdd5#`'Vx}to~Hq{x'f1v3(!BA5ba|bJv_&!Wfug1v]ReIdO+U/Y#&G}-8wze=Rh{g1v]ReHg/uQRf/by#)ibQwERl/cH#T(@<Rj+=>Ri{cNu+vlax-!(#a0qa9<Rii2;;bU{H;x<i=&X#Rk`<4wwi=C9H~8xAI(Y#<azRi@45wXI<B9;5bb~7dL(X#Xa(+!aL6Vy{g5QqOau:5au2@ay547EzbxOcU(UX-T#Ta#:Cbb|A?wjh/b_|SOw6ARgtihr}u7Rhy<d1#T)X1@@=I|~=ay<2@@=aybb}Sj3vLv;<d,#Y(56H}A978H}@dGpvs@uAu`vcw9*!aFa+ai%(b!aXa8.a?a[ozWey=sU2@G}Nch&U#Rf_WexKu+D#'!t:~Gr`~?r^j]uNr|~FRg*j^psurwJt|RmcKv)@&!)7Rkv~Br[@wxfO:Rl3co#U'6Rezj_q#vIuavjRltwzeyh@vr5JqD0!>aY?C9:9au@9Cb]}9cl#U*5;5<H||jbuus1ucv&Rfvg1v~d/pppzqFr^a--a~!aMat1(hFv;Wiz@@=Izoj5uuv-7Rix~Cw`fk2WlVcZ#X,k)u3vWs@u2]ktg;wEx'fBq(_2Wg/jTv|vV~EfoJv]!15x'hzqG!(P~EfU~CRl_j6v(us5x4i-#T(2WmZ?C2F|d>Kq<aj1!*jTqIsBv=Wl`~Cw`fi2WlWj`v0u*~>RlR=c>Z,k#u3vWs@u2]kr<c1Z+jTqIsBv=Wla~Cw`fm2WlXdmb3!a{(arZa`bkTa%TbQTa-a9+c'!aM!/[yL=Bqug.w'RifhFvyDRj.g>vgwyk^9]k^Jv3_@WfbAARkhJw2_[x|JvB_wkoIRoKwkoJRoLd'(Y#<]gm=<9<H|yd'%_X#skDtb3awwqkgNulRkgdB#^',9:p'hJwSaxRmEBwVb8@4=H|qLu+w50&!)@3qs~?pU>Awwn;;Rn=c:Z'ARn<=<qwKvC@!/&~BqqJv6!&]eVb^z^xRge'/a%+^`#Sge}6<4Rn3=]n0Pw2>Rn8Jw0!&>Rn:>Rn6cY#a7+!a&=<wkaNw~h3z_c5Z{=wjh#=]nLKv^D!&)Vyz=bW|swYb<WetcG#T(2wxa@qVx@gD#Y&b^|V5JwG&!5bb|pg/w&RgD@x=kHs=uAvn!a%%/'+RmSRh694Ro`g-vaRmRhHv-]mlxCcS#`&ba~.5cD#Ta)P~=d,#Y(56H{>978H{Dd_#{2^Y%_+qbbb{6g3sERhsbU{?dfa.,`a(Xa<!aiX#(55RiG54RiHcI#T'WiU3RiVNvdwtfcRlKNvdd,#Y&RlHRlExQgf.1*^T'X#Sgf}6Wn4=]hfPrk>Rn7Jw0!&>Rn5>Rn9Lunw?&a2!,5<oq@@wqfdRlJj5Q~=d,#Y(~ARfcOuN]fdDKw;ay(}i!547E}j?cI#T(@5bV}iCbV}hdv(^^Tb?a40,b##Tbo!a*bR!a<b|a/!aKai!aU[yK=]o^g:v>ReGJwPZtK<7Rh+h<~El,Pv#5ReR@awwxjCg,ulRjDJv6&!]j!z?aQeeg>w=Sh<eeJw;!&axEzOg,Qosc!#*:wkeJ]eJ>x'h-u(!%Ro.w~h.zPdNZ(X,Ya![x{;9ReY;wkgxRiF:x?ap#Y&RmUg<s2Rkod]+UY0TZ'!a&A9sw<=bczLNvuw{gqzNhJwSaxRmCKuLay!#&s_Rf-55b^{uJvZa!!c%#(55Ri654wmiu5RiuawLu,vp!+}^%b_}Y9;wkgxba}o>A9:=b^}zKuh=a''!3awRk3c*'!#aHRk6c+Z&Rk5Rk4Jv)&!awRjSawd9*`#0?C2@EzMj8u<uJ5RmbjQrquJu3x,k>uq@_+=ayb^|W~ARkEOuN]k@7dhzV^X/X&a-#zRzSb`zXcJzTT#2WkVKvDBzW!%FzY9;5bbzWjQrquJu3Jw3%!b`zU=ayb^zQd:#X(T-a!6Vyywxh}=b]{Jg=u1RiAdGp~qHtzv!w(wA+a+a;<!aJaYai'anasb(=azRmV:Cbb{MLq2vb!%')RjuRjrRjtRjqx3jnqCw3!%')Rk(Rk+Rk&Rk)Lq2vb!%')Rj{RjxRjzRjwLq2vb!%')RjsRjpRjfRjex3jcqCw3!%')Rk'Rk*RjkRjl9<CbbzfOu4ARhxLq2vb!%')RjyRjvRjhRjgx=joq*uKvb!%')+-Rk.Rk%Rj~Rk-Rk#Rj}x=jdq*uKvb!%')+-Rk,Rk!Rj|RjmRjjRjidAq&qKs@uAv8Aa.'*-a@a&0!aM@a5[y73Dsy3Ds|3Dt):wxgI2sHJwJZt.~Gqxwsf0ikrzt}Rl0Jvy_[xj~HqzKv_A|D!&WfP8axRoVcf,U#k(v]v+ueunaXRf1Ju}'!g8u#Ri=jQw!sCunLprq>!,')~<5qeGzq9F{W=c##%s5au:5aU3CBE|;d4#X(D!a&6Vygx(b;#(=]ed?C2F{N<capoq2r[a&!aPa9,'Pw;5s:@@=I|,55w_h|@@=IzcP~=x'fCqB_2Wl2>aU@@=I|1OuNBc1Z+jTqIsBv=Wlc~Cw`fl2WlZ~AcTa%!Z+jTqIsBv=Wlb~Cw`fh2WlYk+uNqJsBv=WlSg,u3dca3#UXaMYa)TaB-=cM|7T#<bI}l5@B932:aV2G{BOuNBJq:|M!5Ezt=<B=C@a^<B57@2F{v>cB{/T#=ay<bI{3Jv6!a.6BKq0ah&+!5E}HP~Ef{978BaU@@=Iza<7d#.Y#978BaU@@=IzH~AJq0!(@@=IzG978BaU@@=IzFe,aU*Y&^^^bvJb,b:bFad!a,c2Ta>aL.bo6!a#CbTa'T#Re{2Wlh2@G{yg6t~Ro_NvdRfticuRQRllJv3&!x&c|zs@Jw3!%RflwpfkRlpKuL;%(!Re<@G|C2GzdhIvuBwgjAg-u0RjAKQB%!(GzZ@G|5NuuRl7d='T+Y#Vy[g<v~Rm!==G|>JvA!)@wma=]m1ifuaw&RmnLs@vT'!|/+[y,g:v>ReTJw1!#qX=x!eC{bLu+wT&)ZtZauq_~Graci&U#F|89:r_Lupvq!.)&2RlG8RfaC=x!eF{_h?rpWlmd&'!#X|&]k::xJey#`'T|+<E|&2@H|%dE#(^,g;u.RiEg6vjRiC9xCkA{O|zY#g=ucRmXKs0@!&*@G|m@awRknJuh!,3d(}gY}eJvj!%Rm):Jw3!%Rm+Rm-Ls0w(&!a(a#@b[|6cZ#X'7RkxWgAOu4ARn'dH'U#Y*Vz-Wm'CARm}d]*#a%^a*T'aK!a<9bV{PC=p*Jw4!&SgxcbB5r]idw(wBRmF7xFkt#&`(Rm/Rm8E|!JuY_9:Rl5=wrgr2:bbxd@xXfB(a*#T+!.X0X1Ta/a'T&RlDRfL>RlyARl9b[z[>RfZ:RlL:RfRwlg/ARl;9;RlxKv,A/!%7s69<74=BA5ba{-8Bde#`a<XaKYa1,a'P~=wxfB2bZ}}?C972@@=I}r8@55B9;5bb}G978B2@@=aybb}3j3vLv;<Jw3&!>Rfk=ayb^}4~Ad1#`*@@=aybb{w2@>==<bbz]dx+UY#^UaF!a9!bB'Ya1.!ajXa#%olRhD[y=3Dt#Ov5BrHKuMB%!(Rf^Wep~HrJwkiQjKr|~FRg)Ku+D#'!t5~GrF~?rDdV)UY,Z/_7RkuG{<~BrBg,rlsO:235B@bX}|d?a1!#`(6Vyn5@d##Y+jTv|vV~EfIj]uNpn~FRfH7Lq2vb1!a9-978BaU@@=Iz9978BbU}#~AJq0!(@@=Iz8978BaU@@=Iz7~AJQ|}!978BbU}!JvkaK!AdUa21-U#`a+(g/vsRn~Ou!5RPj:rmu9WhOjXuvvNr}:RhAj^v(pyw8unRn[kPr}p|u7vwv]RiSBd;pppzq@qHQa?(b.!a.a`@.|xa(hFv;Wiyj5uuv-7Riw~Cw`fg2WlU978BbU|wOuNBJqG!(P~EfD~CRlQcZ#X,k)u3vWs@u2]ksg;wEx'f@q1_2Wg.j]uNpn~FRfqJv]!15x'h{qG!(@@=IzK~CRl^j6v(us5x4i,#T(2WmY?C2F{1>Kq<aj1!*jTqIsBv=Wld~Cw`fj2Wl[j`v0u*~>RlT=c>Z,k#u3vWs@u2]kq<c1Z+jTqIsBv=Wle~Cw`fn2Wl]dn1#c(a(b^a2!b/bAT(bj!aDa7bu,a_a{c0!2T0g:v>ReD2@G{42@G{5~DpM~<5rc=Bx6i>{RT#RnI@zCx]y]z:2Jv[!zr5Awyk]9]k]dD(Y+X#6Vz.g=wKtgwhaCwgmTWj2Lu,w%_+/[y-B;b^xeg3u3Rj-2@bX{*KrJ<!+'@Wg(g?QRlC@Jv`!%b[zIwsfII}8JQ_@w|kW|=Jv(%!AqcOuNBJvEzh!bYzjLs@wP#(0!oy@>RkdJwMZtc3Dtd@BcG#T'9bWxg2@2Fznd*#Y+;2x'c}w<zizixNgwa#Z'U+!/!a'!a+w~g~z6wcn{Rn}wcnzRn|5Rh%=]nJg5vuRmvNvdRlvcprJu}w*az*a#!%.a.'Bot9qT]kj@Wg'ay2Gzv@Jv`!%b[zEwsfHI}1;ck#Ux`<Cbbx_Lu+w!a&0*!wko*wwo,So,}6Juqxf!E}PigQuyRm`d3(`#8>Rn%:A5B;bZ~%KvhCa!a2!x>k7#Uxb@b{#xaRk7Jw0!)>wwhlShl}6>wwhmShm}6CJvB!.x'hhvj{!!5Bwkhhbaz}x'hivjz~!5Bwkhibaz|xEhTrNu,v-vpD!a%&/)a3a.,%Ro2t[CE{)@3re9b]{%wjo09:rgc:Z&Ro6=<riifuaw&RmoKrNA!%(Ro4>Ro89;Ri`dSaL'UYzxZb)7Rka3xRhT&!,!#^1U}vbaz{>>@=be}yC@:D5bazzKu+A&!}{?ba}y>>@=be}wxBh[t`u~vJvr!%a!a()a,a0a4RoC=]o;Ju(!%RoGRhdwjh`=]oAg>w#Ro?g5vuRo=NvdRl|Ku]C.!&;RoEJvB!%RoORoMBx'h[v+_?w~h`}~5?w~hd~!xKh]oiptu-utv.vp!#%&a30a@a'a+(a/aOp(o~p!RoDJu(!%RoHRhewjha=]oBNvdRl}g>w#Ro@g5vuRo>c[#X']o<CauRoRAd-#Y':RkpauRoQKu]C.!&;RoFJvB!%RoNRoPBx'h]v+_?w~ha}t5?w~he}ue!/UbhYacXaW^Tc&a;b:a-c/#b&aja1(!cL+!bKbt!bmcRc9aIc?8[yW3Dtt94Rg`Jv}!&SiRMzBhEebShEMNuPRe>x7gL#TzuwjirRipc<Z&>on;>z=h-MSh.Mwqczx'a7vj&!>Re4@=ResJt__NuPRi*NuPRi)j]uNr|~FRfzKrJ>_+@Wfy@Wf]2WocKrJ<!+'@Wg%g/QRl@@Jv`!&awRl<wsfFIzgLu(w*!.*&ShBMwvhIRhI9;RhNx1hK'!#Sn]Mx1hK~0!#:2<H~7cNu+w7D*'1ZtW>Rn1~?rOc:Z&Rn2=<rQ<7wjh&=BSnLMc]#X(6Vz)w[b=a!U#9wzgMc3#&(RgMRitRis<x,gKt`ax!&+SioM=BSilMc3#&(RgKRinRimKurB,!&SiQMzBhDebShDM6BJQ!(P~Efx978B2@@=I}WLrJw!!,a*&@G}O@9wkibRid@@x'fKwC!&SlDMSfLMjUv~Q~EfKKv3@a+!(hFv-]mpx/hYZ(C5RiWz<o/MwkhY?So/M@x,gbvfB*&!SgEM:SoeeehFu3:Rgbda(,^TZa)X/7Sg[eb:2RgI~BrMC@wgkc:wwkcRerx3h(uUvK!&*,SnOM4Sh*MArRg;wHRh(x=h;rJvPwI!a4',a'0@Wg&=BSh/Mg>w=Rh=g3w*wwgGRgGcW(X#;Sg}M2Gzk@Jv`!&awRl=wsfGIz`dKZ*T'Y-:RhR7RhQg5u-p`j6v(us5d,#Y+~Awkia?RicOuNBwkibba}Ld6p~tyu_vbAa'a+!a/'a3aEa8a!>Sh,ebJv{!&Sh@ebSaReb9;SgwebNuPRi(NvdRl)NuPRi'hHu^<Rm^Jvv_@Wl(g;u1Si/ebKu'B&!*Sh?eb@Wl'z@aPeb95Si.ebcpputyvjB)!,&a+0a%ShAMWeK@G}C@WfJ9;RhMwvhH9w{ia}ix,hJvRA1(!zAn[MRhHx1hJ~*!#hFv(BSn[MBJQ!(@@=I~'978B2@@=I}2db.Ua<'X}+T#a0XaG2G}E;wkg|wuh!Rh!x,hZu,@)!&So0MVy)C5RiXACJvB!&5RiY5RiZg8w)cG}*T#2@bU}=KsA>(!a.3wkhZba~(x,h^u(A!&(SoCMRhb5Bz=h[eb?w~hb~6x,h_u(A!&(SoDMRhc5Bz=h]eb?w~hc~6e)aA1T#T,^^^c-bMb&blcPaP(a/!0!bA=b5c@a(!bfbrc#2afwmhARnjwchORnp2Wlf3DtsNvdRl-2@wpa<]m0bx(#:awRk2@Jw3!%RfhwpfgRlnKQB%!(G{V@G|'NuuRl6d='T+Y#VyUg<v~Rl~==G|<Jv+'!aYShC}6@B<5?ba~8@Jw3'!g2QRljhLrpWlOd+#Y'g.w'rIg>w*wgj@g-u0Rj@Lu+wT&)ZtUauq]~GrGci&U#F|39:rELrNvj!.%*RhCwunfw~nf~:9;Ri]>wtnhg;wHRnhx3hDs@v~!/+'@Wfr@9RkSNu&Rlo=@<5GzoKs0@_+@Wl+@awRkmJuh!-3d(}pY#qWJvj!%Rm(:Jw3!%Rm,Rm*de&!1U-U#`)Re;@G|.@9Ri82@wjfvRlq=@<5GzpLvOvr!).&2RlF8Rf`C=x!eE{.Jw3_g2QRlkhLrpWlPde(!#U{s,UXa*Ta'[y'g:v>ReS;x0PZ&RnlRnn~HrKJw1}f!=x!eB|2w]aP(#Xa&a*Ta.Ua2a7=]iOd'#Y&Ro&WnWg;u.RiDg6vjRiBNvdRlzhNvj]nYJuW_2Wm3x)kFze{9d])!a.!,Y01!#&aC!a3RndC=ox~BrC@2b^{pg,rlse7x'ksuq!%Rm.E{xidw(wBRmGx9o+)X#wwo-So-}69:Rl4@xSf@a#XZ'X)X,Ta(/ARl8b[xc>RfY:RlI:RfQwlg.ARl:9;Rlwdn'#^XafaQa1X1TaHTa)@b[{zcZ#X'7RkwWg@Ou4ARn&x)kG#{,g7u/RkGdH'U#Y*Vz'Wm&CARm|bx#(A]gUbUzJj9Q~=d,#Y(56H}l978H{U7d,0#U*2>ABb_xZ978BbU{e~AJQ{g!978BbU{hxMh?ad{oUYZ.x1h?{l!#:2<H{mx3n[t{vl!,&a%3Ro(z=iS}6ARnr=Bwsn^wvn`Rnbd`*T}B0!#^X'BG{c9b]{a>>@=be}F?JvS!&BG{d7BG}(Bde#`a1X,Ya@!a'P~=wxf@2bZ}I56B2@@=aybb}08@55B9;5bb}<j3vLv;<Jw3&!>Rfg=ayb^}&OuNBKuLA!)a!P~=x#fD{f2@>==<bbzl?C972@@=Ix^d6rSu,v7w*C(0a)a6#B+a%!sQ[y?3Dt%3[xn~<5rLOu!5p@Ku+D#'!t7~GrP~?rNKvlaya7'!h+v-5qMg=t|cd,U#5AAaa5Abb{S@52B5@a[@52B5Gx[iXueu;d<#`a(!/549C;ag>23ExY5@Dah89b^~689Jv)!~2b[~1Lv'w(%*!a#bX|aPrmawRe]keu7uhv-q6rxu,q`xTo]/a5aU!bNaDXbi!b-!ao!b<bwA!#5@B932:aV2G|:d-)Y#hJrL>RhG<7@C5<H|_=Cau:5aj5@B932:bJ|ng>vIbs)#?C2F|9jPv0w.vISh-MKvUaz(.!9ABbb|[5;5<H|Eg>unwfh;9:4E|YjQsBt|vjx'hYq3!(?C2F|J:2<BaY?C2F|GOu!5x,g|p{ah!-(?C2F|c9:4E|OjXuvvNr}:Rh&i[w*t|cd+U#jJvsu)vsSn~Mkfrmu9p}u7vwv]So!McW#Xa!ax5@A5aY:5;5<H|>kJv~vYrquJu3x4ib#T)2@SmZM?C2F|Bj:rmu9@xPhI(a*a#U#`a3-5Abb|L~@:RhK9:4E|0@52B5G|#C::aY?C2F|-:2<BaY?C2F|.5Jvk!a)javYrquJu3x4ia#T)2@SmYM?C2F|HAxPhH(!a#U#`a*-5Abb|4~@:RhJ9:4E|R@52B5G|F:2<BaY?C2F|Sc^#Xa2j=Qq5CJvB!-g<v{z;hhM?C2F|Zi[vrv{z;hiM?C2F|XKsA>!a)-g<v{z;h[eb?C2F|]i[vrv{z;h]eb?C2F|^iZu.vix,hZq3ah!.(?C2F|QOu!5ShXM:2<BaY?C2F|P", 13494, 2713, 49, 25, 61);
-
-// node_modules/entities/dist/internal/bin-trie-flags.js
-var BinTrieFlags;
-(function(BinTrieFlags) {
-  BinTrieFlags[BinTrieFlags["VALUE_LENGTH"] = 49152] = "VALUE_LENGTH";
-  BinTrieFlags[BinTrieFlags["FLAG13"] = 8192] = "FLAG13";
-  BinTrieFlags[BinTrieFlags["BRANCH_LENGTH"] = 8064] = "BRANCH_LENGTH";
-  BinTrieFlags[BinTrieFlags["JUMP_TABLE"] = 127] = "JUMP_TABLE";
-  BinTrieFlags[BinTrieFlags["VALUE_MASK"] = 8191] = "VALUE_MASK";
-})(BinTrieFlags || (BinTrieFlags = {}));
-
-// node_modules/entities/dist/decode.js
-var CharCodes;
-(function(CharCodes) {
-  CharCodes[CharCodes["AMP"] = 38] = "AMP";
-  CharCodes[CharCodes["NUM"] = 35] = "NUM";
-  CharCodes[CharCodes["SEMI"] = 59] = "SEMI";
-  CharCodes[CharCodes["EQUALS"] = 61] = "EQUALS";
-  CharCodes[CharCodes["ZERO"] = 48] = "ZERO";
-  CharCodes[CharCodes["NINE"] = 57] = "NINE";
-  CharCodes[CharCodes["LOWER_A"] = 97] = "LOWER_A";
-  CharCodes[CharCodes["LOWER_X"] = 120] = "LOWER_X";
-})(CharCodes || (CharCodes = {}));
-var TO_LOWER_BIT = 32;
-var CONSUMED_SHIFT = 21;
-var CODE_POINT_MASK = 2097151;
-var CONSUMED_OVERFLOW = 2047;
-var longNumericConsumed = 0;
-function unpackConsumed(packed) {
-  const consumed = packed >>> CONSUMED_SHIFT;
-  return consumed === CONSUMED_OVERFLOW ? longNumericConsumed : consumed;
-}
-function isNumber(code) {
-  return code - CharCodes.ZERO >>> 0 <= 9;
-}
-function isHexadecimalCharacter(code) {
-  return (code | TO_LOWER_BIT) - CharCodes.LOWER_A >>> 0 <= 5;
-}
-function isAlpha(code) {
-  return (code | TO_LOWER_BIT) - CharCodes.LOWER_A >>> 0 <= 25;
-}
-function isEntityInAttributeInvalidEnd(code) {
-  return code === CharCodes.EQUALS || isAlpha(code) || isNumber(code);
-}
-var EntityDecoderState;
-(function(EntityDecoderState) {
-  EntityDecoderState[EntityDecoderState["EntityStart"] = 0] = "EntityStart";
-  EntityDecoderState[EntityDecoderState["NumericStart"] = 1] = "NumericStart";
-  EntityDecoderState[EntityDecoderState["NumericDecimal"] = 2] = "NumericDecimal";
-  EntityDecoderState[EntityDecoderState["NumericHex"] = 3] = "NumericHex";
-  EntityDecoderState[EntityDecoderState["NamedEntity"] = 4] = "NamedEntity";
-})(EntityDecoderState || (EntityDecoderState = {}));
-var DecodingMode;
-(function(DecodingMode) {
-  DecodingMode[DecodingMode["Legacy"] = 0] = "Legacy";
-  DecodingMode[DecodingMode["Strict"] = 1] = "Strict";
-  DecodingMode[DecodingMode["Attribute"] = 2] = "Attribute";
-})(DecodingMode || (DecodingMode = {}));
-function determineBranch(decodeTree, current, nodeIndex, char) {
-  const branchCount = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-  const jumpOffset = current & BinTrieFlags.JUMP_TABLE;
-  if (jumpOffset) {
-    if (branchCount === 0) {
-      return char === jumpOffset ? nodeIndex : -1;
-    }
-    const slot = char - jumpOffset;
-    if (slot >>> 0 >= branchCount)
-      return -1;
-    const stored = decodeTree[nodeIndex + slot];
-    return stored === 0 ? -1 : nodeIndex + branchCount + stored - 1 & 65535;
-  }
-  if (branchCount === 0)
-    return -1;
-  const packedKeySlots = branchCount + 1 >> 1;
-  const branchEnd = nodeIndex + packedKeySlots + branchCount;
-  for (let index = 0;index < branchCount; index++) {
-    const packed = decodeTree[nodeIndex + (index >> 1)];
-    const key = packed >> ((index & 1) << 3) & 255;
-    if (key === char) {
-      const pointerIndex = nodeIndex + packedKeySlots + index;
-      return branchEnd + decodeTree[pointerIndex] & 65535;
-    }
-    if (key > char)
-      return -1;
-  }
-  return -1;
-}
-function readTrieValue(decodeTree, nodeIndex, valueLength) {
-  if (valueLength === 1) {
-    return String.fromCharCode(decodeTree[nodeIndex] & BinTrieFlags.VALUE_MASK);
-  }
-  if (valueLength === 2) {
-    return String.fromCharCode(decodeTree[nodeIndex + 1]);
-  }
-  return String.fromCharCode(decodeTree[nodeIndex + 1], decodeTree[nodeIndex + 2]);
-}
-function parseNumericEntity(input, numberStart, inputLength) {
-  let offset = numberStart + 1;
-  let cp = 0;
-  let digitStart = offset;
-  if (offset < inputLength && (input.charCodeAt(offset) | TO_LOWER_BIT) === CharCodes.LOWER_X) {
-    offset += 1;
-    digitStart = offset;
-    while (offset < inputLength) {
-      const char = input.charCodeAt(offset);
-      if (isNumber(char)) {
-        cp = cp * 16 + (char - CharCodes.ZERO);
-      } else if (isHexadecimalCharacter(char)) {
-        cp = cp * 16 + ((char | TO_LOWER_BIT) - CharCodes.LOWER_A + 10);
-      } else {
-        break;
-      }
-      offset += 1;
-    }
-  } else {
-    while (offset < inputLength) {
-      const digit = input.charCodeAt(offset) - CharCodes.ZERO;
-      if (digit >>> 0 > 9)
-        break;
-      cp = cp * 10 + digit;
-      offset += 1;
-    }
-  }
-  if (offset === digitStart)
-    return 0;
-  if (offset < inputLength && input.charCodeAt(offset) === CharCodes.SEMI) {
-    offset += 1;
-  }
-  if (cp > 1114111)
-    cp = 1114112;
-  let consumed = offset - numberStart;
-  if (consumed >= CONSUMED_OVERFLOW) {
-    longNumericConsumed = consumed;
-    consumed = CONSUMED_OVERFLOW;
-  }
-  return consumed << CONSUMED_SHIFT | cp;
-}
-function decodeWithTrie(input, isStrict, isAttribute) {
-  const decodeTree = htmlDecodeTree;
-  let offset = input.indexOf("&");
-  if (offset < 0)
-    return input;
-  const inputLength = input.length;
-  let chunkStart = 0;
-  let result = "";
-  const root = decodeTree[0];
-  const rootJumpOffset = root & BinTrieFlags.JUMP_TABLE;
-  const rootBranchCount = (root & BinTrieFlags.BRANCH_LENGTH) >> 7;
-  do {
-    const entityStart = offset + 1;
-    const firstChar = input.charCodeAt(entityStart);
-    let consumed;
-    let value;
-    if (firstChar === CharCodes.NUM) {
-      const packed = parseNumericEntity(input, entityStart, inputLength);
-      consumed = unpackConsumed(packed);
-      if (isStrict && consumed > 0 && input.charCodeAt(entityStart + consumed - 1) !== CharCodes.SEMI) {
-        consumed = 0;
-      }
-      value = consumed === 0 ? "" : codePointToString(packed & CODE_POINT_MASK);
-    } else if (isAlpha(firstChar)) {
-      consumed = 0;
-      value = "";
-      const rootSlotIndex = firstChar - rootJumpOffset;
-      let nodeIndex;
-      if (rootSlotIndex >>> 0 < rootBranchCount) {
-        const stored = decodeTree[1 + rootSlotIndex];
-        nodeIndex = stored === 0 ? -1 : rootBranchCount + stored & 65535;
-      } else {
-        nodeIndex = -1;
-      }
-      let bestNodeIndex = 0;
-      let bestValueLength = 0;
-      let current = nodeIndex < 0 ? 0 : decodeTree[nodeIndex];
-      let index = entityStart + 1;
-      trie:
-        while (index < inputLength) {
-          while ((current & (BinTrieFlags.VALUE_LENGTH | BinTrieFlags.FLAG13)) === 0 && (current & BinTrieFlags.JUMP_TABLE) !== 0) {
-            const jumpOffset = current & BinTrieFlags.JUMP_TABLE;
-            const branchCount = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-            if (branchCount === 0) {
-              if (input.charCodeAt(index) !== jumpOffset)
-                break trie;
-              nodeIndex += 1;
-            } else {
-              const slot = input.charCodeAt(index) - jumpOffset;
-              if (slot >>> 0 >= branchCount)
-                break trie;
-              const stored = decodeTree[nodeIndex + 1 + slot];
-              if (stored === 0)
-                break trie;
-              nodeIndex = nodeIndex + branchCount + stored & 65535;
-            }
-            current = decodeTree[nodeIndex];
-            index += 1;
-            if (index >= inputLength)
-              break trie;
-          }
-          if ((current & (BinTrieFlags.VALUE_LENGTH | BinTrieFlags.FLAG13)) === BinTrieFlags.FLAG13) {
-            const runLength = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-            if (input.charCodeAt(index) !== (current & BinTrieFlags.JUMP_TABLE)) {
-              break;
-            }
-            index += 1;
-            const remaining = runLength - 1;
-            let wordIndex = nodeIndex + 1;
-            let charIndexInPacked = 0;
-            for (;charIndexInPacked + 1 < remaining; charIndexInPacked += 2) {
-              const packed = decodeTree[wordIndex];
-              if (input.charCodeAt(index) !== (packed & 255))
-                break trie;
-              index += 1;
-              if (input.charCodeAt(index) !== (packed >> 8 & 255))
-                break trie;
-              index += 1;
-              wordIndex += 1;
-            }
-            if (charIndexInPacked < remaining) {
-              if (input.charCodeAt(index) !== (decodeTree[wordIndex] & 255))
-                break;
-              index += 1;
-            }
-            nodeIndex += 1 + (runLength >> 1);
-            current = decodeTree[nodeIndex];
-            continue;
-          }
-          const valueLength = current >>> 14;
-          const char = input.charCodeAt(index);
-          if (valueLength !== 0) {
-            if (char === CharCodes.SEMI) {
-              consumed = index - entityStart + 1;
-              value = valueLength === 1 ? String.fromCharCode(current & BinTrieFlags.VALUE_MASK) : readTrieValue(decodeTree, nodeIndex, valueLength);
-              break;
-            }
-            if (!isStrict && (current & BinTrieFlags.FLAG13) === 0) {
-              consumed = index - entityStart;
-              bestNodeIndex = nodeIndex;
-              bestValueLength = valueLength;
-            }
-            if (valueLength === 1)
-              break;
-          }
-          const next = determineBranch(decodeTree, current, nodeIndex + (valueLength || 1), char);
-          if (next < 0)
-            break;
-          nodeIndex = next;
-          current = decodeTree[nodeIndex];
-          index += 1;
-        }
-      if (value === "") {
-        const finalVL = current >>> 14;
-        if (finalVL !== 0 && !isStrict && (current & BinTrieFlags.FLAG13) === 0) {
-          consumed = index - entityStart;
-          bestNodeIndex = nodeIndex;
-          bestValueLength = finalVL;
-        }
-        if (consumed > 0) {
-          value = readTrieValue(decodeTree, bestNodeIndex, bestValueLength);
-        }
-      }
-    } else {
-      consumed = 0;
-      value = "";
-    }
-    if (consumed === 0 || isAttribute && firstChar !== CharCodes.NUM && input.charCodeAt(entityStart + consumed - 1) !== CharCodes.SEMI && entityStart + consumed < inputLength && isEntityInAttributeInvalidEnd(input.charCodeAt(entityStart + consumed))) {
-      offset = entityStart;
-    } else {
-      if (chunkStart < offset) {
-        result += input.slice(chunkStart, offset);
-      }
-      result += value;
-      offset = chunkStart = entityStart + consumed;
-    }
-    if (input.charCodeAt(offset) !== CharCodes.AMP) {
-      offset = input.indexOf("&", offset);
-    }
-  } while (offset >= 0);
-  return result + input.slice(chunkStart);
-}
-function decodeHTML(htmlString, mode = DecodingMode.Legacy) {
-  return decodeWithTrie(htmlString, mode === DecodingMode.Strict, mode === DecodingMode.Attribute);
-}
-// node_modules/entities/dist/index.js
-var EntityLevel;
-(function(EntityLevel) {
-  EntityLevel[EntityLevel["XML"] = 0] = "XML";
-  EntityLevel[EntityLevel["HTML"] = 1] = "HTML";
-})(EntityLevel || (EntityLevel = {}));
-var EncodingMode;
-(function(EncodingMode) {
-  EncodingMode[EncodingMode["UTF8"] = 0] = "UTF8";
-  EncodingMode[EncodingMode["ASCII"] = 1] = "ASCII";
-  EncodingMode[EncodingMode["Extensive"] = 2] = "Extensive";
-  EncodingMode[EncodingMode["Attribute"] = 3] = "Attribute";
-  EncodingMode[EncodingMode["Text"] = 4] = "Text";
-})(EncodingMode || (EncodingMode = {}));
-
 // plugins/artifact-design/src/html.ts
-var ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;" };
 function escape2(text) {
-  return text.replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
-function dropped(code) {
-  return code >= 1 && code <= 8 || code === 11 || code >= 14 && code <= 31 || code === 127 || code >= 64976 && code <= 65007 || code <= 1114111 && (code & 65534) === 65534;
-}
-var CHARREF = /&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\f <&#;]{1,32};?)/g;
+var REFERENCE = /&(#x[0-9a-f]+|#\d+|[a-z]+);/gi;
+var NAMED = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  ndash: "–",
+  mdash: "—",
+  minus: "−",
+  hellip: "…",
+  lsquo: "‘",
+  rsquo: "’",
+  sbquo: "‚",
+  ldquo: "“",
+  rdquo: "”",
+  bdquo: "„",
+  lsaquo: "‹",
+  rsaquo: "›",
+  laquo: "«",
+  raquo: "»",
+  middot: "·",
+  bull: "•",
+  dagger: "†",
+  Dagger: "‡",
+  prime: "′",
+  Prime: "″",
+  trade: "™",
+  copy: "©",
+  reg: "®",
+  deg: "°",
+  times: "×"
+};
 function unescape2(text) {
-  if (!text.includes("&"))
-    return text;
-  return text.replace(CHARREF, (whole, ref) => {
-    if (ref[0] === "#") {
-      const digits = ref.replace(/;$/, "");
-      const code = digits[1] === "x" || digits[1] === "X" ? parseInt(digits.slice(2), 16) : parseInt(digits.slice(1), 10);
-      if (dropped(code) && !(code >= 128 && code <= 159))
-        return "";
+  return text.replace(REFERENCE, (whole, ref) => {
+    if (ref.startsWith("#")) {
+      const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return code <= 1114111 && (code < 55296 || code > 57343) ? String.fromCodePoint(code) : whole;
     }
-    return decodeHTML(whole);
+    if (Object.hasOwn(NAMED, ref))
+      return NAMED[ref];
+    const lower = ref.toLowerCase();
+    return Object.hasOwn(NAMED, lower) ? NAMED[lower] : whole;
   });
 }
 
@@ -21933,6 +21507,1217 @@ function unescape2(text) {
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// node_modules/marked/lib/marked.esm.js
+function L() {
+  return { async: false, breaks: false, extensions: null, gfm: true, hooks: null, pedantic: false, renderer: null, silent: false, tokenizer: null, walkTokens: null };
+}
+var O = L();
+function H(l) {
+  O = l;
+}
+var E = { exec: () => null };
+function h(l, e = "") {
+  let t = typeof l == "string" ? l : l.source, n = { replace: (r, i) => {
+    let s = typeof i == "string" ? i : i.source;
+    return s = s.replace(m.caret, "$1"), t = t.replace(r, s), n;
+  }, getRegex: () => new RegExp(t, e) };
+  return n;
+}
+var m = { codeRemoveIndent: /^(?: {1,4}| {0,3}\t)/gm, outputLinkReplace: /\\([\[\]])/g, indentCodeCompensation: /^(\s+)(?:```)/, beginningSpace: /^\s+/, endingHash: /#$/, startingSpaceChar: /^ /, endingSpaceChar: / $/, nonSpaceChar: /[^ ]/, newLineCharGlobal: /\n/g, tabCharGlobal: /\t/g, multipleSpaceGlobal: /\s+/g, blankLine: /^[ \t]*$/, doubleBlankLine: /\n[ \t]*\n[ \t]*$/, blockquoteStart: /^ {0,3}>/, blockquoteSetextReplace: /\n {0,3}((?:=+|-+) *)(?=\n|$)/g, blockquoteSetextReplace2: /^ {0,3}>[ \t]?/gm, listReplaceTabs: /^\t+/, listReplaceNesting: /^ {1,4}(?=( {4})*[^ ])/g, listIsTask: /^\[[ xX]\] /, listReplaceTask: /^\[[ xX]\] +/, anyLine: /\n.*\n/, hrefBrackets: /^<(.*)>$/, tableDelimiter: /[:|]/, tableAlignChars: /^\||\| *$/g, tableRowBlankLine: /\n[ \t]*$/, tableAlignRight: /^ *-+: *$/, tableAlignCenter: /^ *:-+: *$/, tableAlignLeft: /^ *:-+ *$/, startATag: /^<a /i, endATag: /^<\/a>/i, startPreScriptTag: /^<(pre|code|kbd|script)(\s|>)/i, endPreScriptTag: /^<\/(pre|code|kbd|script)(\s|>)/i, startAngleBracket: /^</, endAngleBracket: />$/, pedanticHrefTitle: /^([^'"]*[^\s])\s+(['"])(.*)\2/, unicodeAlphaNumeric: /[\p{L}\p{N}]/u, escapeTest: /[&<>"']/, escapeReplace: /[&<>"']/g, escapeTestNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/, escapeReplaceNoEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g, unescapeTest: /&(#(?:\d+)|(?:#x[0-9A-Fa-f]+)|(?:\w+));?/ig, caret: /(^|[^\[])\^/g, percentDecode: /%25/g, findPipe: /\|/g, splitPipe: / \|/, slashPipe: /\\\|/g, carriageReturn: /\r\n|\r/g, spaceLine: /^ +$/gm, notSpaceStart: /^\S*/, endingNewline: /\n$/, listItemRegex: (l) => new RegExp(`^( {0,3}${l})((?:[	 ][^\\n]*)?(?:\\n|$))`), nextBulletRegex: (l) => new RegExp(`^ {0,${Math.min(3, l - 1)}}(?:[*+-]|\\d{1,9}[.)])((?:[ 	][^\\n]*)?(?:\\n|$))`), hrRegex: (l) => new RegExp(`^ {0,${Math.min(3, l - 1)}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`), fencesBeginRegex: (l) => new RegExp(`^ {0,${Math.min(3, l - 1)}}(?:\`\`\`|~~~)`), headingBeginRegex: (l) => new RegExp(`^ {0,${Math.min(3, l - 1)}}#`), htmlBeginRegex: (l) => new RegExp(`^ {0,${Math.min(3, l - 1)}}<(?:[a-z].*>|!--)`, "i") };
+var xe = /^(?:[ \t]*(?:\n|$))+/;
+var be = /^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/;
+var Re = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/;
+var C = /^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/;
+var Oe = /^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/;
+var j = /(?:[*+-]|\d{1,9}[.)])/;
+var se = /^(?!bull |blockCode|fences|blockquote|heading|html|table)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html|table))+?)\n {0,3}(=+|-+) *(?:\n+|$)/;
+var ie = h(se).replace(/bull/g, j).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/\|table/g, "").getRegex();
+var Te = h(se).replace(/bull/g, j).replace(/blockCode/g, /(?: {4}| {0,3}\t)/).replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/).replace(/blockquote/g, / {0,3}>/).replace(/heading/g, / {0,3}#{1,6}/).replace(/html/g, / {0,3}<[^\n>]+>\n/).replace(/table/g, / {0,3}\|?(?:[:\- ]*\|)+[\:\- ]*\n/).getRegex();
+var F = /^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table| +\n)[^\n]+)*)/;
+var we = /^[^\n]+/;
+var Q = /(?!\s*\])(?:\\.|[^\[\]\\])+/;
+var ye = h(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/).replace("label", Q).replace("title", /(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/).getRegex();
+var Pe = h(/^( {0,3}bull)([ \t][^\n]+?)?(?:\n|$)/).replace(/bull/g, j).getRegex();
+var v = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
+var U = /<!--(?:-?>|[\s\S]*?(?:-->|$))/;
+var Se = h("^ {0,3}(?:<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>[^\\n]*\\n+|$)|comment[^\\n]*(\\n+|$)|<\\?[\\s\\S]*?(?:\\?>\\n*|$)|<![A-Z][\\s\\S]*?(?:>\\n*|$)|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>\\n*|$)|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ \t]*)+\\n|$)|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*? */?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ \t]*)+\\n|$)|</(?!script|pre|style|textarea)[a-z][\\w-]*\\s*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ \t]*)+\\n|$))", "i").replace("comment", U).replace("tag", v).replace("attribute", / +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/).getRegex();
+var oe = h(F).replace("hr", C).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("|table", "").replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)]) ").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v).getRegex();
+var $e = h(/^( {0,3}> ?(paragraph|[^\n]*)(?:\n|$))+/).replace("paragraph", oe).getRegex();
+var K = { blockquote: $e, code: be, def: ye, fences: Re, heading: Oe, hr: C, html: Se, lheading: ie, list: Pe, newline: xe, paragraph: oe, table: E, text: we };
+var re = h("^ *([^\\n ].*)\\n {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)").replace("hr", C).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("blockquote", " {0,3}>").replace("code", "(?: {4}| {0,3}\t)[^\\n]").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)]) ").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v).getRegex();
+var _e = { ...K, lheading: Te, table: re, paragraph: h(F).replace("hr", C).replace("heading", " {0,3}#{1,6}(?:\\s|$)").replace("|lheading", "").replace("table", re).replace("blockquote", " {0,3}>").replace("fences", " {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n").replace("list", " {0,3}(?:[*+-]|1[.)]) ").replace("html", "</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)").replace("tag", v).getRegex() };
+var Le = { ...K, html: h(`^ *(?:comment *(?:\\n|\\s*$)|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)|<tag(?:"[^"]*"|'[^']*'|\\s[^'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))`).replace("comment", U).replace(/tag/g, "(?!(?:a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)\\b)\\w+(?!:|[^\\w\\s@]*@)\\b").getRegex(), def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/, heading: /^(#{1,6})(.*)(?:\n+|$)/, fences: E, lheading: /^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/, paragraph: h(F).replace("hr", C).replace("heading", ` *#{1,6} *[^
+]`).replace("lheading", ie).replace("|table", "").replace("blockquote", " {0,3}>").replace("|fences", "").replace("|list", "").replace("|html", "").replace("|tag", "").getRegex() };
+var Me = /^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/;
+var ze = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
+var ae = /^( {2,}|\\)\n(?!\s*$)/;
+var Ae = /^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/;
+var D = /[\p{P}\p{S}]/u;
+var X = /[\s\p{P}\p{S}]/u;
+var le = /[^\s\p{P}\p{S}]/u;
+var Ee = h(/^((?![*_])punctSpace)/, "u").replace(/punctSpace/g, X).getRegex();
+var ue = /(?!~)[\p{P}\p{S}]/u;
+var Ce = /(?!~)[\s\p{P}\p{S}]/u;
+var Ie = /(?:[^\s\p{P}\p{S}]|~)/u;
+var Be = /\[[^[\]]*?\]\((?:\\.|[^\\\(\)]|\((?:\\.|[^\\\(\)])*\))*\)|`[^`]*?`|<[^<>]*?>/g;
+var pe = /^(?:\*+(?:((?!\*)punct)|[^\s*]))|^_+(?:((?!_)punct)|([^\s_]))/;
+var qe = h(pe, "u").replace(/punct/g, D).getRegex();
+var ve = h(pe, "u").replace(/punct/g, ue).getRegex();
+var ce = "^[^_*]*?__[^_*]*?\\*[^_*]*?(?=__)|[^*]+(?=[^*])|(?!\\*)punct(\\*+)(?=[\\s]|$)|notPunctSpace(\\*+)(?!\\*)(?=punctSpace|$)|(?!\\*)punctSpace(\\*+)(?=notPunctSpace)|[\\s](\\*+)(?!\\*)(?=punct)|(?!\\*)punct(\\*+)(?!\\*)(?=punct)|notPunctSpace(\\*+)(?=notPunctSpace)";
+var De = h(ce, "gu").replace(/notPunctSpace/g, le).replace(/punctSpace/g, X).replace(/punct/g, D).getRegex();
+var Ze = h(ce, "gu").replace(/notPunctSpace/g, Ie).replace(/punctSpace/g, Ce).replace(/punct/g, ue).getRegex();
+var Ge = h("^[^_*]*?\\*\\*[^_*]*?_[^_*]*?(?=\\*\\*)|[^_]+(?=[^_])|(?!_)punct(_+)(?=[\\s]|$)|notPunctSpace(_+)(?!_)(?=punctSpace|$)|(?!_)punctSpace(_+)(?=notPunctSpace)|[\\s](_+)(?!_)(?=punct)|(?!_)punct(_+)(?!_)(?=punct)", "gu").replace(/notPunctSpace/g, le).replace(/punctSpace/g, X).replace(/punct/g, D).getRegex();
+var He = h(/\\(punct)/, "gu").replace(/punct/g, D).getRegex();
+var Ne = h(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).replace("scheme", /[a-zA-Z][a-zA-Z0-9+.-]{1,31}/).replace("email", /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+(@)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+(?![-_])/).getRegex();
+var je = h(U).replace("(?:-->|$)", "-->").getRegex();
+var Fe = h("^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>").replace("comment", je).replace("attribute", /\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^\s"'=<>`]+)?/).getRegex();
+var q = /(?:\[(?:\\.|[^\[\]\\])*\]|\\.|`[^`]*`|[^\[\]\\`])*?/;
+var Qe = h(/^!?\[(label)\]\(\s*(href)(?:(?:[ \t]*(?:\n[ \t]*)?)(title))?\s*\)/).replace("label", q).replace("href", /<(?:\\.|[^\n<>\\])+>|[^ \t\n\x00-\x1f]*/).replace("title", /"(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)/).getRegex();
+var he = h(/^!?\[(label)\]\[(ref)\]/).replace("label", q).replace("ref", Q).getRegex();
+var de = h(/^!?\[(ref)\](?:\[\])?/).replace("ref", Q).getRegex();
+var Ue = h("reflink|nolink(?!\\()", "g").replace("reflink", he).replace("nolink", de).getRegex();
+var W = { _backpedal: E, anyPunctuation: He, autolink: Ne, blockSkip: Be, br: ae, code: ze, del: E, emStrongLDelim: qe, emStrongRDelimAst: De, emStrongRDelimUnd: Ge, escape: Me, link: Qe, nolink: de, punctuation: Ee, reflink: he, reflinkSearch: Ue, tag: Fe, text: Ae, url: E };
+var Ke = { ...W, link: h(/^!?\[(label)\]\((.*?)\)/).replace("label", q).getRegex(), reflink: h(/^!?\[(label)\]\s*\[([^\]]*)\]/).replace("label", q).getRegex() };
+var N = { ...W, emStrongRDelimAst: Ze, emStrongLDelim: ve, url: h(/^((?:ftp|https?):\/\/|www\.)(?:[a-zA-Z0-9\-]+\.?)+[^\s<]*|^email/, "i").replace("email", /[A-Za-z0-9._+-]+(@)[a-zA-Z0-9-_]+(?:\.[a-zA-Z0-9-_]*[a-zA-Z0-9])+(?![-_])/).getRegex(), _backpedal: /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/, del: /^(~~?)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/, text: /^([`~]+|[^`~])(?:(?= {2,}\n)|(?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)|[\s\S]*?(?:(?=[\\<!\[`*~_]|\b_|https?:\/\/|ftp:\/\/|www\.|$)|[^ ](?= {2,}\n)|[^a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-](?=[a-zA-Z0-9.!#$%&'*+\/=?_`{\|}~-]+@)))/ };
+var Xe = { ...N, br: h(ae).replace("{2,}", "*").getRegex(), text: h(N.text).replace("\\b_", "\\b_| {2,}\\n").replace(/\{2,\}/g, "*").getRegex() };
+var I = { normal: K, gfm: _e, pedantic: Le };
+var M = { normal: W, gfm: N, breaks: Xe, pedantic: Ke };
+var We = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+var ke = (l) => We[l];
+function w(l, e) {
+  if (e) {
+    if (m.escapeTest.test(l))
+      return l.replace(m.escapeReplace, ke);
+  } else if (m.escapeTestNoEncode.test(l))
+    return l.replace(m.escapeReplaceNoEncode, ke);
+  return l;
+}
+function J(l) {
+  try {
+    l = encodeURI(l).replace(m.percentDecode, "%");
+  } catch {
+    return null;
+  }
+  return l;
+}
+function V(l, e) {
+  let t = l.replace(m.findPipe, (i, s, o) => {
+    let a = false, u = s;
+    for (;--u >= 0 && o[u] === "\\"; )
+      a = !a;
+    return a ? "|" : " |";
+  }), n = t.split(m.splitPipe), r = 0;
+  if (n[0].trim() || n.shift(), n.length > 0 && !n.at(-1)?.trim() && n.pop(), e)
+    if (n.length > e)
+      n.splice(e);
+    else
+      for (;n.length < e; )
+        n.push("");
+  for (;r < n.length; r++)
+    n[r] = n[r].trim().replace(m.slashPipe, "|");
+  return n;
+}
+function z(l, e, t) {
+  let n = l.length;
+  if (n === 0)
+    return "";
+  let r = 0;
+  for (;r < n; ) {
+    let i = l.charAt(n - r - 1);
+    if (i === e && !t)
+      r++;
+    else if (i !== e && t)
+      r++;
+    else
+      break;
+  }
+  return l.slice(0, n - r);
+}
+function ge(l, e) {
+  if (l.indexOf(e[1]) === -1)
+    return -1;
+  let t = 0;
+  for (let n = 0;n < l.length; n++)
+    if (l[n] === "\\")
+      n++;
+    else if (l[n] === e[0])
+      t++;
+    else if (l[n] === e[1] && (t--, t < 0))
+      return n;
+  return t > 0 ? -2 : -1;
+}
+function fe(l, e, t, n, r) {
+  let i = e.href, s = e.title || null, o = l[1].replace(r.other.outputLinkReplace, "$1");
+  n.state.inLink = true;
+  let a = { type: l[0].charAt(0) === "!" ? "image" : "link", raw: t, href: i, title: s, text: o, tokens: n.inlineTokens(o) };
+  return n.state.inLink = false, a;
+}
+function Je(l, e, t) {
+  let n = l.match(t.other.indentCodeCompensation);
+  if (n === null)
+    return e;
+  let r = n[1];
+  return e.split(`
+`).map((i) => {
+    let s = i.match(t.other.beginningSpace);
+    if (s === null)
+      return i;
+    let [o] = s;
+    return o.length >= r.length ? i.slice(r.length) : i;
+  }).join(`
+`);
+}
+var y = class {
+  options;
+  rules;
+  lexer;
+  constructor(e) {
+    this.options = e || O;
+  }
+  space(e) {
+    let t = this.rules.block.newline.exec(e);
+    if (t && t[0].length > 0)
+      return { type: "space", raw: t[0] };
+  }
+  code(e) {
+    let t = this.rules.block.code.exec(e);
+    if (t) {
+      let n = t[0].replace(this.rules.other.codeRemoveIndent, "");
+      return { type: "code", raw: t[0], codeBlockStyle: "indented", text: this.options.pedantic ? n : z(n, `
+`) };
+    }
+  }
+  fences(e) {
+    let t = this.rules.block.fences.exec(e);
+    if (t) {
+      let n = t[0], r = Je(n, t[3] || "", this.rules);
+      return { type: "code", raw: n, lang: t[2] ? t[2].trim().replace(this.rules.inline.anyPunctuation, "$1") : t[2], text: r };
+    }
+  }
+  heading(e) {
+    let t = this.rules.block.heading.exec(e);
+    if (t) {
+      let n = t[2].trim();
+      if (this.rules.other.endingHash.test(n)) {
+        let r = z(n, "#");
+        (this.options.pedantic || !r || this.rules.other.endingSpaceChar.test(r)) && (n = r.trim());
+      }
+      return { type: "heading", raw: t[0], depth: t[1].length, text: n, tokens: this.lexer.inline(n) };
+    }
+  }
+  hr(e) {
+    let t = this.rules.block.hr.exec(e);
+    if (t)
+      return { type: "hr", raw: z(t[0], `
+`) };
+  }
+  blockquote(e) {
+    let t = this.rules.block.blockquote.exec(e);
+    if (t) {
+      let n = z(t[0], `
+`).split(`
+`), r = "", i = "", s = [];
+      for (;n.length > 0; ) {
+        let o = false, a = [], u;
+        for (u = 0;u < n.length; u++)
+          if (this.rules.other.blockquoteStart.test(n[u]))
+            a.push(n[u]), o = true;
+          else if (!o)
+            a.push(n[u]);
+          else
+            break;
+        n = n.slice(u);
+        let p = a.join(`
+`), c = p.replace(this.rules.other.blockquoteSetextReplace, `
+    $1`).replace(this.rules.other.blockquoteSetextReplace2, "");
+        r = r ? `${r}
+${p}` : p, i = i ? `${i}
+${c}` : c;
+        let f = this.lexer.state.top;
+        if (this.lexer.state.top = true, this.lexer.blockTokens(c, s, true), this.lexer.state.top = f, n.length === 0)
+          break;
+        let k = s.at(-1);
+        if (k?.type === "code")
+          break;
+        if (k?.type === "blockquote") {
+          let x = k, g = x.raw + `
+` + n.join(`
+`), T = this.blockquote(g);
+          s[s.length - 1] = T, r = r.substring(0, r.length - x.raw.length) + T.raw, i = i.substring(0, i.length - x.text.length) + T.text;
+          break;
+        } else if (k?.type === "list") {
+          let x = k, g = x.raw + `
+` + n.join(`
+`), T = this.list(g);
+          s[s.length - 1] = T, r = r.substring(0, r.length - k.raw.length) + T.raw, i = i.substring(0, i.length - x.raw.length) + T.raw, n = g.substring(s.at(-1).raw.length).split(`
+`);
+          continue;
+        }
+      }
+      return { type: "blockquote", raw: r, tokens: s, text: i };
+    }
+  }
+  list(e) {
+    let t = this.rules.block.list.exec(e);
+    if (t) {
+      let n = t[1].trim(), r = n.length > 1, i = { type: "list", raw: "", ordered: r, start: r ? +n.slice(0, -1) : "", loose: false, items: [] };
+      n = r ? `\\d{1,9}\\${n.slice(-1)}` : `\\${n}`, this.options.pedantic && (n = r ? n : "[*+-]");
+      let s = this.rules.other.listItemRegex(n), o = false;
+      for (;e; ) {
+        let u = false, p = "", c = "";
+        if (!(t = s.exec(e)) || this.rules.block.hr.test(e))
+          break;
+        p = t[0], e = e.substring(p.length);
+        let f = t[2].split(`
+`, 1)[0].replace(this.rules.other.listReplaceTabs, (Z) => " ".repeat(3 * Z.length)), k = e.split(`
+`, 1)[0], x = !f.trim(), g = 0;
+        if (this.options.pedantic ? (g = 2, c = f.trimStart()) : x ? g = t[1].length + 1 : (g = t[2].search(this.rules.other.nonSpaceChar), g = g > 4 ? 1 : g, c = f.slice(g), g += t[1].length), x && this.rules.other.blankLine.test(k) && (p += k + `
+`, e = e.substring(k.length + 1), u = true), !u) {
+          let Z = this.rules.other.nextBulletRegex(g), ee = this.rules.other.hrRegex(g), te = this.rules.other.fencesBeginRegex(g), ne = this.rules.other.headingBeginRegex(g), me = this.rules.other.htmlBeginRegex(g);
+          for (;e; ) {
+            let G = e.split(`
+`, 1)[0], A;
+            if (k = G, this.options.pedantic ? (k = k.replace(this.rules.other.listReplaceNesting, "  "), A = k) : A = k.replace(this.rules.other.tabCharGlobal, "    "), te.test(k) || ne.test(k) || me.test(k) || Z.test(k) || ee.test(k))
+              break;
+            if (A.search(this.rules.other.nonSpaceChar) >= g || !k.trim())
+              c += `
+` + A.slice(g);
+            else {
+              if (x || f.replace(this.rules.other.tabCharGlobal, "    ").search(this.rules.other.nonSpaceChar) >= 4 || te.test(f) || ne.test(f) || ee.test(f))
+                break;
+              c += `
+` + k;
+            }
+            !x && !k.trim() && (x = true), p += G + `
+`, e = e.substring(G.length + 1), f = A.slice(g);
+          }
+        }
+        i.loose || (o ? i.loose = true : this.rules.other.doubleBlankLine.test(p) && (o = true));
+        let T = null, Y;
+        this.options.gfm && (T = this.rules.other.listIsTask.exec(c), T && (Y = T[0] !== "[ ] ", c = c.replace(this.rules.other.listReplaceTask, ""))), i.items.push({ type: "list_item", raw: p, task: !!T, checked: Y, loose: false, text: c, tokens: [] }), i.raw += p;
+      }
+      let a = i.items.at(-1);
+      if (a)
+        a.raw = a.raw.trimEnd(), a.text = a.text.trimEnd();
+      else
+        return;
+      i.raw = i.raw.trimEnd();
+      for (let u = 0;u < i.items.length; u++)
+        if (this.lexer.state.top = false, i.items[u].tokens = this.lexer.blockTokens(i.items[u].text, []), !i.loose) {
+          let p = i.items[u].tokens.filter((f) => f.type === "space"), c = p.length > 0 && p.some((f) => this.rules.other.anyLine.test(f.raw));
+          i.loose = c;
+        }
+      if (i.loose)
+        for (let u = 0;u < i.items.length; u++)
+          i.items[u].loose = true;
+      return i;
+    }
+  }
+  html(e) {
+    let t = this.rules.block.html.exec(e);
+    if (t)
+      return { type: "html", block: true, raw: t[0], pre: t[1] === "pre" || t[1] === "script" || t[1] === "style", text: t[0] };
+  }
+  def(e) {
+    let t = this.rules.block.def.exec(e);
+    if (t) {
+      let n = t[1].toLowerCase().replace(this.rules.other.multipleSpaceGlobal, " "), r = t[2] ? t[2].replace(this.rules.other.hrefBrackets, "$1").replace(this.rules.inline.anyPunctuation, "$1") : "", i = t[3] ? t[3].substring(1, t[3].length - 1).replace(this.rules.inline.anyPunctuation, "$1") : t[3];
+      return { type: "def", tag: n, raw: t[0], href: r, title: i };
+    }
+  }
+  table(e) {
+    let t = this.rules.block.table.exec(e);
+    if (!t || !this.rules.other.tableDelimiter.test(t[2]))
+      return;
+    let n = V(t[1]), r = t[2].replace(this.rules.other.tableAlignChars, "").split("|"), i = t[3]?.trim() ? t[3].replace(this.rules.other.tableRowBlankLine, "").split(`
+`) : [], s = { type: "table", raw: t[0], header: [], align: [], rows: [] };
+    if (n.length === r.length) {
+      for (let o of r)
+        this.rules.other.tableAlignRight.test(o) ? s.align.push("right") : this.rules.other.tableAlignCenter.test(o) ? s.align.push("center") : this.rules.other.tableAlignLeft.test(o) ? s.align.push("left") : s.align.push(null);
+      for (let o = 0;o < n.length; o++)
+        s.header.push({ text: n[o], tokens: this.lexer.inline(n[o]), header: true, align: s.align[o] });
+      for (let o of i)
+        s.rows.push(V(o, s.header.length).map((a, u) => ({ text: a, tokens: this.lexer.inline(a), header: false, align: s.align[u] })));
+      return s;
+    }
+  }
+  lheading(e) {
+    let t = this.rules.block.lheading.exec(e);
+    if (t)
+      return { type: "heading", raw: t[0], depth: t[2].charAt(0) === "=" ? 1 : 2, text: t[1], tokens: this.lexer.inline(t[1]) };
+  }
+  paragraph(e) {
+    let t = this.rules.block.paragraph.exec(e);
+    if (t) {
+      let n = t[1].charAt(t[1].length - 1) === `
+` ? t[1].slice(0, -1) : t[1];
+      return { type: "paragraph", raw: t[0], text: n, tokens: this.lexer.inline(n) };
+    }
+  }
+  text(e) {
+    let t = this.rules.block.text.exec(e);
+    if (t)
+      return { type: "text", raw: t[0], text: t[0], tokens: this.lexer.inline(t[0]) };
+  }
+  escape(e) {
+    let t = this.rules.inline.escape.exec(e);
+    if (t)
+      return { type: "escape", raw: t[0], text: t[1] };
+  }
+  tag(e) {
+    let t = this.rules.inline.tag.exec(e);
+    if (t)
+      return !this.lexer.state.inLink && this.rules.other.startATag.test(t[0]) ? this.lexer.state.inLink = true : this.lexer.state.inLink && this.rules.other.endATag.test(t[0]) && (this.lexer.state.inLink = false), !this.lexer.state.inRawBlock && this.rules.other.startPreScriptTag.test(t[0]) ? this.lexer.state.inRawBlock = true : this.lexer.state.inRawBlock && this.rules.other.endPreScriptTag.test(t[0]) && (this.lexer.state.inRawBlock = false), { type: "html", raw: t[0], inLink: this.lexer.state.inLink, inRawBlock: this.lexer.state.inRawBlock, block: false, text: t[0] };
+  }
+  link(e) {
+    let t = this.rules.inline.link.exec(e);
+    if (t) {
+      let n = t[2].trim();
+      if (!this.options.pedantic && this.rules.other.startAngleBracket.test(n)) {
+        if (!this.rules.other.endAngleBracket.test(n))
+          return;
+        let s = z(n.slice(0, -1), "\\");
+        if ((n.length - s.length) % 2 === 0)
+          return;
+      } else {
+        let s = ge(t[2], "()");
+        if (s === -2)
+          return;
+        if (s > -1) {
+          let a = (t[0].indexOf("!") === 0 ? 5 : 4) + t[1].length + s;
+          t[2] = t[2].substring(0, s), t[0] = t[0].substring(0, a).trim(), t[3] = "";
+        }
+      }
+      let r = t[2], i = "";
+      if (this.options.pedantic) {
+        let s = this.rules.other.pedanticHrefTitle.exec(r);
+        s && (r = s[1], i = s[3]);
+      } else
+        i = t[3] ? t[3].slice(1, -1) : "";
+      return r = r.trim(), this.rules.other.startAngleBracket.test(r) && (this.options.pedantic && !this.rules.other.endAngleBracket.test(n) ? r = r.slice(1) : r = r.slice(1, -1)), fe(t, { href: r && r.replace(this.rules.inline.anyPunctuation, "$1"), title: i && i.replace(this.rules.inline.anyPunctuation, "$1") }, t[0], this.lexer, this.rules);
+    }
+  }
+  reflink(e, t) {
+    let n;
+    if ((n = this.rules.inline.reflink.exec(e)) || (n = this.rules.inline.nolink.exec(e))) {
+      let r = (n[2] || n[1]).replace(this.rules.other.multipleSpaceGlobal, " "), i = t[r.toLowerCase()];
+      if (!i) {
+        let s = n[0].charAt(0);
+        return { type: "text", raw: s, text: s };
+      }
+      return fe(n, i, n[0], this.lexer, this.rules);
+    }
+  }
+  emStrong(e, t, n = "") {
+    let r = this.rules.inline.emStrongLDelim.exec(e);
+    if (!r || r[3] && n.match(this.rules.other.unicodeAlphaNumeric))
+      return;
+    if (!(r[1] || r[2] || "") || !n || this.rules.inline.punctuation.exec(n)) {
+      let s = [...r[0]].length - 1, o, a, u = s, p = 0, c = r[0][0] === "*" ? this.rules.inline.emStrongRDelimAst : this.rules.inline.emStrongRDelimUnd;
+      for (c.lastIndex = 0, t = t.slice(-1 * e.length + s);(r = c.exec(t)) != null; ) {
+        if (o = r[1] || r[2] || r[3] || r[4] || r[5] || r[6], !o)
+          continue;
+        if (a = [...o].length, r[3] || r[4]) {
+          u += a;
+          continue;
+        } else if ((r[5] || r[6]) && s % 3 && !((s + a) % 3)) {
+          p += a;
+          continue;
+        }
+        if (u -= a, u > 0)
+          continue;
+        a = Math.min(a, a + u + p);
+        let f = [...r[0]][0].length, k = e.slice(0, s + r.index + f + a);
+        if (Math.min(s, a) % 2) {
+          let g = k.slice(1, -1);
+          return { type: "em", raw: k, text: g, tokens: this.lexer.inlineTokens(g) };
+        }
+        let x = k.slice(2, -2);
+        return { type: "strong", raw: k, text: x, tokens: this.lexer.inlineTokens(x) };
+      }
+    }
+  }
+  codespan(e) {
+    let t = this.rules.inline.code.exec(e);
+    if (t) {
+      let n = t[2].replace(this.rules.other.newLineCharGlobal, " "), r = this.rules.other.nonSpaceChar.test(n), i = this.rules.other.startingSpaceChar.test(n) && this.rules.other.endingSpaceChar.test(n);
+      return r && i && (n = n.substring(1, n.length - 1)), { type: "codespan", raw: t[0], text: n };
+    }
+  }
+  br(e) {
+    let t = this.rules.inline.br.exec(e);
+    if (t)
+      return { type: "br", raw: t[0] };
+  }
+  del(e) {
+    let t = this.rules.inline.del.exec(e);
+    if (t)
+      return { type: "del", raw: t[0], text: t[2], tokens: this.lexer.inlineTokens(t[2]) };
+  }
+  autolink(e) {
+    let t = this.rules.inline.autolink.exec(e);
+    if (t) {
+      let n, r;
+      return t[2] === "@" ? (n = t[1], r = "mailto:" + n) : (n = t[1], r = n), { type: "link", raw: t[0], text: n, href: r, tokens: [{ type: "text", raw: n, text: n }] };
+    }
+  }
+  url(e) {
+    let t;
+    if (t = this.rules.inline.url.exec(e)) {
+      let n, r;
+      if (t[2] === "@")
+        n = t[0], r = "mailto:" + n;
+      else {
+        let i;
+        do
+          i = t[0], t[0] = this.rules.inline._backpedal.exec(t[0])?.[0] ?? "";
+        while (i !== t[0]);
+        n = t[0], t[1] === "www." ? r = "http://" + t[0] : r = t[0];
+      }
+      return { type: "link", raw: t[0], text: n, href: r, tokens: [{ type: "text", raw: n, text: n }] };
+    }
+  }
+  inlineText(e) {
+    let t = this.rules.inline.text.exec(e);
+    if (t) {
+      let n = this.lexer.state.inRawBlock;
+      return { type: "text", raw: t[0], text: t[0], escaped: n };
+    }
+  }
+};
+var b = class l {
+  tokens;
+  options;
+  state;
+  tokenizer;
+  inlineQueue;
+  constructor(e) {
+    this.tokens = [], this.tokens.links = Object.create(null), this.options = e || O, this.options.tokenizer = this.options.tokenizer || new y, this.tokenizer = this.options.tokenizer, this.tokenizer.options = this.options, this.tokenizer.lexer = this, this.inlineQueue = [], this.state = { inLink: false, inRawBlock: false, top: true };
+    let t = { other: m, block: I.normal, inline: M.normal };
+    this.options.pedantic ? (t.block = I.pedantic, t.inline = M.pedantic) : this.options.gfm && (t.block = I.gfm, this.options.breaks ? t.inline = M.breaks : t.inline = M.gfm), this.tokenizer.rules = t;
+  }
+  static get rules() {
+    return { block: I, inline: M };
+  }
+  static lex(e, t) {
+    return new l(t).lex(e);
+  }
+  static lexInline(e, t) {
+    return new l(t).inlineTokens(e);
+  }
+  lex(e) {
+    e = e.replace(m.carriageReturn, `
+`), this.blockTokens(e, this.tokens);
+    for (let t = 0;t < this.inlineQueue.length; t++) {
+      let n = this.inlineQueue[t];
+      this.inlineTokens(n.src, n.tokens);
+    }
+    return this.inlineQueue = [], this.tokens;
+  }
+  blockTokens(e, t = [], n = false) {
+    for (this.options.pedantic && (e = e.replace(m.tabCharGlobal, "    ").replace(m.spaceLine, ""));e; ) {
+      let r;
+      if (this.options.extensions?.block?.some((s) => (r = s.call({ lexer: this }, e, t)) ? (e = e.substring(r.raw.length), t.push(r), true) : false))
+        continue;
+      if (r = this.tokenizer.space(e)) {
+        e = e.substring(r.raw.length);
+        let s = t.at(-1);
+        r.raw.length === 1 && s !== undefined ? s.raw += `
+` : t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.code(e)) {
+        e = e.substring(r.raw.length);
+        let s = t.at(-1);
+        s?.type === "paragraph" || s?.type === "text" ? (s.raw += `
+` + r.raw, s.text += `
+` + r.text, this.inlineQueue.at(-1).src = s.text) : t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.fences(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.heading(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.hr(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.blockquote(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.list(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.html(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.def(e)) {
+        e = e.substring(r.raw.length);
+        let s = t.at(-1);
+        s?.type === "paragraph" || s?.type === "text" ? (s.raw += `
+` + r.raw, s.text += `
+` + r.raw, this.inlineQueue.at(-1).src = s.text) : this.tokens.links[r.tag] || (this.tokens.links[r.tag] = { href: r.href, title: r.title });
+        continue;
+      }
+      if (r = this.tokenizer.table(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      if (r = this.tokenizer.lheading(e)) {
+        e = e.substring(r.raw.length), t.push(r);
+        continue;
+      }
+      let i = e;
+      if (this.options.extensions?.startBlock) {
+        let s = 1 / 0, o = e.slice(1), a;
+        this.options.extensions.startBlock.forEach((u) => {
+          a = u.call({ lexer: this }, o), typeof a == "number" && a >= 0 && (s = Math.min(s, a));
+        }), s < 1 / 0 && s >= 0 && (i = e.substring(0, s + 1));
+      }
+      if (this.state.top && (r = this.tokenizer.paragraph(i))) {
+        let s = t.at(-1);
+        n && s?.type === "paragraph" ? (s.raw += `
+` + r.raw, s.text += `
+` + r.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = s.text) : t.push(r), n = i.length !== e.length, e = e.substring(r.raw.length);
+        continue;
+      }
+      if (r = this.tokenizer.text(e)) {
+        e = e.substring(r.raw.length);
+        let s = t.at(-1);
+        s?.type === "text" ? (s.raw += `
+` + r.raw, s.text += `
+` + r.text, this.inlineQueue.pop(), this.inlineQueue.at(-1).src = s.text) : t.push(r);
+        continue;
+      }
+      if (e) {
+        let s = "Infinite loop on byte: " + e.charCodeAt(0);
+        if (this.options.silent) {
+          console.error(s);
+          break;
+        } else
+          throw new Error(s);
+      }
+    }
+    return this.state.top = true, t;
+  }
+  inline(e, t = []) {
+    return this.inlineQueue.push({ src: e, tokens: t }), t;
+  }
+  inlineTokens(e, t = []) {
+    let n = e, r = null;
+    if (this.tokens.links) {
+      let o = Object.keys(this.tokens.links);
+      if (o.length > 0)
+        for (;(r = this.tokenizer.rules.inline.reflinkSearch.exec(n)) != null; )
+          o.includes(r[0].slice(r[0].lastIndexOf("[") + 1, -1)) && (n = n.slice(0, r.index) + "[" + "a".repeat(r[0].length - 2) + "]" + n.slice(this.tokenizer.rules.inline.reflinkSearch.lastIndex));
+    }
+    for (;(r = this.tokenizer.rules.inline.anyPunctuation.exec(n)) != null; )
+      n = n.slice(0, r.index) + "++" + n.slice(this.tokenizer.rules.inline.anyPunctuation.lastIndex);
+    for (;(r = this.tokenizer.rules.inline.blockSkip.exec(n)) != null; )
+      n = n.slice(0, r.index) + "[" + "a".repeat(r[0].length - 2) + "]" + n.slice(this.tokenizer.rules.inline.blockSkip.lastIndex);
+    let i = false, s = "";
+    for (;e; ) {
+      i || (s = ""), i = false;
+      let o;
+      if (this.options.extensions?.inline?.some((u) => (o = u.call({ lexer: this }, e, t)) ? (e = e.substring(o.raw.length), t.push(o), true) : false))
+        continue;
+      if (o = this.tokenizer.escape(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.tag(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.link(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.reflink(e, this.tokens.links)) {
+        e = e.substring(o.raw.length);
+        let u = t.at(-1);
+        o.type === "text" && u?.type === "text" ? (u.raw += o.raw, u.text += o.text) : t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.emStrong(e, n, s)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.codespan(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.br(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.del(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (o = this.tokenizer.autolink(e)) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      if (!this.state.inLink && (o = this.tokenizer.url(e))) {
+        e = e.substring(o.raw.length), t.push(o);
+        continue;
+      }
+      let a = e;
+      if (this.options.extensions?.startInline) {
+        let u = 1 / 0, p = e.slice(1), c;
+        this.options.extensions.startInline.forEach((f) => {
+          c = f.call({ lexer: this }, p), typeof c == "number" && c >= 0 && (u = Math.min(u, c));
+        }), u < 1 / 0 && u >= 0 && (a = e.substring(0, u + 1));
+      }
+      if (o = this.tokenizer.inlineText(a)) {
+        e = e.substring(o.raw.length), o.raw.slice(-1) !== "_" && (s = o.raw.slice(-1)), i = true;
+        let u = t.at(-1);
+        u?.type === "text" ? (u.raw += o.raw, u.text += o.text) : t.push(o);
+        continue;
+      }
+      if (e) {
+        let u = "Infinite loop on byte: " + e.charCodeAt(0);
+        if (this.options.silent) {
+          console.error(u);
+          break;
+        } else
+          throw new Error(u);
+      }
+    }
+    return t;
+  }
+};
+var P = class {
+  options;
+  parser;
+  constructor(e) {
+    this.options = e || O;
+  }
+  space(e) {
+    return "";
+  }
+  code({ text: e, lang: t, escaped: n }) {
+    let r = (t || "").match(m.notSpaceStart)?.[0], i = e.replace(m.endingNewline, "") + `
+`;
+    return r ? '<pre><code class="language-' + w(r) + '">' + (n ? i : w(i, true)) + `</code></pre>
+` : "<pre><code>" + (n ? i : w(i, true)) + `</code></pre>
+`;
+  }
+  blockquote({ tokens: e }) {
+    return `<blockquote>
+${this.parser.parse(e)}</blockquote>
+`;
+  }
+  html({ text: e }) {
+    return e;
+  }
+  heading({ tokens: e, depth: t }) {
+    return `<h${t}>${this.parser.parseInline(e)}</h${t}>
+`;
+  }
+  hr(e) {
+    return `<hr>
+`;
+  }
+  list(e) {
+    let { ordered: t, start: n } = e, r = "";
+    for (let o = 0;o < e.items.length; o++) {
+      let a = e.items[o];
+      r += this.listitem(a);
+    }
+    let i = t ? "ol" : "ul", s = t && n !== 1 ? ' start="' + n + '"' : "";
+    return "<" + i + s + `>
+` + r + "</" + i + `>
+`;
+  }
+  listitem(e) {
+    let t = "";
+    if (e.task) {
+      let n = this.checkbox({ checked: !!e.checked });
+      e.loose ? e.tokens[0]?.type === "paragraph" ? (e.tokens[0].text = n + " " + e.tokens[0].text, e.tokens[0].tokens && e.tokens[0].tokens.length > 0 && e.tokens[0].tokens[0].type === "text" && (e.tokens[0].tokens[0].text = n + " " + w(e.tokens[0].tokens[0].text), e.tokens[0].tokens[0].escaped = true)) : e.tokens.unshift({ type: "text", raw: n + " ", text: n + " ", escaped: true }) : t += n + " ";
+    }
+    return t += this.parser.parse(e.tokens, !!e.loose), `<li>${t}</li>
+`;
+  }
+  checkbox({ checked: e }) {
+    return "<input " + (e ? 'checked="" ' : "") + 'disabled="" type="checkbox">';
+  }
+  paragraph({ tokens: e }) {
+    return `<p>${this.parser.parseInline(e)}</p>
+`;
+  }
+  table(e) {
+    let t = "", n = "";
+    for (let i = 0;i < e.header.length; i++)
+      n += this.tablecell(e.header[i]);
+    t += this.tablerow({ text: n });
+    let r = "";
+    for (let i = 0;i < e.rows.length; i++) {
+      let s = e.rows[i];
+      n = "";
+      for (let o = 0;o < s.length; o++)
+        n += this.tablecell(s[o]);
+      r += this.tablerow({ text: n });
+    }
+    return r && (r = `<tbody>${r}</tbody>`), `<table>
+<thead>
+` + t + `</thead>
+` + r + `</table>
+`;
+  }
+  tablerow({ text: e }) {
+    return `<tr>
+${e}</tr>
+`;
+  }
+  tablecell(e) {
+    let t = this.parser.parseInline(e.tokens), n = e.header ? "th" : "td";
+    return (e.align ? `<${n} align="${e.align}">` : `<${n}>`) + t + `</${n}>
+`;
+  }
+  strong({ tokens: e }) {
+    return `<strong>${this.parser.parseInline(e)}</strong>`;
+  }
+  em({ tokens: e }) {
+    return `<em>${this.parser.parseInline(e)}</em>`;
+  }
+  codespan({ text: e }) {
+    return `<code>${w(e, true)}</code>`;
+  }
+  br(e) {
+    return "<br>";
+  }
+  del({ tokens: e }) {
+    return `<del>${this.parser.parseInline(e)}</del>`;
+  }
+  link({ href: e, title: t, tokens: n }) {
+    let r = this.parser.parseInline(n), i = J(e);
+    if (i === null)
+      return r;
+    e = i;
+    let s = '<a href="' + e + '"';
+    return t && (s += ' title="' + w(t) + '"'), s += ">" + r + "</a>", s;
+  }
+  image({ href: e, title: t, text: n, tokens: r }) {
+    r && (n = this.parser.parseInline(r, this.parser.textRenderer));
+    let i = J(e);
+    if (i === null)
+      return w(n);
+    e = i;
+    let s = `<img src="${e}" alt="${n}"`;
+    return t && (s += ` title="${w(t)}"`), s += ">", s;
+  }
+  text(e) {
+    return "tokens" in e && e.tokens ? this.parser.parseInline(e.tokens) : ("escaped" in e) && e.escaped ? e.text : w(e.text);
+  }
+};
+var S = class {
+  strong({ text: e }) {
+    return e;
+  }
+  em({ text: e }) {
+    return e;
+  }
+  codespan({ text: e }) {
+    return e;
+  }
+  del({ text: e }) {
+    return e;
+  }
+  html({ text: e }) {
+    return e;
+  }
+  text({ text: e }) {
+    return e;
+  }
+  link({ text: e }) {
+    return "" + e;
+  }
+  image({ text: e }) {
+    return "" + e;
+  }
+  br() {
+    return "";
+  }
+};
+var R = class l {
+  options;
+  renderer;
+  textRenderer;
+  constructor(e) {
+    this.options = e || O, this.options.renderer = this.options.renderer || new P, this.renderer = this.options.renderer, this.renderer.options = this.options, this.renderer.parser = this, this.textRenderer = new S;
+  }
+  static parse(e, t) {
+    return new l(t).parse(e);
+  }
+  static parseInline(e, t) {
+    return new l(t).parseInline(e);
+  }
+  parse(e, t = true) {
+    let n = "";
+    for (let r = 0;r < e.length; r++) {
+      let i = e[r];
+      if (this.options.extensions?.renderers?.[i.type]) {
+        let o = i, a = this.options.extensions.renderers[o.type].call({ parser: this }, o);
+        if (a !== false || !["space", "hr", "heading", "code", "table", "blockquote", "list", "html", "paragraph", "text"].includes(o.type)) {
+          n += a || "";
+          continue;
+        }
+      }
+      let s = i;
+      switch (s.type) {
+        case "space": {
+          n += this.renderer.space(s);
+          continue;
+        }
+        case "hr": {
+          n += this.renderer.hr(s);
+          continue;
+        }
+        case "heading": {
+          n += this.renderer.heading(s);
+          continue;
+        }
+        case "code": {
+          n += this.renderer.code(s);
+          continue;
+        }
+        case "table": {
+          n += this.renderer.table(s);
+          continue;
+        }
+        case "blockquote": {
+          n += this.renderer.blockquote(s);
+          continue;
+        }
+        case "list": {
+          n += this.renderer.list(s);
+          continue;
+        }
+        case "html": {
+          n += this.renderer.html(s);
+          continue;
+        }
+        case "paragraph": {
+          n += this.renderer.paragraph(s);
+          continue;
+        }
+        case "text": {
+          let o = s, a = this.renderer.text(o);
+          for (;r + 1 < e.length && e[r + 1].type === "text"; )
+            o = e[++r], a += `
+` + this.renderer.text(o);
+          t ? n += this.renderer.paragraph({ type: "paragraph", raw: a, text: a, tokens: [{ type: "text", raw: a, text: a, escaped: true }] }) : n += a;
+          continue;
+        }
+        default: {
+          let o = 'Token with "' + s.type + '" type was not found.';
+          if (this.options.silent)
+            return console.error(o), "";
+          throw new Error(o);
+        }
+      }
+    }
+    return n;
+  }
+  parseInline(e, t = this.renderer) {
+    let n = "";
+    for (let r = 0;r < e.length; r++) {
+      let i = e[r];
+      if (this.options.extensions?.renderers?.[i.type]) {
+        let o = this.options.extensions.renderers[i.type].call({ parser: this }, i);
+        if (o !== false || !["escape", "html", "link", "image", "strong", "em", "codespan", "br", "del", "text"].includes(i.type)) {
+          n += o || "";
+          continue;
+        }
+      }
+      let s = i;
+      switch (s.type) {
+        case "escape": {
+          n += t.text(s);
+          break;
+        }
+        case "html": {
+          n += t.html(s);
+          break;
+        }
+        case "link": {
+          n += t.link(s);
+          break;
+        }
+        case "image": {
+          n += t.image(s);
+          break;
+        }
+        case "strong": {
+          n += t.strong(s);
+          break;
+        }
+        case "em": {
+          n += t.em(s);
+          break;
+        }
+        case "codespan": {
+          n += t.codespan(s);
+          break;
+        }
+        case "br": {
+          n += t.br(s);
+          break;
+        }
+        case "del": {
+          n += t.del(s);
+          break;
+        }
+        case "text": {
+          n += t.text(s);
+          break;
+        }
+        default: {
+          let o = 'Token with "' + s.type + '" type was not found.';
+          if (this.options.silent)
+            return console.error(o), "";
+          throw new Error(o);
+        }
+      }
+    }
+    return n;
+  }
+};
+var $ = class {
+  options;
+  block;
+  constructor(e) {
+    this.options = e || O;
+  }
+  static passThroughHooks = new Set(["preprocess", "postprocess", "processAllTokens"]);
+  preprocess(e) {
+    return e;
+  }
+  postprocess(e) {
+    return e;
+  }
+  processAllTokens(e) {
+    return e;
+  }
+  provideLexer() {
+    return this.block ? b.lex : b.lexInline;
+  }
+  provideParser() {
+    return this.block ? R.parse : R.parseInline;
+  }
+};
+var B = class {
+  defaults = L();
+  options = this.setOptions;
+  parse = this.parseMarkdown(true);
+  parseInline = this.parseMarkdown(false);
+  Parser = R;
+  Renderer = P;
+  TextRenderer = S;
+  Lexer = b;
+  Tokenizer = y;
+  Hooks = $;
+  constructor(...e) {
+    this.use(...e);
+  }
+  walkTokens(e, t) {
+    let n = [];
+    for (let r of e)
+      switch (n = n.concat(t.call(this, r)), r.type) {
+        case "table": {
+          let i = r;
+          for (let s of i.header)
+            n = n.concat(this.walkTokens(s.tokens, t));
+          for (let s of i.rows)
+            for (let o of s)
+              n = n.concat(this.walkTokens(o.tokens, t));
+          break;
+        }
+        case "list": {
+          let i = r;
+          n = n.concat(this.walkTokens(i.items, t));
+          break;
+        }
+        default: {
+          let i = r;
+          this.defaults.extensions?.childTokens?.[i.type] ? this.defaults.extensions.childTokens[i.type].forEach((s) => {
+            let o = i[s].flat(1 / 0);
+            n = n.concat(this.walkTokens(o, t));
+          }) : i.tokens && (n = n.concat(this.walkTokens(i.tokens, t)));
+        }
+      }
+    return n;
+  }
+  use(...e) {
+    let t = this.defaults.extensions || { renderers: {}, childTokens: {} };
+    return e.forEach((n) => {
+      let r = { ...n };
+      if (r.async = this.defaults.async || r.async || false, n.extensions && (n.extensions.forEach((i) => {
+        if (!i.name)
+          throw new Error("extension name required");
+        if ("renderer" in i) {
+          let s = t.renderers[i.name];
+          s ? t.renderers[i.name] = function(...o) {
+            let a = i.renderer.apply(this, o);
+            return a === false && (a = s.apply(this, o)), a;
+          } : t.renderers[i.name] = i.renderer;
+        }
+        if ("tokenizer" in i) {
+          if (!i.level || i.level !== "block" && i.level !== "inline")
+            throw new Error("extension level must be 'block' or 'inline'");
+          let s = t[i.level];
+          s ? s.unshift(i.tokenizer) : t[i.level] = [i.tokenizer], i.start && (i.level === "block" ? t.startBlock ? t.startBlock.push(i.start) : t.startBlock = [i.start] : i.level === "inline" && (t.startInline ? t.startInline.push(i.start) : t.startInline = [i.start]));
+        }
+        "childTokens" in i && i.childTokens && (t.childTokens[i.name] = i.childTokens);
+      }), r.extensions = t), n.renderer) {
+        let i = this.defaults.renderer || new P(this.defaults);
+        for (let s in n.renderer) {
+          if (!(s in i))
+            throw new Error(`renderer '${s}' does not exist`);
+          if (["options", "parser"].includes(s))
+            continue;
+          let o = s, a = n.renderer[o], u = i[o];
+          i[o] = (...p) => {
+            let c = a.apply(i, p);
+            return c === false && (c = u.apply(i, p)), c || "";
+          };
+        }
+        r.renderer = i;
+      }
+      if (n.tokenizer) {
+        let i = this.defaults.tokenizer || new y(this.defaults);
+        for (let s in n.tokenizer) {
+          if (!(s in i))
+            throw new Error(`tokenizer '${s}' does not exist`);
+          if (["options", "rules", "lexer"].includes(s))
+            continue;
+          let o = s, a = n.tokenizer[o], u = i[o];
+          i[o] = (...p) => {
+            let c = a.apply(i, p);
+            return c === false && (c = u.apply(i, p)), c;
+          };
+        }
+        r.tokenizer = i;
+      }
+      if (n.hooks) {
+        let i = this.defaults.hooks || new $;
+        for (let s in n.hooks) {
+          if (!(s in i))
+            throw new Error(`hook '${s}' does not exist`);
+          if (["options", "block"].includes(s))
+            continue;
+          let o = s, a = n.hooks[o], u = i[o];
+          $.passThroughHooks.has(s) ? i[o] = (p) => {
+            if (this.defaults.async)
+              return Promise.resolve(a.call(i, p)).then((f) => u.call(i, f));
+            let c = a.call(i, p);
+            return u.call(i, c);
+          } : i[o] = (...p) => {
+            let c = a.apply(i, p);
+            return c === false && (c = u.apply(i, p)), c;
+          };
+        }
+        r.hooks = i;
+      }
+      if (n.walkTokens) {
+        let i = this.defaults.walkTokens, s = n.walkTokens;
+        r.walkTokens = function(o) {
+          let a = [];
+          return a.push(s.call(this, o)), i && (a = a.concat(i.call(this, o))), a;
+        };
+      }
+      this.defaults = { ...this.defaults, ...r };
+    }), this;
+  }
+  setOptions(e) {
+    return this.defaults = { ...this.defaults, ...e }, this;
+  }
+  lexer(e, t) {
+    return b.lex(e, t ?? this.defaults);
+  }
+  parser(e, t) {
+    return R.parse(e, t ?? this.defaults);
+  }
+  parseMarkdown(e) {
+    return (n, r) => {
+      let i = { ...r }, s = { ...this.defaults, ...i }, o = this.onError(!!s.silent, !!s.async);
+      if (this.defaults.async === true && i.async === false)
+        return o(new Error("marked(): The async option was set to true by an extension. Remove async: false from the parse options object to return a Promise."));
+      if (typeof n > "u" || n === null)
+        return o(new Error("marked(): input parameter is undefined or null"));
+      if (typeof n != "string")
+        return o(new Error("marked(): input parameter is of type " + Object.prototype.toString.call(n) + ", string expected"));
+      s.hooks && (s.hooks.options = s, s.hooks.block = e);
+      let a = s.hooks ? s.hooks.provideLexer() : e ? b.lex : b.lexInline, u = s.hooks ? s.hooks.provideParser() : e ? R.parse : R.parseInline;
+      if (s.async)
+        return Promise.resolve(s.hooks ? s.hooks.preprocess(n) : n).then((p) => a(p, s)).then((p) => s.hooks ? s.hooks.processAllTokens(p) : p).then((p) => s.walkTokens ? Promise.all(this.walkTokens(p, s.walkTokens)).then(() => p) : p).then((p) => u(p, s)).then((p) => s.hooks ? s.hooks.postprocess(p) : p).catch(o);
+      try {
+        s.hooks && (n = s.hooks.preprocess(n));
+        let p = a(n, s);
+        s.hooks && (p = s.hooks.processAllTokens(p)), s.walkTokens && this.walkTokens(p, s.walkTokens);
+        let c = u(p, s);
+        return s.hooks && (c = s.hooks.postprocess(c)), c;
+      } catch (p) {
+        return o(p);
+      }
+    };
+  }
+  onError(e, t) {
+    return (n) => {
+      if (n.message += `
+Please report this to https://github.com/markedjs/marked.`, e) {
+        let r = "<p>An error occurred:</p><pre>" + w(n.message + "", true) + "</pre>";
+        return t ? Promise.resolve(r) : r;
+      }
+      if (t)
+        return Promise.reject(n);
+      throw n;
+    };
+  }
+};
+var _ = new B;
+function d(l, e) {
+  return _.parse(l, e);
+}
+d.options = d.setOptions = function(l) {
+  return _.setOptions(l), d.defaults = _.defaults, H(d.defaults), d;
+};
+d.getDefaults = L;
+d.defaults = O;
+d.use = function(...l) {
+  return _.use(...l), d.defaults = _.defaults, H(d.defaults), d;
+};
+d.walkTokens = function(l, e) {
+  return _.walkTokens(l, e);
+};
+d.parseInline = _.parseInline;
+d.Parser = R;
+d.parser = R.parse;
+d.Renderer = P;
+d.TextRenderer = S;
+d.Lexer = b;
+d.lexer = b.lex;
+d.Tokenizer = y;
+d.Hooks = $;
+d.parse = d;
+var Dt = d.options;
+var Zt = d.setOptions;
+var Gt = d.use;
+var Ht = d.walkTokens;
+var Nt = d.parseInline;
+var Ft = R.parse;
+var Qt = b.lex;
 
 // plugins/artifact-design/skills/artifact-design/scripts/markdown-template.html
 var markdown_template_default = `<!--
@@ -23025,726 +23810,599 @@ style: tokens come from @ant/cds's own vanilla export, embedded verbatim
 `;
 
 // plugins/artifact-design/src/render-markdown.ts
-var HEADING_SLOTS = /\{\{(TITLE|TAB_TITLE|EYEBROW|SUMMARY)\}\}/g;
-var SECTIONS = /<section\b[\s\S]*<\/section>/;
-var escape3 = (text) => escape2(text).replaceAll("&#x27;", "&#39;");
-var stickies = new WeakMap;
-function matchAt(pattern, text, pos = 0) {
-  let sticky = stickies.get(pattern);
-  if (!sticky) {
-    sticky = new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, "") + "y");
-    stickies.set(pattern, sticky);
-  }
-  sticky.lastIndex = pos;
-  return sticky.exec(text);
-}
-var escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-var leading = (text, chars) => {
-  let n = 0;
-  while (n < text.length && chars.includes(text[n]))
-    n++;
-  return n;
-};
-var lstrip = (text, chars) => text.slice(leading(text, chars));
-var indentOf = (line) => line.length - line.trimStart().length;
-var isBlank = (line) => line.trim() === "";
-var PUNCT = "!\"#$%&'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~";
-var PUNCT_CHAR = new RegExp(`^[${PUNCT}]$`);
-var WORD = "\\p{L}\\p{N}_";
-var ENTITY = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/g;
-var RAW_TAG = new RegExp(`<!--[\\s\\S]*?-->|<[A-Za-z][A-Za-z0-9-]*(?:\\s+[A-Za-z_:][${WORD}.:-]*(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s"'=<>\`]+))?)*\\s*/?>` + "|</[A-Za-z][A-Za-z0-9-]*\\s*>|<\\?[\\s\\S]*?\\?>|<![A-Za-z]+\\s[\\s\\S]*?>|<!\\[CDATA\\[[\\s\\S]*?\\]\\]>", "u");
-var AUTOLINK = new RegExp(`<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\\s<>]*)>|<([${WORD}.!#$%&'*+/=?^\`{|}~-]+@[${WORD}-]+(?:\\.[${WORD}-]+)+)>`, "u");
-var BARE_URL = /(?:https?:\/\/|www\.)[^\s<]+/;
-var EMAIL = /[A-Za-z0-9._+-]+@[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*[A-Za-z0-9])+(?![-_])/;
-var EMAIL_LOCAL = /[A-Za-z0-9._+-]/;
-var EMAIL_AT = /[A-Za-z0-9._+-]+@/;
-var EM_UNDERSCORE = new RegExp(`(_+)(?=[^\\s_])[\\s\\S]*?[^\\s_]\\1(?![${WORD}_])`, "u");
-var PLACEHOLDER = /\x00(\d+)\x00/g;
-var LINK_DEST = "(?:<([^<>\\n]*)>|((?:[^\\s()\\\\]|\\\\.|\\((?:[^\\s()\\\\]|\\\\.)*\\))*))";
-var LINK_TAIL = new RegExp(`\\(\\s*${LINK_DEST}(?:\\s+("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|\\((?:[^()\\\\]|\\\\.)*\\)))?\\s*\\)`);
-var isAlnum = (ch) => /^[\p{L}\p{N}]$/u.test(ch);
-function trimUrl(url) {
-  const count = (ch) => url.split(ch).length - 1;
-  while (url && (`?!.,:;*_~'"`.includes(url.at(-1)) || url.at(-1) === ")" && count(")") > count("("))) {
-    url = url.slice(0, -1);
-  }
-  return url;
-}
-var unescapeMd = (text) => text.replace(new RegExp(`\\\\([${PUNCT}])`, "g"), "$1");
-function escapeText(text) {
-  let out = "";
-  let last = 0;
-  for (const match of text.matchAll(ENTITY)) {
-    out += escape3(text.slice(last, match.index)) + match[0];
-    last = match.index + match[0].length;
-  }
-  return out + escape3(text.slice(last));
-}
-var EMPHASIS = [
-  [
-    new RegExp(`(?<![${WORD}*])\\*\\*\\*(?=\\S)([\\s\\S]+?)(?<=\\S)\\*\\*\\*(?![*])`, "gu"),
-    "<em><strong>",
-    "</strong></em>"
-  ],
-  [
-    new RegExp(`(?<![${WORD}_])___(?=\\S)([\\s\\S]+?)(?<=\\S)___(?![${WORD}_])`, "gu"),
-    "<em><strong>",
-    "</strong></em>"
-  ],
-  [/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, "<strong>", "</strong>"],
-  [new RegExp(`(?<![${WORD}_])__(?=\\S)([\\s\\S]+?)(?<=\\S)__(?![${WORD}_])`, "gu"), "<strong>", "</strong>"],
-  [/(?<![*])\*(?=[^\s*])([\s\S]+?)(?<=[^\s*])\*(?![*])/g, "<em>", "</em>"],
-  [new RegExp(`(?<![${WORD}_])_(?=[^\\s_])([\\s\\S]+?)(?<=[^\\s_])_(?![${WORD}_])`, "gu"), "<em>", "</em>"],
-  [/(?<!~)~~?(?=[^\s~])([\s\S]+?)(?<=[^\s~])~~?(?!~)/g, "<del>", "</del>"]
-];
-
-class Inline {
-  refs;
-  inLink;
-  slots = [];
-  constructor(refs, inLink = false) {
-    this.refs = refs;
-    this.inLink = inLink;
-  }
-  hold(rendered) {
-    this.slots.push(rendered);
-    return `\x00${this.slots.length - 1}\x00`;
-  }
-  render(text) {
-    text = this.emphasis(this.tokens(text));
-    return text.replace(PLACEHOLDER, (whole, n) => Number(n) < this.slots.length ? this.slots[Number(n)] : whole);
-  }
-  link(label, dest, title, image) {
-    const href = escape3(unescape2(unescapeMd(dest ?? "")));
-    const attrs = title ? ` title="${escape3(unescape2(unescapeMd(title)))}"` : "";
-    if (image) {
-      const alt = new Inline(this.refs, true).render(label).replace(/<[^>]*>/g, "");
-      return `<img src="${href}" alt="${escape3(unescape2(alt))}"${attrs}>`;
-    }
-    return `<a href="${href}"${attrs}>${new Inline(this.refs, true).render(label)}</a>`;
-  }
-  bracket(text, start) {
-    let depth = 0;
-    let i = start;
-    while (i < text.length) {
-      const ch = text[i];
-      if (ch === "\\") {
-        i += 2;
-        continue;
-      }
-      if (ch === "`") {
-        const run = matchAt(/`+/, text, i)[0];
-        const close = text.indexOf(run, i + run.length);
-        i = close !== -1 ? close + run.length : i + run.length;
-        continue;
-      }
-      if (ch === "[")
-        depth += 1;
-      else if (ch === "]") {
-        depth -= 1;
-        if (depth === 0)
-          return i;
-      }
-      i += 1;
-    }
-    return -1;
-  }
-  tokens(text) {
-    const out = [];
-    let i = 0;
-    while (i < text.length) {
-      const ch = text[i];
-      if (ch === "\\" && i + 1 < text.length) {
-        const next = text[i + 1];
-        if (next === `
-`) {
-          out.push(this.hold("<br>"));
-          i += 2;
-          continue;
-        }
-        if (PUNCT_CHAR.test(next)) {
-          out.push(this.hold(escape3(next)));
-          i += 2;
-          continue;
-        }
-      }
-      if (ch === "`") {
-        const run = matchAt(/`+/, text, i)[0];
-        const closer = new RegExp(`(?<!\`)${run}(?!\`)`, "g");
-        closer.lastIndex = i + run.length;
-        const close = closer.exec(text);
-        if (close) {
-          let code = text.slice(i + run.length, close.index).replaceAll(`
-`, " ");
-          if (code.trim() && code.startsWith(" ") && code.endsWith(" "))
-            code = code.slice(1, -1);
-          out.push(this.hold(`<code>${escape3(code)}</code>`));
-          i = close.index + close[0].length;
-          continue;
-        }
-        out.push(run);
-        i += run.length;
-        continue;
-      }
-      if (ch === "<") {
-        const auto = matchAt(AUTOLINK, text, i);
-        if (auto) {
-          const url = auto[1] || auto[2];
-          const href = auto[1] ? url : "mailto:" + url;
-          out.push(this.hold(`<a href="${escape3(href)}">${escape3(url)}</a>`));
-          i += auto[0].length;
-          continue;
-        }
-        const tag = matchAt(RAW_TAG, text, i);
-        if (tag) {
-          out.push(this.hold(tag[0]));
-          if (/^<a /i.test(tag[0]))
-            this.inLink = true;
-          else if (/^<\/a>/i.test(tag[0]))
-            this.inLink = false;
-          i += tag[0].length;
-          continue;
-        }
-      }
-      if (ch === "[" || ch === "!" && text.startsWith("![", i)) {
-        const image = ch === "!";
-        const start = image ? i + 1 : i;
-        const end = this.bracket(text, start);
-        if (end !== -1) {
-          const label = text.slice(start + 1, end);
-          const tail = matchAt(LINK_TAIL, text, end + 1);
-          if (tail) {
-            const dest = tail[1] !== undefined ? tail[1] : tail[2];
-            const title = tail[3] ? tail[3].slice(1, -1) : null;
-            out.push(this.hold(this.link(label, dest, title, image)));
-            i = end + 1 + tail[0].length;
-            continue;
-          }
-          const ref = matchAt(/\[([^\]]*)\]/, text, end + 1);
-          const key = normalizeLabel(ref && ref[1] ? ref[1] : label);
-          const found = this.refs.get(key);
-          if (found) {
-            out.push(this.hold(this.link(label, found[0], found[1], image)));
-            i = end + 1 + (ref ? ref[0].length : 0);
-            continue;
-          }
-        }
-      }
-      if ("hHwW".includes(ch) && !this.inLink) {
-        const bare = matchAt(BARE_URL, text, i);
-        const url = bare ? trimUrl(bare[0]) : "";
-        const host = url.split("//").at(-1);
-        if (url && host.includes(".") && (i === 0 || !(isAlnum(text[i - 1]) || "/_".includes(text[i - 1])))) {
-          const href = url.includes("://") ? url : "http://" + url;
-          out.push(this.hold(`<a href="${escape3(href)}">${escape3(url)}</a>`));
-          i += url.length;
-          continue;
-        }
-      }
-      if (EMAIL_LOCAL.test(ch) && !this.inLink && (i === 0 || !EMAIL_LOCAL.test(text[i - 1]))) {
-        let start = i;
-        let end = text.length;
-        const opener = ch === "_" && matchAt(EMAIL_AT, text, i) ? matchAt(EM_UNDERSCORE, text, i) : null;
-        if (opener) {
-          start = i + opener[1].length;
-          end = i + opener[0].length - opener[1].length;
-        }
-        const mail = matchAt(EMAIL, text.slice(0, end), start);
-        if (mail) {
-          out.push(text.slice(i, start));
-          out.push(this.hold(`<a href="mailto:${escape3(mail[0])}">${escape3(mail[0])}</a>`));
-          i = start + mail[0].length;
-          continue;
-        }
-      }
-      if (ch === `
-`) {
-        let spaces = 0;
-        while (out.length && out.at(-1) === " ") {
-          out.pop();
-          spaces += 1;
-        }
-        out.push(spaces >= 2 ? this.hold("<br>") : `
-`);
-        i += 1;
-        continue;
-      }
-      out.push(ch);
-      i += 1;
-    }
-    return escapeText(out.join(""));
-  }
-  emphasis(text) {
-    for (let round = 0;round < 3; round++) {
-      const before = text;
-      for (const [pattern, open, close] of EMPHASIS) {
-        text = text.replace(pattern, (_whole, inner) => open + inner + close);
-      }
-      if (text === before)
-        break;
-    }
-    return text;
-  }
-}
-function normalizeLabel(label) {
-  return label.trim().replace(/\s+/g, " ").toUpperCase().toLowerCase();
-}
-var FENCE = /^( {0,3})(`{3,}|~{3,})[ \t]*([^\n]*?)[ \t]*$/;
-var ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
-var HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
-var QUOTE = /^ {0,3}>[ \t]?/;
-var BULLET = /^( {0,3})([*+-])([ \t]+|$)/;
-var ORDERED = /^( {0,3})(\d{1,9})([.)])([ \t]+|$)/;
-var SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
-var TABLE_DELIM = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
-var REF_DEF = /^ {0,3}\[([^\]]+)\]:[ \t]*(?:<([^<>\n]*)>|(\S+))(?:[ \t]+("[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/;
-var INDENTED = /^(?: {4}| {0,3}\t)/;
-var UNINDENT = /^(?: {1,4}| {0,3}\t)/;
-var BLOCK_TAGS = "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|" + "div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|" + "legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|" + "summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul";
-var HTML_BLOCK = new RegExp("^ {0,3}(?:<(script|pre|style|textarea)(?:[\\s>]|$)|(<!--|<\\?|<!\\[CDATA\\[|<![A-Za-z])" + `|</?(?:${BLOCK_TAGS})(?: |/?>|$)` + "|(?:<(?!script|pre|style|textarea)[A-Za-z][A-Za-z0-9_-]*" + `(?: +[A-Za-z_:][A-Za-z0-9_.:-]*(?: *= *"[^"]*"| *= *'[^']*'| *= *[^\\s"'=<>\`]+)?)* */?>` + "|</(?!script|pre|style|textarea)[A-Za-z][A-Za-z0-9_-]*\\s*>)[ \\t]*$)", "i");
-var HTML_ENDS = { "<!--": "-->", "<?": "?>", "<![CDATA[": "]]>" };
-var HTML_INTERRUPT = new RegExp(`^(?:</?(?:${BLOCK_TAGS})(?: |/?>|$)|<(?:script|pre|style|textarea|!--))`);
-var LIST_HTML = /^ {0,3}<(?:[a-z].*>|!--)/i;
-function startsBlock(line) {
-  if (FENCE.test(line) || ATX.test(line) || HR.test(line) || QUOTE.test(line) || HTML_INTERRUPT.test(line))
-    return true;
-  const bullet = BULLET.exec(line);
-  if (bullet && line.slice(bullet[0].length).trim())
-    return true;
-  const ordered = ORDERED.exec(line);
-  return !!(ordered && ordered[2] === "1" && line.slice(ordered[0].length).trim());
-}
-function htmlBlockEnd(start) {
-  if (start[1])
-    return `</${start[1].toLowerCase()}>`;
-  if (start[2])
-    return HTML_ENDS[start[2]] ?? ">";
-  return null;
-}
-function splitCells(row) {
-  row = row.trim();
-  if (row.startsWith("|"))
-    row = row.slice(1);
-  if (row.endsWith("|") && !row.endsWith("\\|"))
-    row = row.slice(0, -1);
-  const cells = [];
-  let cur = "";
-  let i = 0;
-  while (i < row.length) {
-    const ch = row[i];
-    if (ch === "\\" && i + 1 < row.length && row[i + 1] === "|") {
-      cur += "|";
-      i += 2;
-      continue;
-    }
-    if (ch === "|") {
-      cells.push(cur.trim());
-      cur = "";
-    } else
-      cur += ch;
-    i += 1;
-  }
-  cells.push(cur.trim());
-  return cells;
-}
-
-class Blocks {
-  refs;
-  constructor(refs) {
-    this.refs = refs;
-  }
-  inline(text) {
-    return new Inline(this.refs).render(text);
-  }
-  render(lines) {
-    return Blocks.join(this.blocks(lines)[0]);
-  }
-  static join(parts, tight = false) {
-    return parts.map((part) => typeof part === "string" ? part : tight ? part.p : `<p>${part.p}</p>
-`).join("");
-  }
-  blocks(lines) {
-    const out = [];
-    let i = 0;
-    let spaced = false;
-    let gap = false;
-    while (i < lines.length) {
-      const line = lines[i];
-      if (isBlank(line)) {
-        gap = out.length > 0;
-        i += 1;
-        continue;
-      }
-      spaced = spaced || gap;
-      gap = false;
-      const fence = FENCE.exec(line);
-      if (fence && !(fence[2][0] === "`" && fence[3].includes("`"))) {
-        const marker = fence[2];
-        const info = fence[3];
-        const indent = marker[0] === "`" ? fence[1].length : 0;
-        const closing = new RegExp(`^ {0,3}(${escapeRegExp(marker[0])}{${marker.length},})[ \\t]*$`);
-        const body = [];
-        i += 1;
-        while (i < lines.length) {
-          if (closing.test(lines[i])) {
-            i += 1;
-            break;
-          }
-          body.push(indentOf(lines[i]) >= indent ? lines[i].slice(indent) : lines[i]);
-          i += 1;
-        }
-        const code = body.join(`
-`);
-        const lang = info.trim() ? unescapeMd(info).trim().split(/\s+/)[0] : "";
-        if (lang.toLowerCase() === "mermaid") {
-          out.push(`<pre class="mermaid">${escape3(code)}</pre>
-`);
-        } else {
-          const cls = lang ? ` class="language-${escape3(lang)}"` : "";
-          out.push(`<pre><code${cls}>${escape3(code)}${body.length ? `
-` : ""}</code></pre>
-`);
-        }
-        continue;
-      }
-      const heading = ATX.exec(line);
-      if (heading) {
-        const level = heading[1].length;
-        out.push(`<h${level}>${this.inline((heading[2] ?? "").trim())}</h${level}>
-`);
-        i += 1;
-        continue;
-      }
-      if (HR.test(line)) {
-        out.push(`<hr>
-`);
-        i += 1;
-        continue;
-      }
-      if (QUOTE.test(line)) {
-        const body = [];
-        while (i < lines.length && !isBlank(lines[i])) {
-          if (QUOTE.test(lines[i]))
-            body.push(lines[i].replace(QUOTE, ""));
-          else if (body.length && !isBlank(body.at(-1)) && !startsBlock(lines[i]))
-            body.push(lines[i]);
-          else
-            break;
-          i += 1;
-        }
-        out.push(`<blockquote>
-${this.render(body)}</blockquote>
-`);
-        continue;
-      }
-      if (BULLET.test(line) || ORDERED.test(line)) {
-        const [list, next] = this.list(lines, i);
-        out.push(list);
-        i = next;
-        continue;
-      }
-      if (INDENTED.test(line)) {
-        const body = [];
-        while (i < lines.length && (INDENTED.test(lines[i]) || isBlank(lines[i]))) {
-          body.push(lines[i].replace(UNINDENT, ""));
-          i += 1;
-        }
-        while (body.length && isBlank(body.at(-1)))
-          body.pop();
-        out.push(`<pre><code>${escape3(body.join(`
-`))}
-</code></pre>
-`);
-        continue;
-      }
-      const start = HTML_BLOCK.exec(line);
-      if (start) {
-        const end = htmlBlockEnd(start);
-        const body = [line];
-        i += 1;
-        if (end) {
-          const rest = line.slice(start[0].length).toLowerCase();
-          let done = rest.includes(end) || end === "-->" && /^-?>/.test(rest);
-          while (!done && i < lines.length) {
-            body.push(lines[i]);
-            done = lines[i].toLowerCase().includes(end);
-            i += 1;
-          }
-        } else {
-          while (i < lines.length && !isBlank(lines[i])) {
-            body.push(lines[i]);
-            i += 1;
-          }
-        }
-        out.push(body.join(`
-`) + `
-`);
-        continue;
-      }
-      if (line.includes("|") && i + 1 < lines.length && TABLE_DELIM.test(lines[i + 1])) {
-        const header = splitCells(line);
-        const aligns = splitCells(lines[i + 1]);
-        if (header.length === aligns.length) {
-          const [table, next] = this.table(lines, i, header, aligns);
-          out.push(table);
-          i = next;
-          continue;
-        }
-      }
-      const para = [line];
-      i += 1;
-      let level = 0;
-      while (i < lines.length && !isBlank(lines[i])) {
-        const setext = SETEXT.exec(lines[i]);
-        if (setext) {
-          level = setext[1][0] === "=" ? 1 : 2;
-          i += 1;
-          break;
-        }
-        if (startsBlock(lines[i]) || lines[i].includes("|") && i + 1 < lines.length && TABLE_DELIM.test(lines[i + 1])) {
-          break;
-        }
-        para.push(lines[i]);
-        i += 1;
-      }
-      const text = para.map((part) => part.trimStart()).join(`
-`).trimEnd();
-      if (level)
-        out.push(`<h${level}>${this.inline(text)}</h${level}>
-`);
-      else
-        out.push({ p: this.inline(text) });
-    }
-    return [out, spaced];
-  }
-  table(lines, i, header, aligns) {
-    const align = (cell) => {
-      const left = cell.startsWith(":");
-      const right = cell.endsWith(":");
-      return left && right ? ' align="center"' : right ? ' align="right"' : left ? ' align="left"' : "";
-    };
-    const attrs = aligns.map(align);
-    let out = `<table>
-<thead>
-<tr>
+function mermaidBlock(text, lang) {
+  if (((lang ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "") !== "mermaid")
+    return false;
+  return `<pre class="mermaid">${escape2(text)}</pre>
 `;
-    out += header.map((cell, n) => `<th${attrs[n]}>${this.inline(cell)}</th>
-`).join("");
-    out += `</tr>
-</thead>
-`;
-    i += 2;
-    const rows = [];
-    while (i < lines.length && !isBlank(lines[i]) && !startsBlock(lines[i])) {
-      const cells = [...splitCells(lines[i]), ...header.map(() => "")].slice(0, header.length);
-      rows.push(`<tr>
-` + cells.map((cell, n) => `<td${attrs[n]}>${this.inline(cell)}</td>
-`).join("") + `</tr>
-`);
-      i += 1;
-    }
-    if (rows.length)
-      out += "<tbody>" + rows.join("") + "</tbody>";
-    out += `</table>
-`;
-    return [out, i];
-  }
-  list(lines, i) {
-    const ordered = !BULLET.test(lines[i]);
-    const pattern = ordered ? ORDERED : BULLET;
-    const first = pattern.exec(lines[i]);
-    const kind = ordered ? first[3] : first[2];
-    const start = ordered ? parseInt(first[2], 10) : null;
-    const items = [];
-    let loose = false;
-    let gap = false;
-    while (i < lines.length) {
-      const match = pattern.exec(lines[i]);
-      if (!match || (ordered ? match[3] : match[2]) !== kind)
-        break;
-      loose = loose || gap;
-      const markerEnd = match[0].length - (ordered ? match[4] : match[3]).length;
-      const rest = lines[i].slice(markerEnd);
-      let contentCol;
-      let body;
-      if (rest.trim()) {
-        const lead = leading(rest, " ");
-        contentCol = lead <= 4 ? lead : 1;
-        body = [rest.replace(/^\t+/, (tabs) => "   ".repeat(tabs.length)).slice(contentCol)];
-        contentCol += markerEnd;
-      } else {
-        contentCol = markerEnd + 1;
-        body = [""];
-      }
-      i += 1;
-      gap = false;
-      while (i < lines.length) {
-        const line = lines[i];
-        if (isBlank(line)) {
-          body.push("");
-          gap = true;
-          i += 1;
-          continue;
-        }
-        const expanded = line.replaceAll("\t", "    ");
-        if (leading(expanded, " ") >= contentCol) {
-          body.push(expanded.slice(contentCol));
-          gap = false;
-          i += 1;
-          continue;
-        }
-        if (!gap && !startsBlock(line) && !LIST_HTML.test(line) && !(BULLET.test(line) || ORDERED.test(line))) {
-          body.push(line.trimStart());
-          i += 1;
-          continue;
-        }
-        break;
-      }
-      while (body.length && isBlank(body.at(-1)))
-        body.pop();
-      items.push(body);
-    }
-    const tasks = [];
-    const itemParts = [];
-    for (const body of items) {
-      const check = body.length ? /^\[([ xX])\][ \t]+/.exec(body[0]) : null;
-      const checked = check && check[1] !== " " ? 'checked="" ' : "";
-      tasks.push(check ? `<input ${checked}disabled="" type="checkbox"> ` : "");
-      if (check)
-        body[0] = body[0].slice(check[0].length);
-      const [parts, spaced] = this.blocks(body);
-      loose = loose || spaced;
-      itemParts.push(parts);
-    }
-    const tag = ordered ? "ol" : "ul";
-    const attr = ordered && start !== 1 ? ` start="${start}"` : "";
-    let out = `<${tag}${attr}>
-`;
-    itemParts.forEach((parts, n) => {
-      const task = tasks[n];
-      let rendered = Blocks.join(parts, !loose);
-      if (!loose)
-        rendered = task + rendered.replace(/\n+$/, "");
-      else if (task)
-        rendered = rendered.startsWith("<p>") ? rendered.replace("<p>", () => "<p>" + task) : task + rendered;
-      out += `<li>${rendered}</li>
-`;
-    });
-    out += `</${tag}>
-`;
-    return [out, i];
-  }
 }
-function collectRefs(lines) {
-  const refs = new Map;
-  const kept = [];
-  let fence = null;
-  for (const line of lines) {
-    const match = FENCE.exec(line);
-    if (fence) {
-      if (new RegExp(`^ {0,3}${escapeRegExp(fence[0])}{${fence.length},}[ \\t]*$`).test(line))
-        fence = null;
-    } else if (match) {
-      fence = match[2];
-    } else {
-      const ref = REF_DEF.exec(line);
-      if (ref) {
-        const key = normalizeLabel(ref[1]);
-        if (!refs.has(key))
-          refs.set(key, [ref[2] !== undefined ? ref[2] : ref[3], ref[4] ? ref[4].slice(1, -1) : null]);
-        continue;
-      }
-    }
-    kept.push(line);
-  }
-  return [refs, kept];
-}
+var marked = new B({ gfm: true });
+marked.use({ renderer: { code: ({ text, lang }) => mermaidBlock(text, lang) } });
 function render(text) {
-  const [refs, lines] = collectRefs(text.replaceAll("\x00", "�").split(`
-`));
-  return new Blocks(refs).render(lines);
+  return marked.parse(text, { async: false });
 }
-var FRONT_MATTER = /^---[ \t]*\n([\s\S]*?\n)?---[ \t]*(?:\n|$)/;
-var YAML_LINE = new RegExp(`^(?:[ \\t]*$|[ \\t]+\\S|- |[${WORD}"'.-][^:#]*:(?:[ \\t]|$))`, "u");
-var LINE_BREAKS = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/;
-function splitLines(text) {
-  const lines = text.split(LINE_BREAKS);
-  if (lines.at(-1) === "")
-    lines.pop();
-  return lines;
+var lex = (text) => marked.lexer(text);
+var SCAN_LIMIT = 65536;
+var ATX_LINE = /^ {0,3}#{1,6}(?:[ \t]+(.*))?$/m;
+function stripClosingHashes(text) {
+  const isSpace = (ch) => /\s/.test(ch);
+  let n = text.length;
+  while (n > 0 && isSpace(text[n - 1]))
+    n--;
+  const end = n;
+  while (n > 0 && text[n - 1] === "#")
+    n--;
+  if (n === end || n > 0 && text[n - 1] !== " ")
+    return text.slice(0, end);
+  while (n > 0 && isSpace(text[n - 1]))
+    n--;
+  return text.slice(0, n);
 }
-function openingHeading(text) {
-  let pos = 0;
-  const front = FRONT_MATTER.exec(text);
-  if (front && splitLines(front[1] ?? "").every((line) => YAML_LINE.test(line) && !ATX.test(line))) {
-    pos = front[0].length;
+function stripFrontMatter(text) {
+  const open = text.match(/^---[ \t]*\n/);
+  if (!open)
+    return text;
+  const rest = text.slice(open[0].length);
+  const close = rest.match(/^---[ \t]*$/m);
+  if (!close)
+    return text;
+  const blank = rest.match(/^[ \t]*$/m);
+  if (blank && blank.index < close.index)
+    return text;
+  return rest.slice(close.index + close[0].length + 1);
+}
+function firstHeadingText(text) {
+  const body = stripFrontMatter(text);
+  if (body.length <= SCAN_LIMIT) {
+    let tokens;
+    try {
+      tokens = lex(body);
+    } catch {
+      return;
+    }
+    const heading = tokens.find((token) => token.type === "heading");
+    return heading && "text" in heading ? heading.text : undefined;
   }
-  for (;; ) {
-    const stripped = lstrip(text.slice(pos), ` 	
-`);
-    if (stripped.startsWith("<!--") && stripped.includes("-->")) {
-      pos = text.length - stripped.length + stripped.indexOf("-->") + 3;
+  const line = body.match(ATX_LINE)?.[1];
+  return line === undefined ? undefined : stripClosingHashes(line).slice(0, SCAN_LIMIT);
+}
+function onlyComments(html) {
+  let rest = html.trim();
+  while (rest.startsWith("<!--")) {
+    const end = rest.indexOf("-->", 4);
+    if (end === -1)
+      return false;
+    rest = rest.slice(end + 3).trimStart();
+  }
+  return rest === "";
+}
+function firstBlock(text, from) {
+  let tokens;
+  try {
+    tokens = lex(text);
+  } catch {
+    return null;
+  }
+  let pos = 0;
+  for (const token of tokens) {
+    if (!text.startsWith(token.raw, pos))
+      return null;
+    const end = pos + token.raw.length;
+    if (end <= from || pos < from && text.slice(from, end).trim() === "") {
+      pos = end;
       continue;
     }
-    pos = text.length - stripped.length;
-    break;
-  }
-  const lineEnd = text.indexOf(`
-`, pos);
-  const line = text.slice(pos, lineEnd !== -1 ? lineEnd : text.length);
-  const atx = ATX.exec(line);
-  if (atx) {
-    const end = lineEnd !== -1 ? lineEnd + 1 : text.length;
-    return [pos, end, atx[1].length, (atx[2] ?? "").trim()];
-  }
-  if (line.trim() && lineEnd !== -1) {
-    const nextEnd = text.indexOf(`
-`, lineEnd + 1);
-    const underline = text.slice(lineEnd + 1, nextEnd !== -1 ? nextEnd : text.length);
-    const setext = SETEXT.exec(underline);
-    if (setext && !startsBlock(line)) {
-      const end = nextEnd !== -1 ? nextEnd + 1 : text.length;
-      return [pos, end, setext[1][0] === "=" ? 1 : 2, line.trim()];
+    if (pos < from)
+      return null;
+    if (token.type === "space" || token.type === "html" && onlyComments(token.raw)) {
+      pos = end;
+      continue;
     }
+    return { token, offset: pos, links: tokens.links ?? {} };
   }
   return null;
 }
-var plain = (fragment) => unescape2(fragment.replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
-function page(source, filename) {
-  const text = source.replace(/^\ufeff+/, "").replaceAll(`\r
-`, `
-`).replaceAll("\r", `
-`).replaceAll("\x00", "�");
-  const [refs] = collectRefs(text.split(`
-`));
-  const heading = openingHeading(text);
-  const body = render(heading ? text.slice(0, heading[0]) + text.slice(heading[1]) : text);
-  let title;
-  let titleHtml;
-  if (heading) {
-    titleHtml = new Inline(refs).render(heading[3]).trim().replace(/\s+/g, " ");
-    if (/<\/?section\b/i.test(titleHtml))
-      titleHtml = escape3(heading[3].replace(/\s+/g, " ").trim());
-    title = plain(titleHtml);
-    if (!title && !new RegExp(`<[${WORD}]`, "u").test(titleHtml.replace(/<!--[\s\S]*?-->/g, ""))) {
-      titleHtml = escape3(filename);
-      title = filename;
-    }
-  } else {
-    const first = /<h[1-6]>([\s\S]*?)<\/h[1-6]>/.exec(body);
-    title = first ? plain(first[1]) : "";
-    titleHtml = title ? "" : escape3(filename);
+var YAML_LINE = /^(?:[ \t]*$|[ \t]+\S|- |[\w"'.-][^:#]*:(?:[ \t]|$))/;
+function openingHeading(text) {
+  const frontLength = text.length - stripFrontMatter(text).length;
+  const front = text.slice(0, frontLength);
+  const lines = front.replace(/\n$/, "").split(`
+`).slice(1, -1);
+  const yaml = lines.every((line) => YAML_LINE.test(line) && !ATX_LINE.test(line));
+  const first = firstBlock(text, yaml ? frontLength : 0);
+  const heading = first && first.token.type === "heading" ? first : null;
+  let packedHeading;
+  if (!yaml) {
+    const atx = ATX_LINE.exec(front);
+    packedHeading = atx ? stripClosingHashes(atx[1] ?? "") : lines.find((line) => !YAML_LINE.test(line) || ATX_LINE.test(line))?.trim();
   }
-  const template = String(markdown_template_default).replace(/^\ufeff?<!--[\s\S]*?-->\s*/, "");
-  const slots = {
-    TITLE: titleHtml,
-    TAB_TITLE: escape3(filename),
-    EYEBROW: escape3(`Markdown · ${filename}`),
-    SUMMARY: ""
-  };
-  const filled = template.replace(HEADING_SLOTS, (_whole, slot) => slots[slot]).replace(SECTIONS, () => `<section>${body}</section>`);
-  return [filled, title.slice(0, 120).trim() || filename];
+  return { heading, packedHeading };
 }
+function linkDefinitions(links) {
+  return Object.entries(links).map(([label, link]) => {
+    if (!link?.href || /[<>\n]/.test(link.href) || /[\]\n]/.test(label))
+      return "";
+    const href = /[\s()]/.test(link.href) ? `<${link.href}>` : link.href;
+    const title = link.title ?? "";
+    const quoted = !title || /\n/.test(title) ? "" : !title.includes('"') ? ` "${title}"` : !title.includes("'") ? ` '${title}'` : !/[()]/.test(title) ? ` (${title})` : "";
+    return `[${label}]: ${href}${quoted}
+`;
+  }).join("");
+}
+function headingHtml(token, links) {
+  const source = token.raw.replace(/\n*$/, `
+
+`) + linkDefinitions(links);
+  const inner = /^\s*<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>\s*$/.exec(render(source))?.[1]?.trim();
+  if (inner === undefined || /<\/?section\b/i.test(inner))
+    return escape2(token.text.replace(/\s+/g, " ").trim());
+  return inner.replace(/\s+/g, " ");
+}
+function plainText(html) {
+  return html.replace(/<img\b[^>]*\balt="([^"]*)"[^>]*>/gi, " $1 ").replace(/<[^>]*>/g, "").replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (whole, ref) => {
+    const name = ref.toLowerCase();
+    if (name === "amp")
+      return "&";
+    if (name === "lt")
+      return "<";
+    if (name === "gt")
+      return ">";
+    if (name === "quot")
+      return '"';
+    if (name === "apos")
+      return "'";
+    const code = name.startsWith("#x") ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+    return Number.isFinite(code) && code > 0 && code <= 1114111 && (code < 55296 || code > 57343) ? String.fromCodePoint(code) : whole;
+  }).replace(/\s+/g, " ").trim();
+}
+var LINK = /!?\[([^\]]{0,400})\]\([^\s)]{0,1500}\)/g;
+function unmark(text) {
+  for (let pass = 0;pass < 3; pass++) {
+    const next = text.replace(LINK, (whole, label, offset, all) => offset > 0 && all[offset - 1] === "\\" || label.endsWith("\\") ? whole : label);
+    if (next === text)
+      break;
+    text = next;
+  }
+  return text.replace(/[*`]|~~/g, "").replace(/(?<![\p{L}\p{N}])(?<!_)_+(?!_)|(?<!_)_+(?!_)(?![\p{L}\p{N}])/gu, "");
+}
+function markdownText(text) {
+  const ticks = [...text.matchAll(/`+/g)].map((match) => ({ start: match.index, len: match[0].length }));
+  let out = "";
+  let pos = 0;
+  let i = 0;
+  while (i < ticks.length) {
+    const open = ticks[i];
+    let j = i + 1;
+    while (j < ticks.length && ticks[j].len !== open.len)
+      j++;
+    if (j < ticks.length) {
+      const close = ticks[j];
+      out += unmark(text.slice(pos, open.start)) + text.slice(open.start + open.len, close.start);
+      pos = close.start + close.len;
+      i = j + 1;
+    } else
+      i++;
+  }
+  return out + unmark(text.slice(pos));
+}
+function title(text, heading, packedHeading, fallback) {
+  if (heading) {
+    const html = headingHtml(heading.token, heading.links);
+    const plain = plainText(html);
+    return plain === "" && !/<\w/.test(html.replace(/<!--[\s\S]*?-->/g, "")) ? { titleHtml: escape2(fallback), title: fallback } : { titleHtml: html, title: plain || fallback };
+  }
+  const found = [firstHeadingText(text), packedHeading].find((line) => line !== undefined && line.trim() !== "");
+  return found === undefined ? { titleHtml: escape2(fallback), title: fallback } : { titleHtml: "", title: markdownText(found).replace(/\s+/g, " ").trim() || fallback };
+}
+function fillTemplate(template, slots) {
+  const page = template.replace(/^﻿?<!--[\s\S]*?-->\s*/, "");
+  const sections = /<section\b[\s\S]*<\/section>/;
+  if (!sections.test(page))
+    return null;
+  const values = {
+    TITLE: slots.titleHtml,
+    TAB_TITLE: escape2(slots.tabTitle),
+    EYEBROW: escape2(slots.eyebrow),
+    SUMMARY: escape2(slots.summary)
+  };
+  return page.replace(/\{\{(TITLE|TAB_TITLE|EYEBROW|SUMMARY)\}\}/g, (_whole, slot) => values[slot] ?? "").replace(sections, () => `<section>${slots.body}</section>`);
+}
+function page(source, filename) {
+  const text = source.replace(/^﻿/, "").replace(/\r\n|\r/g, `
+`);
+  const { heading, packedHeading } = text.length > SCAN_LIMIT ? { heading: null, packedHeading: undefined } : openingHeading(text);
+  const named = title(text, heading, packedHeading, filename);
+  const rest = heading ? text.slice(0, heading.offset) + text.slice(heading.offset + heading.token.raw.length) : text;
+  const html = fillTemplate(String(markdown_template_default), {
+    titleHtml: named.titleHtml,
+    tabTitle: filename,
+    eyebrow: `Markdown · ${filename}`,
+    summary: "",
+    body: render(rest)
+  });
+  if (html === null)
+    throw new Error("markdown-template.html has no <section> to fill");
+  return [html, [...named.title].slice(0, 120).join("").trim() || filename];
+}
+
+// plugins/artifact-design/skills/artifact-design/scripts/hljs-languages.json
+var hljs_languages_default = [
+  "abnf",
+  "accesslog",
+  "actionscript",
+  "ada",
+  "ado",
+  "adoc",
+  "ahk",
+  "angelscript",
+  "apache",
+  "apacheconf",
+  "applescript",
+  "arcade",
+  "arduino",
+  "arm",
+  "armasm",
+  "as",
+  "asc",
+  "asciidoc",
+  "aspectj",
+  "atom",
+  "autohotkey",
+  "autoit",
+  "avrasm",
+  "awk",
+  "axapta",
+  "bash",
+  "basic",
+  "bat",
+  "bf",
+  "bind",
+  "bnf",
+  "brainfuck",
+  "c",
+  "c#",
+  "c++",
+  "cal",
+  "capnp",
+  "capnproto",
+  "cc",
+  "ceylon",
+  "cjs",
+  "clean",
+  "clj",
+  "clojure",
+  "clojure-repl",
+  "cls",
+  "cmake",
+  "cmake.in",
+  "cmd",
+  "coffee",
+  "coffeescript",
+  "console",
+  "coq",
+  "cos",
+  "cpp",
+  "cr",
+  "craftcms",
+  "crm",
+  "crmsh",
+  "crystal",
+  "cs",
+  "csharp",
+  "cson",
+  "csp",
+  "css",
+  "cts",
+  "cxx",
+  "d",
+  "dart",
+  "dcl",
+  "delphi",
+  "dfm",
+  "diff",
+  "django",
+  "dns",
+  "do",
+  "docker",
+  "dockerfile",
+  "dos",
+  "dpr",
+  "dsconfig",
+  "dst",
+  "dts",
+  "dust",
+  "ebnf",
+  "edn",
+  "elixir",
+  "elm",
+  "erb",
+  "erl",
+  "erlang",
+  "erlang-repl",
+  "ex",
+  "excel",
+  "exs",
+  "f#",
+  "f90",
+  "f95",
+  "feature",
+  "fix",
+  "flix",
+  "fortran",
+  "freepascal",
+  "fs",
+  "fsharp",
+  "gams",
+  "gauss",
+  "gcode",
+  "gemspec",
+  "gherkin",
+  "glsl",
+  "gms",
+  "go",
+  "golang",
+  "golo",
+  "gql",
+  "gradle",
+  "graph",
+  "graphql",
+  "groovy",
+  "gss",
+  "gyp",
+  "h",
+  "h++",
+  "haml",
+  "handlebars",
+  "haskell",
+  "haxe",
+  "hbs",
+  "hh",
+  "hpp",
+  "hs",
+  "hsp",
+  "html",
+  "html.handlebars",
+  "html.hbs",
+  "htmlbars",
+  "http",
+  "https",
+  "hx",
+  "hxx",
+  "hy",
+  "hylang",
+  "i7",
+  "iced",
+  "icl",
+  "inform7",
+  "ini",
+  "ino",
+  "instances",
+  "ipython",
+  "irb",
+  "irpf90",
+  "java",
+  "javascript",
+  "jboss-cli",
+  "jinja",
+  "jldoctest",
+  "js",
+  "json",
+  "jsonc",
+  "jsp",
+  "jsx",
+  "julia",
+  "julia-repl",
+  "k",
+  "kdb",
+  "kotlin",
+  "kt",
+  "kts",
+  "lasso",
+  "lassoscript",
+  "latex",
+  "lazarus",
+  "ldif",
+  "leaf",
+  "less",
+  "lfm",
+  "lisp",
+  "livecodeserver",
+  "livescript",
+  "llvm",
+  "lpr",
+  "ls",
+  "lsl",
+  "lua",
+  "m",
+  "mak",
+  "make",
+  "makefile",
+  "markdown",
+  "matlab",
+  "md",
+  "mel",
+  "mercury",
+  "mikrotik",
+  "mips",
+  "mipsasm",
+  "mizar",
+  "mjs",
+  "mk",
+  "mkd",
+  "mkdown",
+  "ml",
+  "mm",
+  "mojolicious",
+  "monkey",
+  "moo",
+  "moon",
+  "moonscript",
+  "mts",
+  "mysql",
+  "n1ql",
+  "nc",
+  "nestedtext",
+  "nginx",
+  "nginxconf",
+  "nim",
+  "nix",
+  "nixos",
+  "node-repl",
+  "nsis",
+  "nt",
+  "obj-c",
+  "obj-c++",
+  "objc",
+  "objective-c++",
+  "objectivec",
+  "ocaml",
+  "openscad",
+  "oracle",
+  "osascript",
+  "oxygene",
+  "p21",
+  "parser3",
+  "pas",
+  "pascal",
+  "patch",
+  "pb",
+  "pbi",
+  "pcmk",
+  "pde",
+  "perl",
+  "pf",
+  "pf.conf",
+  "pgsql",
+  "php",
+  "php-template",
+  "php3",
+  "php4",
+  "php5",
+  "php6",
+  "php7",
+  "php8",
+  "pl",
+  "plaintext",
+  "plist",
+  "pluto",
+  "pm",
+  "podspec",
+  "pony",
+  "postgres",
+  "postgresql",
+  "powershell",
+  "pp",
+  "processing",
+  "profile",
+  "prolog",
+  "properties",
+  "proto",
+  "protobuf",
+  "ps",
+  "ps1",
+  "puppet",
+  "purebasic",
+  "pwsh",
+  "py",
+  "pycon",
+  "python",
+  "python-repl",
+  "q",
+  "qml",
+  "qt",
+  "r",
+  "rb",
+  "re",
+  "reasonml",
+  "rib",
+  "roboconf",
+  "routeros",
+  "rs",
+  "rsl",
+  "rss",
+  "ruby",
+  "ruleslanguage",
+  "rust",
+  "sas",
+  "scad",
+  "scala",
+  "scheme",
+  "sci",
+  "scilab",
+  "scm",
+  "scss",
+  "sh",
+  "shell",
+  "shellsession",
+  "smali",
+  "smalltalk",
+  "sml",
+  "sql",
+  "st",
+  "stan",
+  "stanfuncs",
+  "stata",
+  "step",
+  "step21",
+  "stp",
+  "styl",
+  "stylus",
+  "subunit",
+  "sv",
+  "svg",
+  "svh",
+  "swift",
+  "taggerscript",
+  "tao",
+  "tap",
+  "tcl",
+  "tex",
+  "text",
+  "thor",
+  "thrift",
+  "tk",
+  "toml",
+  "tp",
+  "ts",
+  "tsx",
+  "twig",
+  "txt",
+  "typescript",
+  "v",
+  "vala",
+  "vb",
+  "vbnet",
+  "vbs",
+  "vbscript",
+  "vbscript-html",
+  "verilog",
+  "vhdl",
+  "vim",
+  "wasm",
+  "wildfly-cli",
+  "wren",
+  "wsf",
+  "x++",
+  "x86asm",
+  "xhtml",
+  "xjb",
+  "xl",
+  "xls",
+  "xlsx",
+  "xml",
+  "xpath",
+  "xq",
+  "xqm",
+  "xquery",
+  "xsd",
+  "xsl",
+  "yaml",
+  "yml",
+  "zep",
+  "zephir",
+  "zone",
+  "zsh"
+];
 
 // plugins/artifact-design/skills/artifact-design/scripts/mermaid-runtime.html
 var mermaid_runtime_default = `<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
@@ -23827,7 +24485,7 @@ if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(ro
 var SKELETON_START = "<!doctype html><html><head><meta charset=utf8>";
 var VIEWPORT_COVER = '<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">';
 var VIEWPORT_PLAIN = '<meta name=viewport content="width=device-width,initial-scale=1">';
-var RESET_BASE = "body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;" + "background:#faf9f5;color:#141413}" + "img{max-width:100%}" + "[hidden]:not([hidden=until-found i]){display:none!important}</style>";
+var RESET_BASE = "body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;" + "background:#fff;color:#000}" + "img{max-width:100%}" + "[hidden]:not([hidden=until-found i]){display:none!important}</style>";
 var SKELETON_RESET = "<style>:root{color-scheme:light;box-sizing:border-box;" + "padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}" + "html{scroll-padding-top:env(safe-area-inset-top,0px)}" + RESET_BASE;
 var PLAIN_RESET = "<style>:root{color-scheme:light}" + RESET_BASE;
 var SKELETON_BODY = `</head><body>
@@ -23853,6 +24511,16 @@ var GENERATOR = '<meta name="generator" content="artifact-design">';
 var TAIL_MARK = "<!-- artifact-design -->";
 var GENERATOR_MARKS = /<meta name="generator" content="artifact-design(?: publish\.py)?">/;
 var MERMAID = String(mermaid_runtime_default).replace(/\n+$/, "");
+var hljsRuntime;
+function highlightRuntime() {
+  if (hljsRuntime === undefined) {
+    const path = ["./", "../skills/artifact-design/scripts/"].map((dir) => fileURLToPath(new URL(dir + "hljs-runtime.html", import.meta.url))).find((candidate) => existsSync(candidate));
+    if (!path)
+      throw new Error("the plugin's hljs-runtime.html is missing");
+    hljsRuntime = readFileSync(path, "utf8").replace(/\n+$/, "");
+  }
+  return hljsRuntime;
+}
 var SIZE_LIMIT = 16 * 1024 * 1024;
 var TITLE_SCAN = 8192;
 var TITLE_MAX = 280;
@@ -23900,11 +24568,11 @@ function pageTitle(content) {
   if (!match)
     return null;
   const text = unescape2(match[1]).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
-  return text.slice(0, TITLE_MAX) || null;
+  return [...text].slice(0, TITLE_MAX).join("") || null;
 }
-var escapeRegExp2 = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+var escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 var SKELETON_RE = new RegExp('^<![dD][oO][cC][tT][yY][pP][eE] [hH][tT][mM][lL]><html(?: lang="([^"]{1,35})")?><head><meta charset=utf8>' + '<meta name=viewport content="width=device-width,initial-scale=1(,viewport-fit=cover)?">' + '((?:<meta http-equiv="Content-Security-Policy" content="[^"]*">)?(?:' + GENERATOR_MARKS.source + ')?(?:<link rel="icon" href="[^"]*">)?(?:<meta name="description" content="([^"]*)">)?)' + "<style>[^<]*</style></head><body>\\r?\\n");
-var TAIL_RE = new RegExp(`\\r?\\n(?:${escapeRegExp2(TAIL_MARK)}|<!-- artifact-design publish\\.py -->)\\r?\\n`);
+var TAIL_RE = new RegExp(`\\r?\\n(?:${escapeRegExp(TAIL_MARK)}|<!-- artifact-design publish\\.py -->)\\r?\\n`);
 var RUNTIME_BLOCKS = /(?:\r?\n)?<!--claude-(mermaid|hljs|chart)-runtime-begin:\d+-->[\s\S]*?<!--claude-\1-runtime-end-->(?:\r?\n)?/g;
 var stripChars = (text, chars) => {
   let start = 0;
@@ -23958,6 +24626,27 @@ function usesMermaid(content) {
   }
   return false;
 }
+var HIGHLIGHTED = new Set(hljs_languages_default);
+var TAG_END = new Set([" ", "\t", `
+`, "\f", "\r", "/", ">"]);
+function usesHighlight(content) {
+  const lower = content.toLowerCase();
+  for (let at = lower.indexOf("<code");at !== -1; at = lower.indexOf("<code", at)) {
+    if (!TAG_END.has(lower[at + 5] ?? "")) {
+      at += 5;
+      continue;
+    }
+    const limit = Math.min(at + 4096, lower.length);
+    const close = lower.indexOf(">", at + 5);
+    const end = close !== -1 && close < limit ? close : limit;
+    for (const match of lower.slice(at + 5, end).matchAll(/language-([\w.+#-]+)/g)) {
+      if (HIGHLIGHTED.has(match[1]))
+        return true;
+    }
+    at = end;
+  }
+  return false;
+}
 function wrap(content, description, lang = null, cover = null) {
   const covers = coversSafeArea(content, cover ?? true);
   let head = SKELETON_START.replace("<html>", lang ? `<html lang="${lang}">` : "<html>");
@@ -23966,9 +24655,11 @@ function wrap(content, description, lang = null, cover = null) {
   if (description)
     head += `<meta name="description" content="${escape2(description)}">`;
   head += (covers ? SKELETON_RESET : PLAIN_RESET) + SKELETON_BODY;
-  const tail = usesMermaid(content) ? `
+  const runtimes = [usesMermaid(content) && MERMAID, usesHighlight(content) && highlightRuntime()].filter(Boolean);
+  const tail = runtimes.length ? `
 ` + TAIL_MARK + `
-` + MERMAID : "";
+` + runtimes.join(`
+`) : "";
   return head + content + tail + SKELETON_END;
 }
 function markdownPage(text, filename) {
@@ -24044,6 +24735,7 @@ function makeDrafts() {
 import {
   closeSync,
   copyFileSync,
+  lstatSync as lstatSync2,
   mkdirSync as mkdirSync2,
   openSync,
   readdirSync as readdirSync2,
@@ -24056,7 +24748,7 @@ import {
 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { basename as basename2, dirname as dirname2, isAbsolute as isAbsolute2, join as join4 } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // plugins/artifact-design/src/paths.ts
 import { realpathSync } from "node:fs";
@@ -24144,14 +24836,14 @@ function loadIndex(repair = false) {
     text = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync2(INDEX));
   } catch (error) {
     if (error.code === "ENOENT")
-      return [new Map, null];
+      return [rebuildIndex(), null];
     text = null;
   }
   try {
     const parsed = text !== null ? JSON.parse(text) : null;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const entries = Object.entries(parsed);
-      if (entries.every(([, entry]) => !!entry && typeof entry === "object" && !Array.isArray(entry) && ("page" in entry))) {
+      if (entries.every(([slug, entry]) => isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && ("page" in entry))) {
         return [new Map(entries), null];
       }
     }
@@ -24162,11 +24854,19 @@ function loadIndex(repair = false) {
     const backup = join4(STORE, `index.json.corrupt-${localStamp()}`);
     try {
       renameSync(INDEX, backup);
-      saveIndex(index);
+      try {
+        saveIndex(index);
+      } catch (error) {
+        renameSync(backup, INDEX);
+        throw error;
+      }
       note = `The artifacts index (${INDEX}) could not be read; it was moved to ${basename2(backup)} and ` + "rebuilt from the artifact folders, which keep their pages but not their source files.";
     } catch {}
   }
   return [index, note];
+}
+function isSlug(key) {
+  return key !== "" && key !== "." && key !== ".." && !/[\\/\0]/.test(key);
 }
 function saveIndex(index) {
   mkdirSync2(STORE, { recursive: true });
@@ -24175,23 +24875,29 @@ function saveIndex(index) {
   renameSync(tmp, INDEX);
 }
 var LOCK = join4(STORE, ".publish-lock");
-var LOCK_STALE_MS = 120000;
-var sleep2 = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-function lockIsStale() {
+var LOCK_STALE_MS = 30000;
+function lockState() {
   try {
-    const age = Date.now() - statSync2(LOCK).mtimeMs;
-    const pid = Number(readFileSync2(LOCK, "utf8"));
-    if (age > LOCK_STALE_MS)
-      return true;
-    if (!pid)
-      return age > 1000;
+    const stat = statSync2(LOCK);
+    const text = readFileSync2(LOCK, "utf8");
+    return { id: `${stat.ino}:${stat.mtimeMs}:${text}`, age: Date.now() - stat.mtimeMs, pid: Number(text) };
+  } catch {
+    return null;
+  }
+}
+function isStale({ age, pid }) {
+  if (Math.abs(age) > LOCK_STALE_MS)
+    return true;
+  if (!pid)
+    return age > 1000;
+  try {
     process.kill(pid, 0);
     return false;
   } catch (error) {
     return error.code === "ESRCH";
   }
 }
-function withStoreLock(fn) {
+async function withStoreLock(fn) {
   mkdirSync2(STORE, { recursive: true });
   for (;; ) {
     try {
@@ -24202,10 +24908,11 @@ function withStoreLock(fn) {
     } catch (error) {
       if (error.code !== "EEXIST")
         throw error;
-      if (lockIsStale())
+      const lock = lockState();
+      if (lock && isStale(lock) && lockState()?.id === lock.id)
         rmSync(LOCK, { force: true });
       else
-        sleep2(50);
+        await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
   try {
@@ -24231,7 +24938,7 @@ function find(url, index) {
     return [text, direct];
   if (/^file:/i.test(text)) {
     try {
-      text = fileURLToPath(new URL(text));
+      text = fileURLToPath2(new URL(text));
     } catch {
       text = unquote(text.replace(/^file:(\/\/[^/]*)?/i, ""));
     }
@@ -24323,6 +25030,9 @@ function planFiles(files, folder, pageDir, pageName) {
     if (origin === null) {
       plan.push([target, null]);
       continue;
+    }
+    if (lstatSync2(target, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      throw new Error(`supporting file path ${repr(published)} is a link to a file that doesn't exist; remove it with null first`);
     }
     const source = absolute(origin, `files[${repr(published)}]`);
     if (!isFile(source)) {
@@ -24522,7 +25232,7 @@ function unknownParameter(args, preview) {
 
 // plugins/artifact-design/src/server.ts
 console.log = console.info = console.debug = console.error;
-var SKILL_DIR = fileURLToPath2(new URL("../skills/artifact-design/", import.meta.url));
+var SKILL_DIR = fileURLToPath3(new URL("../skills/artifact-design/", import.meta.url));
 var GUIDANCE = join5(SKILL_DIR, "SKILL.md");
 var SCRIPTS = join5(SKILL_DIR, "scripts");
 var DRAFTS = makeDrafts();
@@ -24638,7 +25348,7 @@ function publish(args) {
       if (entry.source && entry.source !== source) {
         notes.push("That file is the artifact's published page, so the artifact was updated in place; " + `its source file ${entry.source} doesn't have this change.`);
       }
-    } else if (known !== undefined && index.has(known)) {
+    } else if (known !== undefined && index.get(known)?.source === source) {
       slug = known;
       entry = index.get(known);
     } else {
@@ -24813,8 +25523,8 @@ function actRead(args) {
 
 ` + content;
 }
-function actDelete(args) {
-  const [slug, entry, repaired] = withStoreLock(() => {
+async function actDelete(args) {
+  const [slug, entry, repaired] = await withStoreLock(() => {
     const [index, note] = loadIndex(true);
     const [found, foundEntry] = find(args.url, index);
     if (!found)

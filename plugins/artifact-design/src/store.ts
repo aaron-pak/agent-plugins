@@ -3,6 +3,7 @@
 import {
   closeSync,
   copyFileSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -95,7 +96,7 @@ export function loadIndex(repair = false): [Index, string | null] {
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(INDEX));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [new Map(), null];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [rebuildIndex(), null];
     text = null;
   }
   try {
@@ -103,7 +104,10 @@ export function loadIndex(repair = false): [Index, string | null] {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const entries = Object.entries(parsed as Record<string, unknown>);
       if (
-        entries.every(([, entry]) => !!entry && typeof entry === "object" && !Array.isArray(entry) && "page" in entry)
+        entries.every(
+          ([slug, entry]) =>
+            isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && "page" in entry,
+        )
       ) {
         return [new Map(entries as [string, Entry][]), null];
       }
@@ -117,7 +121,12 @@ export function loadIndex(repair = false): [Index, string | null] {
     const backup = join(STORE, `index.json.corrupt-${localStamp()}`);
     try {
       renameSync(INDEX, backup);
-      saveIndex(index);
+      try {
+        saveIndex(index);
+      } catch (error) {
+        renameSync(backup, INDEX); // keep the old file where it was rather than leave no index at all
+        throw error;
+      }
       note =
         `The artifacts index (${INDEX}) could not be read; it was moved to ${basename(backup)} and ` +
         "rebuilt from the artifact folders, which keep their pages but not their source files.";
@@ -128,6 +137,11 @@ export function loadIndex(repair = false): [Index, string | null] {
   return [index, note];
 }
 
+/** Whether an index key names a folder directly inside the store, so a hand-edited key can't reach outside it. */
+function isSlug(key: string): boolean {
+  return key !== "" && key !== "." && key !== ".." && !/[\\/\0]/.test(key);
+}
+
 export function saveIndex(index: Index): void {
   mkdirSync(STORE, { recursive: true });
   const tmp = join(STORE, `index.${process.pid}.tmp`);
@@ -136,17 +150,25 @@ export function saveIndex(index: Index): void {
 }
 
 const LOCK = join(STORE, ".publish-lock");
-const LOCK_STALE_MS = 120_000;
+// A publish holds the lock for well under a second; one older than this was left by a publish that died.
+const LOCK_STALE_MS = 30_000;
 
-const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-
-/** Whether the lock was left by a process that is gone, or has been held too long to be live. */
-function lockIsStale(): boolean {
+/** The lock file as it is now (inode, modification time and the pid in it), or null when there is none. */
+function lockState(): { id: string; age: number; pid: number } | null {
   try {
-    const age = Date.now() - statSync(LOCK).mtimeMs;
-    const pid = Number(readFileSync(LOCK, "utf8"));
-    if (age > LOCK_STALE_MS) return true;
-    if (!pid) return age > 1000; // still being written, or not a lock this server wrote
+    const stat = statSync(LOCK);
+    const text = readFileSync(LOCK, "utf8");
+    return { id: `${stat.ino}:${stat.mtimeMs}:${text}`, age: Date.now() - stat.mtimeMs, pid: Number(text) };
+  } catch {
+    return null; // removed meanwhile; the next try takes it
+  }
+}
+
+/** Whether the lock was left by a process that is gone, or is too old (or, by a clock that moved, too new) to be live. */
+function isStale({ age, pid }: { age: number; pid: number }): boolean {
+  if (Math.abs(age) > LOCK_STALE_MS) return true;
+  if (!pid) return age > 1000; // still being written, or not a lock this server wrote
+  try {
     process.kill(pid, 0);
     return false;
   } catch (error) {
@@ -154,8 +176,9 @@ function lockIsStale(): boolean {
   }
 }
 
-/** Run fn holding the artifacts folder's lock, so publishes from several sessions don't drop index entries. */
-export function withStoreLock<T>(fn: () => T): T {
+/** Run fn holding the artifacts folder's lock, so publishes from several sessions don't drop index entries.
+ * It waits without blocking, so the server keeps answering other calls meanwhile. */
+export async function withStoreLock<T>(fn: () => T): Promise<T> {
   mkdirSync(STORE, { recursive: true });
   for (;;) {
     try {
@@ -165,8 +188,11 @@ export function withStoreLock<T>(fn: () => T): T {
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (lockIsStale()) rmSync(LOCK, { force: true });
-      else sleep(50);
+      // Remove a stale lock only while it is still the one judged stale: another waiter may have
+      // removed it and taken the lock in between, and that lock is live.
+      const lock = lockState();
+      if (lock && isStale(lock) && lockState()?.id === lock.id) rmSync(LOCK, { force: true });
+      else await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
   try {
@@ -312,6 +338,11 @@ export function planFiles(
     if (origin === null) {
       plan.push([target, null]);
       continue;
+    }
+    if (lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      throw new Error(
+        `supporting file path ${repr(published)} is a link to a file that doesn't exist; remove it with null first`,
+      );
     }
     const source = absolute(origin, `files[${repr(published)}]`);
     if (!isFile(source)) {

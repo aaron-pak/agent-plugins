@@ -19,7 +19,7 @@
  * structural rules the skill enforces, not measurable from hexes alone.
  *
  * Usage (node):
- *   node validate_palette.js "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#4a3aa7,#e34948" --mode light
+ *   node validate_palette.js "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#6250d6,#e34948" --mode light
  *   node validate_palette.js "#256abf,#199e70,..." --mode dark --surface "#1a1a19"
  *   node validate_palette.js "#86b6ef,#5598e7,#256abf,#104281" --ordinal
  *

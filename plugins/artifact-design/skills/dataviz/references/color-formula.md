@@ -63,7 +63,7 @@ Every categorical color - current or proposed - must pass all six.
 
 ```
 node scripts/validate_palette.js \
-  "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#4a3aa7,#e34948" --mode light
+  "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#6250d6,#e34948" --mode light
 ```
 
 (`scripts/` is relative to this skill's base directory, shown at the top of the prompt.)
