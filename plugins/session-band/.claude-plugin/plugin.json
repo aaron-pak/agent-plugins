@@ -1,7 +1,6 @@
 {
   "name": "session-band",
-  "version": "0.1.0",
-  "description": "Clawd and the session at a glance in the band above the prompt: context, limits, cost, branch, todos and what Claude is doing. /band switches between styles.",
+  "description": "Clawd and the session at a glance in the band above the prompt: context, limits, cost, branch, todos and what Claude is doing. /band switches between styles. Claude Code only.",
   "author": {
     "name": "Aaron Pak"
   },

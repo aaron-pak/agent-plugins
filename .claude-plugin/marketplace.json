@@ -13,6 +13,11 @@
       "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups."
     },
     {
+      "name": "context-meter",
+      "source": "./plugins/context-meter",
+      "description": "An animated Clawd walks a context track above the prompt, with a toast when context runs high and /meter for the details. Claude Code only."
+    },
+    {
       "name": "eli5",
       "source": "./plugins/eli5",
       "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words."
@@ -26,6 +31,16 @@
       "name": "implement-with-notes",
       "source": "./plugins/implement-with-notes",
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
+    },
+    {
+      "name": "session-band",
+      "source": "./plugins/session-band",
+      "description": "Clawd and the session at a glance in the band above the prompt: context, limits, cost, branch, todos and what Claude is doing. /band switches between styles. Claude Code only."
+    },
+    {
+      "name": "session-manager",
+      "source": "./plugins/session-manager",
+      "description": "Let a Claude Code session start, message, stop and wake separate, full Claude Code sessions. Claude Code only."
     },
     {
       "name": "show-me",

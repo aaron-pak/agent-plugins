@@ -1,7 +1,6 @@
 {
   "name": "context-meter",
-  "version": "0.1.0",
-  "description": "An animated Clawd walks a context track above the prompt, with a toast when context runs high and /meter for the details.",
+  "description": "An animated Clawd walks a context track above the prompt, with a toast when context runs high and /meter for the details. Claude Code only.",
   "author": {
     "name": "Aaron Pak"
   },
