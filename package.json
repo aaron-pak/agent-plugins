@@ -6,6 +6,7 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "dev:artifact": "bun --cwd plugins/artifact-design/src --watch server.ts",
+    "drift": "bun scripts/claude-code-drift.ts",
     "fmt": "oxfmt plugins/artifact-design/src plugins/artifact-design/tests scripts",
     "lint": "oxfmt --check plugins/artifact-design/src plugins/artifact-design/tests scripts && oxlint plugins/artifact-design/src plugins/artifact-design/tests scripts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@types/bun": "1.4.2",
     "@types/node": "22.20.5",
+    "acorn": "8.18.0",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "typescript": "7.0.2"
