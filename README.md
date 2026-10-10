@@ -2,7 +2,15 @@
 
 Aaron's personal skills, packaged as a plugin marketplace that both Claude Code and Codex can install from. Each plugin is installed on its own, so each harness gets only the plugins you pick for it.
 
-Current plugins: `artifact-design` (`artifact-design`, `artifact-diagramming` and `dataviz`, plus an `artifact` MCP server), `eli5`, `frontend-skill`, `implement-with-notes`, `session-manager` (a Claude Code mod, see [Mods](#mods)), `show-me`, and `verification` (`create-verification-skill` and `maintain-verification-skill` together).
+Current plugins:
+
+- `artifact-design` (`artifact-design`, `artifact-diagramming` and `dataviz`, plus an `artifact` MCP server)
+- `eli5`
+- `frontend-skill`
+- `implement-with-notes`
+- `session-manager` (a Claude Code mod, see [Mods](#mods))
+- `show-me`
+- `verification` (`create-verification-skill` and `maintain-verification-skill` together)
 
 Changing this repository? [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks CI runs.
 

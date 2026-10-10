@@ -134,7 +134,7 @@ def check_plugin(entry):
 
 
 def check_mod(entry, plugin_dir, where):
-    """A mod is Claude Code only: its manifest lives in .claude-plugin/plugin.json."""
+    """A plugin for Claude Code only, such as a mod, keeps its manifest in .claude-plugin/plugin.json."""
     manifest = load_json(plugin_dir / ".claude-plugin" / "plugin.json")
     if manifest is None:
         return
@@ -151,12 +151,13 @@ def check_mod(entry, plugin_dir, where):
 
 def check_readme(names):
     readme = (ROOT / "README.md").read_text()
-    match = re.search(r"^Current plugins: (.+)$", readme, re.MULTILINE)
+    # One bullet per plugin, so pull requests that add plugins touch different lines.
+    match = re.search(r"^Current plugins:\n\n((?:- .+\n)+)", readme, re.MULTILINE)
     if not match:
-        error("README.md", "no 'Current plugins:' line")
+        error("README.md", "no 'Current plugins:' list")
         return
-    # Parenthetical notes on the line name skills inside a plugin, not plugins.
-    listed = re.findall(r"`([^`]+)`", re.sub(r"\([^)]*\)", "", match.group(1)))
+    # Each bullet starts with the plugin's name; what follows it names skills inside the plugin.
+    listed = re.findall(r"^- `([^`]+)`", match.group(1), re.MULTILINE)
     if sorted(listed) != sorted(names):
         error("README.md", f"'Current plugins' lists {sorted(listed)}, but the marketplace has {sorted(names)}")
 

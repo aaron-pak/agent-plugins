@@ -5,7 +5,7 @@ This repository is a plugin marketplace that Claude Code and Codex both install 
 ## Layout
 
 - `.claude-plugin/marketplace.json`: the marketplace catalog, named `agent-plugins`. Claude Code and Codex both read it.
-- `plugins/<name>/`: one plugin per tool or workflow. `plugin.json` at the plugin root follows the open [Agent Plugins 1.0.0](https://agent-plugins.org) format, which Codex reads natively, and `skills/<skill>/` holds each skill with its references and license. Claude Code takes the plugin's name and description from the marketplace entry and finds `skills/` on its own, so plugins carry no `.claude-plugin/plugin.json`. Mods such as `session-manager` are the exception: they are Claude Code only, so their manifest is `.claude-plugin/plugin.json` beside `hooks/` (see Mods in README.md). A plugin may also carry command hooks in `hooks/hooks.json`, as `artifact-design` does; Claude Code and Codex both load that file, and Codex also runs a hook matching `Write` or `Edit` for its `apply_patch` tool.
+- `plugins/<name>/`: one plugin per tool or workflow. `plugin.json` at the plugin root follows the open [Agent Plugins 1.0.0](https://agent-plugins.org) format, which Codex reads natively, and `skills/<skill>/` holds each skill with its references and license. Claude Code takes the plugin's name and description from the marketplace entry and finds `skills/` on its own, so plugins carry no `.claude-plugin/plugin.json`. Plugins that work only in Claude Code, such as the mod `session-manager`, are the exception: their manifest is `.claude-plugin/plugin.json` beside `hooks/` (see Mods in README.md), which is also where `claude plugin validate` looks for a plugin without `skills/`. A plugin may also carry command hooks in `hooks/hooks.json`, as `artifact-design` does; Claude Code and Codex both load that file, and Codex also runs a hook matching `Write` or `Edit` for its `apply_patch` tool.
 - `instructions/`: Aaron's global agent instructions, linked by hand into `~/.codex` and `~/.claude` (see README.md). They are not instructions for this repository.
 - `scripts/validate.py`: the consistency check CI runs.
 - `package.json`, `tsconfig.json` and `scripts/build.ts`: the TypeScript toolchain for plugin code (see TypeScript below).
@@ -14,7 +14,7 @@ This repository is a plugin marketplace that Claude Code and Codex both install 
 
 1. Create `plugins/<name>/plugin.json` and `skills/<skill>/SKILL.md`. Each skill's frontmatter `name` matches its directory, and every skill has a `description`.
 2. Add an entry to `.claude-plugin/marketplace.json` with the same name and description as `plugin.json`, and source `./plugins/<name>`.
-3. Add the plugin to the "Current plugins" line in README.md.
+3. Add the plugin to the "Current plugins" list in README.md, one line each in alphabetical order.
 4. Leave `version` unset in every manifest. Claude Code uses the Git commit as the version, and Codex pulls new commits when the marketplace is upgraded.
 
 ## Plugins from elsewhere
