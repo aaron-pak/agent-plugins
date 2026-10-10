@@ -1,5 +1,4 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "guidance",
   "description": "Load Aaron's standing instructions on subagent delegation and light-only HTML artifacts into every session and subagent. Claude Code only.",
   "author": {
