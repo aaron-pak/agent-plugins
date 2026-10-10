@@ -55,7 +55,7 @@ The `guidance` plugin brings the subagent delegation and HTML artifact rules fro
 claude plugin install guidance@agent-plugins --scope user
 ```
 
-It works in Claude Code only, because Agent Plugins has no hooks; Codex already reads the same rules from `~/.codex/AGENTS.md`. When you change either rule in `instructions/AGENTS.md`, change `instructions.md` to match. On a machine with the links above, Claude already has the text, and the plugin would add it a second time.
+Install it in Claude Code only: Codex already reads the same rules from `~/.codex/AGENTS.md`. When you change either rule in `instructions/AGENTS.md`, change `instructions.md` to match. On a machine with the links above, Claude already has the text, and the plugin would add it a second time.
 
 ## Adding an MCP server plugin
 
