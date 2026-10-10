@@ -121,7 +121,12 @@ export function loadIndex(repair = false): [Index, string | null] {
     const backup = join(STORE, `index.json.corrupt-${localStamp()}`);
     try {
       renameSync(INDEX, backup);
-      saveIndex(index);
+      try {
+        saveIndex(index);
+      } catch (error) {
+        renameSync(backup, INDEX); // keep the old file where it was rather than leave no index at all
+        throw error;
+      }
       note =
         `The artifacts index (${INDEX}) could not be read; it was moved to ${basename(backup)} and ` +
         "rebuilt from the artifact folders, which keep their pages but not their source files.";
@@ -148,21 +153,20 @@ const LOCK = join(STORE, ".publish-lock");
 // A publish holds the lock for well under a second; one older than this was left by a publish that died.
 const LOCK_STALE_MS = 30_000;
 
+/** The lock file as it is now (inode, modification time and the pid in it), or null when there is none. */
+function lockState(): { id: string; age: number; pid: number } | null {
+  try {
+    const stat = statSync(LOCK);
+    const text = readFileSync(LOCK, "utf8");
+    return { id: `${stat.ino}:${stat.mtimeMs}:${text}`, age: Date.now() - stat.mtimeMs, pid: Number(text) };
+  } catch {
+    return null; // removed meanwhile; the next try takes it
+  }
+}
+
 /** Whether the lock was left by a process that is gone, or is too old (or, by a clock that moved, too new) to be live. */
-function lockIsStale(): boolean {
-  let age: number;
-  try {
-    age = Date.now() - statSync(LOCK).mtimeMs;
-  } catch {
-    return false; // removed meanwhile; the next try takes it
-  }
+function isStale({ age, pid }: { age: number; pid: number }): boolean {
   if (Math.abs(age) > LOCK_STALE_MS) return true;
-  let pid: number;
-  try {
-    pid = Number(readFileSync(LOCK, "utf8"));
-  } catch {
-    return false; // unreadable: wait until it is old enough
-  }
   if (!pid) return age > 1000; // still being written, or not a lock this server wrote
   try {
     process.kill(pid, 0);
@@ -184,7 +188,10 @@ export async function withStoreLock<T>(fn: () => T): Promise<T> {
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (lockIsStale()) rmSync(LOCK, { force: true });
+      // Remove a stale lock only while it is still the one judged stale: another waiter may have
+      // removed it and taken the lock in between, and that lock is live.
+      const lock = lockState();
+      if (lock && isStale(lock) && lockState()?.id === lock.id) rmSync(LOCK, { force: true });
       else await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }

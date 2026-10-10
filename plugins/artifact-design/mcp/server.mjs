@@ -24854,7 +24854,12 @@ function loadIndex(repair = false) {
     const backup = join4(STORE, `index.json.corrupt-${localStamp()}`);
     try {
       renameSync(INDEX, backup);
-      saveIndex(index);
+      try {
+        saveIndex(index);
+      } catch (error) {
+        renameSync(backup, INDEX);
+        throw error;
+      }
       note = `The artifacts index (${INDEX}) could not be read; it was moved to ${basename2(backup)} and ` + "rebuilt from the artifact folders, which keep their pages but not their source files.";
     } catch {}
   }
@@ -24871,21 +24876,18 @@ function saveIndex(index) {
 }
 var LOCK = join4(STORE, ".publish-lock");
 var LOCK_STALE_MS = 30000;
-function lockIsStale() {
-  let age;
+function lockState() {
   try {
-    age = Date.now() - statSync2(LOCK).mtimeMs;
+    const stat = statSync2(LOCK);
+    const text = readFileSync2(LOCK, "utf8");
+    return { id: `${stat.ino}:${stat.mtimeMs}:${text}`, age: Date.now() - stat.mtimeMs, pid: Number(text) };
   } catch {
-    return false;
+    return null;
   }
+}
+function isStale({ age, pid }) {
   if (Math.abs(age) > LOCK_STALE_MS)
     return true;
-  let pid;
-  try {
-    pid = Number(readFileSync2(LOCK, "utf8"));
-  } catch {
-    return false;
-  }
   if (!pid)
     return age > 1000;
   try {
@@ -24906,7 +24908,8 @@ async function withStoreLock(fn) {
     } catch (error) {
       if (error.code !== "EEXIST")
         throw error;
-      if (lockIsStale())
+      const lock = lockState();
+      if (lock && isStale(lock) && lockState()?.id === lock.id)
         rmSync(LOCK, { force: true });
       else
         await new Promise((resolve) => setTimeout(resolve, 50));
