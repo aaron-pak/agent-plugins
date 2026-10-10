@@ -10,7 +10,7 @@ import { escape, unescape } from "./html.ts";
 import { page as renderMarkdownPage } from "./render-markdown.ts";
 import MERMAID_RUNTIME from "../skills/artifact-design/scripts/mermaid-runtime.html" with { type: "text" };
 
-// The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.293).
+// The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.296).
 // A page whose own viewport meta leaves out viewport-fit=cover gets the plain variant,
 // without the safe-area padding, as the tool does.
 const SKELETON_START = "<!doctype html><html><head><meta charset=utf8>";
@@ -18,7 +18,7 @@ const VIEWPORT_COVER = '<meta name=viewport content="width=device-width,initial-
 const VIEWPORT_PLAIN = '<meta name=viewport content="width=device-width,initial-scale=1">';
 const RESET_BASE =
   "body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;" +
-  "background:#faf9f5;color:#141413}" +
+  "background:#fff;color:#000}" +
   "img{max-width:100%}" +
   "[hidden]:not([hidden=until-found i]){display:none!important}</style>";
 const SKELETON_RESET =

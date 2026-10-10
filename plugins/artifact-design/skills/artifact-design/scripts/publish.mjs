@@ -2380,7 +2380,7 @@ if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(ro
 var SKELETON_START = "<!doctype html><html><head><meta charset=utf8>";
 var VIEWPORT_COVER = '<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">';
 var VIEWPORT_PLAIN = '<meta name=viewport content="width=device-width,initial-scale=1">';
-var RESET_BASE = "body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;" + "background:#faf9f5;color:#141413}" + "img{max-width:100%}" + "[hidden]:not([hidden=until-found i]){display:none!important}</style>";
+var RESET_BASE = "body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;" + "background:#fff;color:#000}" + "img{max-width:100%}" + "[hidden]:not([hidden=until-found i]){display:none!important}</style>";
 var SKELETON_RESET = "<style>:root{color-scheme:light;box-sizing:border-box;" + "padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}" + "html{scroll-padding-top:env(safe-area-inset-top,0px)}" + RESET_BASE;
 var PLAIN_RESET = "<style>:root{color-scheme:light}" + RESET_BASE;
 var SKELETON_BODY = `</head><body>

@@ -20,7 +20,7 @@ Checks 1 (fixed hue order) and 6 (values resolve to real ramp steps) are
 structural rules the skill enforces, not measurable from hexes alone.
 
 Usage:
-  python validate_palette.py "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#4a3aa7,#e34948" --mode light
+  python validate_palette.py "#2a78d6,#eb6834,#1baf7a,#eda100,#e87ba4,#008300,#6250d6,#e34948" --mode light
   python validate_palette.py "#256abf,#199e70,..." --mode dark --surface "#1a1a19"
 
 Exit code 0 unless a check hard-FAILs; 1 on any FAIL. WARN bands do not fail:

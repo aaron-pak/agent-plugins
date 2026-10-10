@@ -1,6 +1,6 @@
 # Upstream
 
-The three skills are Anthropic's built-in Claude Code skills, captured from Claude Code 2.1.293 (2026-10-07); Claude Code 2.1.294 ships the same text. This note lives outside the skills so that the model reads only Claude Code's text.
+The three skills are Anthropic's built-in Claude Code skills, captured from Claude Code 2.1.296 (2026-10-10). This note lives outside the skills so that the model reads only Claude Code's text.
 
 - `artifact-diagramming` is verbatim.
 - `dataviz` is verbatim, with its `references/` and `scripts/` unchanged.
