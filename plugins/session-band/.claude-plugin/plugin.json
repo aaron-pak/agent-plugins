@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "description": "Clawd and the session at a glance in the band above the prompt: context, limits, cost, branch, todos and what Claude is doing. /band switches between styles. Claude Code only.",
+  "description": "Clawd and the session at a glance in the band above the prompt: where you are, how full the context and the 5-hour limit are, and what Claude is doing, in three calm lines beside Claude Code's own Clawd (a vector Clawd on the desktop). /band still keeps him still. Claude Code only.",
   "author": {
     "name": "Aaron Pak"
   },
@@ -9,7 +9,7 @@
     "warnAt": {
       "type": "number",
       "title": "Warn at",
-      "description": "Context fill, in percent, where Clawd starts to sweat and a toast suggests /compact.",
+      "description": "Context fill, in percent, where Clawd starts to sweat, the number turns amber and a toast suggests /compact.",
       "default": 80
     }
   }
