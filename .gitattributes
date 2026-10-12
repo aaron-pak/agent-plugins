@@ -1,4 +1,5 @@
 # Bundles scripts/build.ts writes from plugins/*/src; GitHub collapses them in diffs.
 plugins/artifact-design/mcp/server.mjs linguist-generated=true
 plugins/artifact-design/skills/artifact-design/scripts/publish.mjs linguist-generated=true
-plugins/artifact-design/hooks/allow-drafts.mjs linguist-generated=true
+# Claude Code's highlight.js runtime, copied verbatim.
+plugins/artifact-design/skills/artifact-design/scripts/hljs-runtime.html linguist-generated=true
