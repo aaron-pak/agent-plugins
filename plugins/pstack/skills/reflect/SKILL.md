@@ -15,14 +15,14 @@ Invoke when the user says "reflect" or "/reflect". Skip when the conversation is
 Before fanning out, find this conversation's transcript. Don't pass `--all-workspaces` or glob transcript directories by hand. That crosses workspace boundaries and reads private chats from unrelated projects.
 
 ```bash
-<pstack>/scripts/pstack transcripts list --limit 10
+<pstack>/scripts/pstack transcripts current
 ```
 
-It lists this workspace's transcripts from every harness, newest first, with each one's first prompt. Your own chat is usually the newest `session` entry for your harness. Take the entry whose first prompt is the conversation's opening user prompt. If none matches, pass a tight digest of the session instead. "Transcripts and state" in the [harness reference](../../references/harness.md) covers the output format.
+It prints this chat's transcript file from the harness's session id. Where it can't (Cursor), run `transcripts list --kind session --limit 10` and take the entry whose first prompt is the conversation's opening user prompt. If none matches, pass a tight digest of the session instead. "Transcripts and state" in the [harness reference](../../references/harness.md) covers the output format.
 
 ## 2. Spawn three reviewers in parallel
 
-One message, three writable general subagents (see "Subagents" in the harness reference). Reviewers need MCP access to look up the tickets, chat threads, and observability traces the transcript references, and read-only in Cursor strips MCPs.
+One message, three writable general subagents (see "Subagents" in the harness reference). Reviewers need MCP access to look up the tickets, chat threads, and observability traces the transcript references, so they spawn natively (step 7 of "Models per role" in the harness reference), and read-only in Cursor strips MCPs.
 
 Each reviewer and the synthesizer name a role. Resolve its model with `<pstack>/scripts/pstack models get '<role>'` and spawn per "Models per role" in the harness reference. If a slug fails to start, follow step 6 there.
 

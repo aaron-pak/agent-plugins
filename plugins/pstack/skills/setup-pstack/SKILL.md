@@ -91,7 +91,7 @@ interrogate reviewers: claude-opus-5-5-xhigh, gpt-6.1-sol-xhigh
 
 Then run `pstack models show` and check that every role reads `[config]` with the value you wrote and that no retired line remains.
 
-If `~/.cursor/rules/pstack-models.mdc` exists, offer to delete it. Cursor applies it to every chat, so its values would contradict the new config there. Delete it only on yes.
+If `~/.cursor/rules/pstack-models.mdc` exists, ask whether Cursor still runs upstream pstack. Upstream reads that rule, so keep it if so. If Cursor now runs this fork, offer to delete it. Cursor applies it to every chat, so its values would contradict the new config there. Delete it only on yes.
 
 ### 6. Confirm
 

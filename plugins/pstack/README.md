@@ -218,7 +218,7 @@ pstack also ships a subagent that runs my style end to end. spawn [`poteto-agent
 
 [`/poteto-mode`](./skills/poteto-mode/SKILL.md) and [`poteto-agent`](./agents/poteto-agent.md) route through the same wrapper.
 
-pstack also ships [Comment Sicko](./agents/comment-sicko.md), a read-only comment reviewer available as `comment-sicko` (`pstack:comment-sicko` in claude code). usually invoke it through [`/no-comments`](./skills/no-comments/SKILL.md), not directly.
+pstack also ships [Comment Sicko](./agents/comment-sicko.md), a comment reviewer that deletes comments and never writes application code, available as `comment-sicko` (`pstack:comment-sicko` in claude code). usually invoke it through [`/no-comments`](./skills/no-comments/SKILL.md), not directly.
 
 ## principles
 

@@ -27,7 +27,9 @@ gh pr list --author "@me" --state all --limit 1000 \
 
 # Transcript paths for this repo from every harness, via the pstack helper.
 transcripts=$(mktemp)
-"$pstack" transcripts list --cwd "$main_wt" --limit 100000 --paths 2>/dev/null > "$transcripts"
+git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
+	"$pstack" transcripts list --cwd "$wt" --limit 0 --paths 2>/dev/null
+done | sort -u > "$transcripts"
 now=$(date +%s)
 
 printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tLAST_CHAT\tBUCKET\tWORKTREE\n"

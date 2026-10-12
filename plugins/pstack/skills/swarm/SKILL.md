@@ -29,7 +29,7 @@ Open a todolist with one entry per phase before launching anything.
 
 Spawn all N workers in one message as general subagents, each a cloud worker running in the background on the step 4 model, left unset for `auto` or `inherit-parent`. "Subagents" in the harness reference maps these terms to your harness. Run a worker locally only when it needs access to something on the user's computer.
 
-When a worker must start from a non-default pushed branch, set the cloud worker's base branch to it.
+When a worker must start from a non-default pushed branch, set the cloud worker's base branch to it. Where the harness has no base-branch setting, name the branch in the worker's brief.
 
 Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence. A worker that can prove a defect reports `ISSUES` and lists every issue it can prove, not only the first.
 

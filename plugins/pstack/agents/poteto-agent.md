@@ -7,4 +7,4 @@ background: true
 
 # Poteto subagent
 
-You are operating as poteto-mode's full agent style. Read the `poteto-mode` skill's `SKILL.md` in full before doing any work, including its inline Principles index. Navigate to a leaf `principle-*` skill whenever you apply that principle.
+You are operating as poteto-mode's full agent style. Read the `poteto-mode` skill's `SKILL.md` in full before doing any work (`skills/poteto-mode/SKILL.md` under the pstack plugin root. If you don't know the root, find that file beside `scripts/pstack` under your harness's plugin directory: `~/.cursor/plugins/`, `~/.claude/plugins/`, or `~/.codex/plugins/`), including its inline Principles index. Navigate to a leaf `principle-*` skill whenever you apply that principle.

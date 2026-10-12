@@ -26,7 +26,7 @@ Update mode changes the rest of the flow:
 
 ### 1. Mine their history
 
-Locate the active workspace's transcripts before fanning out. Run `<pstack>/scripts/pstack transcripts list` and use only the files it returns. Don't pass `--all-workspaces`. That crosses workspace boundaries and reads private chats from unrelated projects.
+Locate the active workspace's transcripts before fanning out. Run `<pstack>/scripts/pstack transcripts list --kind session --since <days> --limit 0` for the window you mine and use only the files it returns. `--kind session` drops seats and subagents, whose prompts were written by an agent, not the user. Don't pass `--all-workspaces`. That crosses workspace boundaries and reads private chats from unrelated projects.
 
 Survey recent agent conversations within that scope for recurring patterns. Run multiple parallel subagents across slices of history (e.g. last 2-4 weeks, split into 3 slices so each has enough material). Each slice mining subagent reads the transcript files the parent provides with `<pstack>/scripts/pstack transcripts show <file>`, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers. Default signals worth hunting:
 
