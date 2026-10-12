@@ -8,7 +8,7 @@
   pstack models path              the config file path
   pstack seat SLUG --prompt-file F [--out F] [--read-only] [--cwd DIR]
                                   run one seat through the CLI of the slug's family
-  pstack transcripts list [--cwd DIR] [--harness H] [--limit N] [--all-workspaces]
+  pstack transcripts list [--cwd DIR] [--harness H] [--limit N] [--all-workspaces] [--paths]
   pstack transcripts show FILE [--tools]
   pstack store [--cwd DIR]        state directory for this workspace (created)
 
@@ -360,6 +360,9 @@ def cmd_transcripts(args: argparse.Namespace) -> None:
     found = [t for h in harnesses for t in SOURCES[h](cwd)]
     found.sort(key=lambda t: t.mtime, reverse=True)
     for t in found[: args.limit]:
+        if args.paths:
+            print(t.path)
+            continue
         stamp = datetime.fromtimestamp(t.mtime, timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
         print(f"{stamp}\t{t.harness}\t{t.kind}\t{t.path}\t{first_prompt(t)}")
 
@@ -474,6 +477,7 @@ def main() -> None:
     transcripts.add_argument("--limit", type=int, default=20)
     transcripts.add_argument("--all-workspaces", action="store_true")
     transcripts.add_argument("--tools", action="store_true")
+    transcripts.add_argument("--paths", action="store_true", help="print only paths")
     transcripts.set_defaults(func=cmd_transcripts)
 
     store = sub.add_parser("store")
