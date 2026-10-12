@@ -28,6 +28,15 @@
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
     },
     {
+      "name": "pstack",
+      "source": {
+        "source": "git-subdir",
+        "url": "cursor/plugins",
+        "path": "pstack"
+      },
+      "description": "Lauren Tan's pstack, installed straight from cursor/plugins and tracking upstream. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
+    },
+    {
       "name": "session-manager",
       "source": "./plugins/session-manager",
       "description": "Let a Claude Code session start, message, stop and wake separate, full Claude Code sessions. Claude Code only."
