@@ -73,6 +73,6 @@ From here you can type normal follow-ups. Typing the skill attaches it to one me
 
 - In Cursor, pick it from the `/` menu with Option+Enter (Mac) or Alt+Enter (Windows) instead of Enter. That makes it a [Custom Mode](https://cursor.com/docs/skills), which stays in context on every turn until you exit it. Custom Modes are available in the Agents Window and the CLI.
 - In Claude Code, start the session with `claude --agent pstack:poteto-agent`. Every turn then runs as `poteto-agent`, which reads `poteto-mode` first.
-- Codex has no mode that stays on. Start each new task with `$poteto-mode`.
+- Codex has no mode that stays on. Start each new task with `$pstack:poteto-mode`.
 
 Next: [Route work through `/poteto-mode`](./02-poteto-mode.md).

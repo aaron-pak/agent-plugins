@@ -12,7 +12,7 @@ A message that asks for work, such as "use pstack to fix this bug", is not a hel
 
 This file maps questions to the skills and guide pages that hold the answers. Those files own the details. Read the file you route to before you quote it, and trust it when it disagrees with this map. The links here point into the installed plugin, which the user may not be able to open, so give the user the file's public copy: `https://github.com/aaron-pak/agent-plugins/blob/main/plugins/pstack/` followed by its path.
 
-pstack runs in Cursor, Claude Code, and Codex. This file spells skills the Cursor way. In your reply and in any prompt you hand over, spell them for the user's harness: `/how` in Cursor, `/pstack:how` in Claude Code, `$how` in Codex. The [harness reference](../../references/harness.md) maps the rest, such as subagents, questions, loops, and modes.
+pstack runs in Cursor, Claude Code, and Codex. This file spells skills the Cursor way. In your reply and in any prompt you hand over, spell them for the user's harness: `/how` in Cursor, `/pstack:how` in Claude Code, `$pstack:how` in Codex. The [harness reference](../../references/harness.md) maps the rest, such as subagents, questions, loops, and modes.
 
 ## Find out what they need
 

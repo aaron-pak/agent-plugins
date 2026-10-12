@@ -8,7 +8,7 @@ pstack runs in Cursor, Claude Code, and Codex. Skills describe each action in ne
 
 | | Cursor | Claude Code | Codex |
 |---|---|---|---|
-| Invoke a pstack skill | `/how` | `/pstack:how` | `$how` |
+| Invoke a pstack skill | `/how` | `/pstack:how` | `$pstack:how` |
 | Skill-authoring skill | `create-skill` (built in) | `skill-creator:skill-creator` | `$skill-creator` |
 
 Every pstack skill except `setup-pstack` is user-invoked only. Claude Code reads `disable-model-invocation: true`, and Codex reads `agents/openai.yaml` with `allow_implicit_invocation: false`. So when one pstack skill names another, through a link such as [how](../skills/how/SKILL.md) or a bolded name such as **principle-model-the-domain**, read that skill's `SKILL.md` under `<pstack>/skills/<name>/` and follow it. Don't wait for the harness to load it.
@@ -69,7 +69,7 @@ Cross-family panels (interrogate, arena, architect) get their signal from model 
 | Structured question | `AskQuestion` | AskUserQuestion | a numbered question in plain text |
 | Todo list | todo tool | the todo or task tool | `update_plan` |
 | Recurring loop | `/loop` | `/loop` | no loop. Keep working in the turn, or schedule a task if the host app has a scheduler |
-| Mode that stays on | Custom Mode (Option+Enter on `/poteto-mode`) | start the session with `claude --agent pstack:poteto-agent` | invoke `$poteto-mode` per task |
+| Mode that stays on | Custom Mode (Option+Enter on `/poteto-mode`) | start the session with `claude --agent pstack:poteto-agent` | invoke `$pstack:poteto-mode` per task |
 | Plan mode | Plan Mode | Plan mode | plan mode if this version has one, otherwise write the plan in the reply |
 
 ## Transcripts and state

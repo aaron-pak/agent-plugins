@@ -19,7 +19,7 @@ Install it:
 | Harness | Install | Invoke a skill |
 |---|---|---|
 | Claude Code | `claude plugin marketplace add aaron-pak/agent-plugins`, then `claude plugin install pstack@agent-plugins --scope user` | `/pstack:poteto-mode` |
-| Codex | `codex plugin marketplace add aaron-pak/agent-plugins`, then `codex plugin add pstack@agent-plugins` | `$poteto-mode` |
+| Codex | `codex plugin marketplace add aaron-pak/agent-plugins`, then `codex plugin add pstack@agent-plugins` | `$pstack:poteto-mode` |
 | Cursor | load this directory, which keeps the `.cursor-plugin/plugin.json` manifest | `/poteto-mode` |
 
 poteto's text below spells skills the Cursor way, as in `/poteto-mode`. In Claude Code and Codex, use the spelling from the table.

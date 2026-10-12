@@ -2,7 +2,7 @@
 
 pstack works best when you stop micromanaging the agent. You describe what you want and how you'll know it's done. `/poteto-mode` picks the playbook, runs the other skills as the steps need them, and shows you the evidence. This guide teaches that habit with realistic prompts.
 
-pstack runs in Cursor, Claude Code, and Codex. The guide spells skills the Cursor way, as in `/poteto-mode`. In Claude Code, type `/pstack:poteto-mode`. In Codex, type `$poteto-mode`. The [harness reference](../../references/harness.md) lists every other difference between the three.
+pstack runs in Cursor, Claude Code, and Codex. The guide spells skills the Cursor way, as in `/poteto-mode`. In Claude Code, type `/pstack:poteto-mode`. In Codex, type `$pstack:poteto-mode`. The [harness reference](../../references/harness.md) lists every other difference between the three.
 
 Here's what you'll learn:
 
