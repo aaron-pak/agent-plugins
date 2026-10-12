@@ -1,7 +1,8 @@
 // Claude Code shows the model a scratchpad only when its own Artifact tool is on, so page files
 // written for this plugin's tool would land in the person's project. They go to a private drafts
 // folder instead, one per server process (one session), as a scratchpad is. The server makes the
-// folder, and the allow-drafts hook lets Write and Edit into it without a prompt.
+// folder; writes into it get each harness's usual check, which auto mode's reviewer in Claude Code
+// and Codex's sandbox (it allows the temp folder) pass without asking.
 
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";

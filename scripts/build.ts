@@ -12,7 +12,6 @@ const bundles: { entry: string; out: string }[] = [
     entry: "plugins/artifact-design/src/publish-cli.ts",
     out: "plugins/artifact-design/skills/artifact-design/scripts/publish.mjs",
   },
-  { entry: "plugins/artifact-design/src/allow-drafts.ts", out: "plugins/artifact-design/hooks/allow-drafts.mjs" },
 ];
 
 for (const { entry, out } of bundles) {

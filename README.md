@@ -36,14 +36,14 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### The `artifact` server
 
-`artifact-design` runs its `artifact` MCP server, its hook and its `publish.mjs` script with `node` (20 or later), so that command must be on `PATH`. Each is one bundled file, so there is nothing to install. The server reads these environment variables:
+`artifact-design` runs its `artifact` MCP server and its `publish.mjs` script with `node` (20 or later), so that command must be on `PATH`. Each is one bundled file, so there is nothing to install. The server reads these environment variables:
 
 - `ARTIFACTS_DIR`: where published artifacts go, one folder each (default `~/artifacts`). A relative path is taken from the folder the server starts in.
 - `ARTIFACT_OPEN=0`: don't open a first publish in the browser; the publish result then says the page was not opened.
 - `ARTIFACT_PREVIEW=0`: leave out the `preview` action. Without it, `preview` is offered only when Playwright and a Chromium (Playwright's, or an installed Chrome, Chromium or Edge, or Brave on macOS) are found when the server starts.
 - `ARTIFACT_PREVIEW_CA`: a PEM CA certificate for previews behind a TLS-inspecting proxy.
 
-Claude Code passes its own environment to the server, so set them in your shell or in Claude Code's `env` setting. Codex starts plugin MCP servers with only a fixed list of variables (`HOME`, `PATH`, `TMPDIR`, `LANG` and a few others), so none of these reach the server under Codex, which always uses the defaults. Page files the model writes go to its scratchpad when Claude Code lists one, and otherwise to a private folder of the session's own under `artifact-drafts-<uid>` in the system temp directory (`artifact-drafts` on Windows), so they stay out of your project. That folder is outside the project, so Claude Code would ask before each page; the plugin's `PreToolUse` hook (`hooks/allow-drafts.mjs`) lets `Write`, `Edit` and `Read` into it without asking, as Claude Code does for its own scratchpad, and only when the folder is a real one you own. Every other path gets the usual permission check. Codex needs no hook, since its sandbox already lets it write to the temp directory in a project you've trusted.
+Claude Code passes its own environment to the server, so set them in your shell or in Claude Code's `env` setting. Codex starts plugin MCP servers with only a fixed list of variables (`HOME`, `PATH`, `TMPDIR`, `LANG` and a few others), so none of these reach the server under Codex, which always uses the defaults. Page files the model writes go to its scratchpad when Claude Code lists one, and otherwise to a private folder of the session's own under `artifact-drafts-<uid>` in the system temp directory (`artifact-drafts` on Windows), so they stay out of your project. That folder is outside the project, so writing there gets Claude Code's usual check: auto mode's reviewer approves it without asking, while the other permission modes ask before each page. Codex's sandbox already lets it write to the temp directory in a project you've trusted.
 
 Publishing asks too. Claude Code asks before the plugin's `Artifact` tool runs, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
 

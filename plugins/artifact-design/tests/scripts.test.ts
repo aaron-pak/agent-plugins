@@ -1,15 +1,13 @@
-// The bundled publish.mjs script and allow-drafts.mjs hook, run with node as the skill and
-// hooks.json run them.
+// The bundled publish.mjs script, run with node as the skill runs it.
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const PLUGIN = join(import.meta.dir, "..");
 const PUBLISH = join(PLUGIN, "skills", "artifact-design", "scripts", "publish.mjs");
-const HOOK = join(PLUGIN, "hooks", "allow-drafts.mjs");
 const TEMP = mkdtempSync(join(tmpdir(), "artifact-scripts-test-"));
 
 afterAll(() => rmSync(TEMP, { recursive: true, force: true }));
@@ -50,37 +48,5 @@ describe("publish.mjs", () => {
     const run = node([PUBLISH, join(TEMP, "missing.html")]);
     expect(run.status).toBe(1);
     expect(run.stderr).toStartWith("publish.mjs: ");
-  });
-});
-
-describe("allow-drafts.mjs", () => {
-  // The hook finds the drafts folder in the temp folder, so a TMPDIR of its own keeps the test apart.
-  const temp = join(TEMP, "hook-tmp");
-  const drafts = join(temp, `artifact-drafts-${process.getuid!()}`);
-  mkdirSync(join(drafts, "session"), { recursive: true, mode: 0o700 });
-  symlinkSync("/etc/hosts", join(drafts, "session", "link.html"));
-
-  const decide = (tool: string, file: string) => {
-    const input = JSON.stringify({ tool_name: tool, tool_input: { file_path: file } });
-    const run = node([HOOK], { input, env: { TMPDIR: temp } });
-    expect(run.status).toBe(0);
-    return run.stdout ? JSON.parse(run.stdout).hookSpecificOutput.permissionDecision : "ask";
-  };
-
-  test("allows Write, Edit and Read in the drafts folder", () => {
-    expect(decide("Write", join(drafts, "session", "page.html"))).toBe("allow");
-    expect(decide("Edit", join(drafts, "session", "page.html"))).toBe("allow");
-    expect(decide("Read", join(drafts, "session", "page.html"))).toBe("allow");
-  });
-
-  test("leaves everything else to the usual permission check", () => {
-    expect(decide("Write", join(TEMP, "page.html"))).toBe("ask");
-    expect(decide("Write", join(drafts, "session", "..", "..", "page.html"))).toBe("ask");
-    expect(decide("Write", join(drafts, "session", "link.html"))).toBe("ask");
-    expect(decide("Read", join(drafts, "session", "link.html"))).toBe("ask");
-    expect(decide("Read", join(TEMP, "page.html"))).toBe("ask");
-    expect(decide("Write", "page.html")).toBe("ask");
-    expect(decide("Bash", join(drafts, "session", "page.html"))).toBe("ask");
-    expect(node([HOOK], { input: "not json", env: { TMPDIR: temp } }).stdout).toBe("");
   });
 });
