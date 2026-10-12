@@ -1,0 +1,492 @@
+#!/usr/bin/env python3
+"""pstack helper for the parts that differ between agent harnesses.
+
+  pstack models get ROLE          model value for a role (config line, else default)
+  pstack models show [--json]     every role with its value and source
+  pstack models detect [--json]   models reachable from the CLIs on this machine
+  pstack models probe SLUG...     confirm each slug answers through its CLI
+  pstack models path              the config file path
+  pstack seat SLUG --prompt-file F [--out F] [--read-only] [--cwd DIR]
+                                  run one seat through the CLI of the slug's family
+  pstack transcripts list [--cwd DIR] [--harness H] [--limit N] [--all-workspaces]
+  pstack transcripts show FILE [--tools]
+  pstack store [--cwd DIR]        state directory for this workspace (created)
+
+Standard library only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+HOME = Path.home()
+
+CODE = "gpt-6.1-sol-xhigh"
+JUDGMENT = "claude-opus-5-5-xhigh"
+PANEL = f"{JUDGMENT}, {CODE}"
+
+DEFAULTS: dict[str, str] = {
+    "feature, refactoring": CODE,
+    "bug-fix": CODE,
+    "perf-issue": CODE,
+    "hillclimb": CODE,
+    "judgment and prose": JUDGMENT,
+    "hardest tasks": JUDGMENT,
+    "how explorer": CODE,
+    "how explainer": JUDGMENT,
+    "why investigators": CODE,
+    "why synthesizer": JUDGMENT,
+    "reflect tooling": CODE,
+    "reflect judgment, divergent, synthesizer": JUDGMENT,
+    "arena runners": PANEL,
+    "arena cross-judge pool": PANEL,
+    "swarm workers": CODE,
+    "architect runners": PANEL,
+    "interrogate reviewers": PANEL,
+}
+
+ALIASES = {"inherit-parent", "auto"}
+EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"]
+
+
+def fail(message: str, code: int = 2) -> None:
+    print(f"pstack: {message}", file=sys.stderr)
+    sys.exit(code)
+
+
+def config_path() -> Path:
+    override = os.environ.get("PSTACK_MODELS")
+    if override:
+        return Path(override).expanduser()
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
+    return base / "pstack" / "models"
+
+
+def read_config() -> tuple[dict[str, str], str | None]:
+    path = config_path()
+    if not path.is_file():
+        return {}, None
+    roles: dict[str, str] = {}
+    budget = None
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if line.startswith("# budget:"):
+            budget = line.removeprefix("# budget:").strip()
+            continue
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        label, value = line.split(":", 1)
+        roles[label.strip()] = value.strip()
+    return roles, budget
+
+
+def resolve_role(query: str) -> str:
+    wanted = query.strip().lower()
+    for label in DEFAULTS:
+        if label == wanted:
+            return label
+    for label in DEFAULTS:
+        if wanted in [part.strip() for part in label.split(",")]:
+            return label
+    fail(f"unknown role {query!r}. Roles: {'; '.join(DEFAULTS)}")
+    raise AssertionError
+
+
+@dataclass(frozen=True)
+class Slug:
+    text: str
+    model: str
+    effort: str | None
+    fast: bool
+
+    @property
+    def family(self) -> str:
+        return self.model.split("-", 1)[0]
+
+
+def parse_slug(text: str) -> Slug:
+    tokens = text.strip().split("-")
+    fast = tokens[-1] == "fast"
+    if fast:
+        tokens = tokens[:-1]
+    effort = tokens[-1] if tokens[-1] in EFFORTS else None
+    if effort:
+        tokens = tokens[:-1]
+    return Slug(text=text.strip(), model="-".join(tokens), effort=effort, fast=fast)
+
+
+def cmd_models(args: argparse.Namespace) -> None:
+    if args.action == "path":
+        print(config_path())
+        return
+    if args.action == "get":
+        label = resolve_role(" ".join(args.role))
+        roles, _ = read_config()
+        print(roles.get(label, DEFAULTS[label]))
+        return
+    if args.action == "show":
+        roles, budget = read_config()
+        rows = [
+            {"role": label, "value": roles.get(label, default),
+             "source": "config" if label in roles else "default"}
+            for label, default in DEFAULTS.items()
+        ]
+        retired = sorted(set(roles) - set(DEFAULTS))
+        if args.json:
+            print(json.dumps({"config": str(config_path()), "budget": budget,
+                              "roles": rows, "retired": retired}, indent=2))
+            return
+        print(f"# config: {config_path()}{'' if config_path().is_file() else ' (absent)'}")
+        print(f"# budget: {budget or 'none recorded (defaults are large, xhigh)'}")
+        for row in rows:
+            print(f"{row['role']}: {row['value']}    [{row['source']}]")
+        for label in retired:
+            print(f"# retired role in config, drop it: {label}")
+        return
+    if args.action == "detect":
+        found = detect_models()
+        if args.json:
+            print(json.dumps(found, indent=2))
+            return
+        for family, models in found.items():
+            if isinstance(models, str):
+                print(f"{family}: {models}")
+                continue
+            for model, efforts in models.items():
+                print(f"{model}: {' '.join(efforts)}")
+        return
+    if args.action == "probe":
+        bad = 0
+        for text in args.role:
+            slug = parse_slug(text)
+            ok, detail = probe(slug)
+            bad += not ok
+            print(f"{'ok  ' if ok else 'FAIL'} {slug.text}{'' if ok else '  ' + detail}")
+        sys.exit(1 if bad else 0)
+
+
+def detect_models() -> dict[str, object]:
+    found: dict[str, object] = {}
+    if shutil.which("codex"):
+        try:
+            out = subprocess.run(["codex", "debug", "models"], capture_output=True,
+                                 text=True, timeout=60).stdout
+            data = json.loads(out[out.index("{"):])
+            found["gpt"] = {
+                m["slug"]: [e["effort"] for e in m.get("supported_reasoning_levels", [])]
+                for m in data.get("models", []) if m.get("visibility") == "list"
+            }
+        except (subprocess.SubprocessError, ValueError, KeyError) as error:
+            found["gpt"] = f"codex is installed but `codex debug models` failed: {error}"
+    else:
+        found["gpt"] = "codex CLI not installed"
+    found["claude"] = (
+        "the claude CLI has no model list. Use your harness's list (Claude Code Agent "
+        "aliases, T3 orchestrator_capabilities) and confirm ids with `pstack models probe`"
+        if shutil.which("claude") else "claude CLI not installed"
+    )
+    return found
+
+
+def runner(slug: Slug, prompt: str, read_only: bool, cwd: Path, out: Path | None) -> list[str]:
+    if slug.family == "claude":
+        command = ["claude", "-p", "--model", slug.model, "--output-format", "text"]
+        if slug.effort:
+            command += ["--effort", slug.effort]
+        if read_only:
+            command += ["--disallowedTools", "Edit", "Write", "NotebookEdit"]
+        command += extra_args("PSTACK_CLAUDE_ARGS")
+        return command
+    if slug.family == "gpt":
+        command = ["codex", "exec", "--skip-git-repo-check", "-m", slug.model,
+                   "-s", "read-only" if read_only else "workspace-write", "-C", str(cwd)]
+        if slug.effort:
+            command += ["-c", f"model_reasoning_effort={slug.effort}"]
+        if slug.fast:
+            command += ["-c", "service_tier=priority"]
+        if out:
+            command += ["-o", str(out)]
+        return command + extra_args("PSTACK_CODEX_ARGS") + ["-"]
+    fail(f"no CLI runner for the {slug.family!r} family ({slug.text}). "
+         "Spawn it with your harness's native subagent tool or pick another model.")
+    raise AssertionError
+
+
+def extra_args(name: str) -> list[str]:
+    return os.environ.get(name, "").split()
+
+
+READ_ONLY_NOTE = ("You are a read-only seat. Do not edit files, commit, push, or run "
+                  "commands that change state. Report findings only.\n\n")
+
+
+def cmd_seat(args: argparse.Namespace) -> None:
+    slug = parse_slug(args.slug)
+    if slug.text in ALIASES:
+        fail("inherit-parent/auto mean the parent chat model. Spawn natively without a model.")
+    prompt = Path(args.prompt_file).read_text()
+    if args.read_only:
+        prompt = READ_ONLY_NOTE + prompt
+    out = Path(args.out).resolve() if args.out else None
+    cwd = Path(args.cwd or os.getcwd()).resolve()
+    command = runner(slug, prompt, args.read_only, cwd, out)
+    if args.dry_run:
+        print(" ".join(command))
+        return
+    result = subprocess.run(command, input=prompt, text=True, cwd=cwd,
+                            stdout=subprocess.PIPE if slug.family == "claude" else subprocess.DEVNULL,
+                            stderr=subprocess.PIPE)
+    if slug.family == "claude":
+        if out:
+            out.write_text(result.stdout)
+        else:
+            sys.stdout.write(result.stdout)
+    elif not out:
+        fail("codex seats need --out", 2)
+    if result.returncode:
+        sys.stderr.write(result.stderr[-4000:])
+        sys.exit(result.returncode)
+
+
+def probe(slug: Slug) -> tuple[bool, str]:
+    if slug.text in ALIASES:
+        return True, ""
+    try:
+        command = runner(parse_slug(f"{slug.model}-low"), "", True, Path.cwd(), None)
+    except SystemExit:
+        return False, f"no CLI runner for {slug.family}"
+    if slug.family == "gpt":
+        command = [c for c in command if c != "-"] + ["--ephemeral", "Reply with exactly: ok"]
+    else:
+        command += ["--no-session-persistence", "Reply with exactly: ok"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=180,
+                                stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return False, "timed out"
+    ok = result.returncode == 0 and "ok" in result.stdout.lower()
+    if ok and slug.effort and slug.family == "gpt":
+        levels = detect_models().get("gpt")
+        if isinstance(levels, dict) and slug.effort not in levels.get(slug.model, [slug.effort]):
+            return False, f"{slug.model} has no {slug.effort} effort"
+    return ok, (result.stderr or result.stdout).strip()[-300:]
+
+
+# Transcripts ----------------------------------------------------------------
+
+def dash_slug(path: Path) -> str:
+    return re.sub(r"[^A-Za-z0-9]", "-", str(path))
+
+
+@dataclass
+class Transcript:
+    harness: str
+    kind: str
+    path: Path
+
+    @property
+    def mtime(self) -> float:
+        return self.path.stat().st_mtime
+
+
+def claude_transcripts(cwd: Path | None) -> list[Transcript]:
+    root = HOME / ".claude" / "projects"
+    dirs = [root / dash_slug(cwd)] if cwd else [d for d in root.glob("*") if d.is_dir()]
+    found: list[Transcript] = []
+    for d in dirs:
+        found += [Transcript("claude", "session", p) for p in d.glob("*.jsonl")]
+        found += [Transcript("claude", "subagent", p) for p in d.glob("*/subagents/*.jsonl")]
+    return found
+
+
+def codex_transcripts(cwd: Path | None) -> list[Transcript]:
+    found: list[Transcript] = []
+    for p in (HOME / ".codex" / "sessions").glob("*/*/*/rollout-*.jsonl"):
+        if cwd is not None:
+            try:
+                with p.open() as handle:
+                    meta = json.loads(handle.readline()).get("payload", {})
+            except (OSError, ValueError):
+                continue
+            if Path(meta.get("cwd", "/nonexistent")).resolve() != cwd:
+                continue
+        found.append(Transcript("codex", "session", p))
+    return found
+
+
+def cursor_transcripts(cwd: Path | None) -> list[Transcript]:
+    root = HOME / ".cursor" / "projects"
+    if cwd:
+        slug = str(cwd).lstrip("/").replace("/", "-")
+        dirs = [root / slug / "agent-transcripts", root / dash_slug(cwd).lstrip("-") / "agent-transcripts"]
+    else:
+        dirs = list(root.glob("*/agent-transcripts"))
+    found: list[Transcript] = []
+    for d in dict.fromkeys(dirs):
+        found += [Transcript("cursor", "session", p) for p in d.glob("*.jsonl")]
+        found += [Transcript("cursor", "session", p) for p in d.glob("*/*.jsonl")]
+        found += [Transcript("cursor", "subagent", p) for p in d.glob("*/subagents/*.jsonl")]
+    return found
+
+
+SOURCES = {"claude": claude_transcripts, "codex": codex_transcripts, "cursor": cursor_transcripts}
+
+
+def first_prompt(t: Transcript) -> str:
+    for role, text in turns(t, tools=False):
+        if role == "user":
+            return " ".join(text.split())[:100]
+    return ""
+
+
+def cmd_transcripts(args: argparse.Namespace) -> None:
+    if args.action == "show":
+        path = Path(args.file).expanduser()
+        t = Transcript(guess_harness(path), "session", path)
+        for role, text in turns(t, tools=args.tools):
+            print(f"## {role}\n{text}\n")
+        return
+    cwd = None if args.all_workspaces else Path(args.cwd or os.getcwd()).resolve()
+    harnesses = list(SOURCES) if args.harness == "all" else [args.harness]
+    found = [t for h in harnesses for t in SOURCES[h](cwd)]
+    found.sort(key=lambda t: t.mtime, reverse=True)
+    for t in found[: args.limit]:
+        stamp = datetime.fromtimestamp(t.mtime, timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+        print(f"{stamp}\t{t.harness}\t{t.kind}\t{t.path}\t{first_prompt(t)}")
+
+
+def guess_harness(path: Path) -> str:
+    text = str(path)
+    if "/.codex/" in text:
+        return "codex"
+    if "/.cursor/" in text:
+        return "cursor"
+    return "claude"
+
+
+NOISE = re.compile(r"^\s*(<(environment_context|user_instructions|external_[a-z_]+|system-reminder|"
+                   r"command-[a-z-]+|local-command-[a-z]+)\b|# AGENTS\.md instructions)")
+
+
+def blocks_text(content: object, tools: bool) -> list[tuple[str, str]]:
+    if isinstance(content, str):
+        return [("text", content)]
+    pieces: list[tuple[str, str]] = []
+    for block in content if isinstance(content, list) else []:
+        kind = block.get("type")
+        if kind in ("text", "input_text", "output_text"):
+            pieces.append(("text", block.get("text", "")))
+        elif tools and kind == "tool_use":
+            pieces.append(("tool", f"{block.get('name')}: {json.dumps(block.get('input'))[:400]}"))
+        elif tools and kind == "tool_result":
+            body = block.get("content")
+            if isinstance(body, list):
+                body = " ".join(b.get("text", "") for b in body if isinstance(b, dict))
+            pieces.append(("tool result", str(body)[:400]))
+    return pieces
+
+
+def turns(t: Transcript, tools: bool):
+    try:
+        handle = t.path.open()
+    except OSError:
+        return
+    with handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            yield from record_turns(t.harness, record, tools)
+
+
+def record_turns(harness: str, record: dict, tools: bool):
+    if harness == "codex":
+        if record.get("type") != "response_item":
+            return
+        p = record.get("payload", {})
+        kind = p.get("type")
+        if kind == "message" and p.get("role") in ("user", "assistant"):
+            for _, text in blocks_text(p.get("content"), tools):
+                if text.strip() and not NOISE.match(text):
+                    yield p["role"], text.strip()
+        elif tools and kind in ("function_call", "custom_tool_call"):
+            yield "tool", f"{p.get('name')}: {str(p.get('arguments') or p.get('input'))[:400]}"
+        elif tools and kind in ("function_call_output", "custom_tool_call_output"):
+            yield "tool result", str(p.get("output"))[:400]
+        return
+    role = record.get("role") or record.get("type")
+    if role not in ("user", "assistant") or record.get("isMeta"):
+        return
+    message = record.get("message") or {}
+    for kind, text in blocks_text(message.get("content"), tools):
+        if not text.strip() or (kind == "text" and NOISE.match(text)):
+            continue
+        if harness == "cursor":
+            text = re.sub(r"</?user_query>", "", text)
+        yield (role if kind == "text" else kind), text.strip()
+
+
+def cmd_store(args: argparse.Namespace) -> None:
+    cwd = Path(args.cwd or os.getcwd()).resolve()
+    base = os.environ.get("PSTACK_STATE_HOME")
+    root = Path(base).expanduser() if base else Path(
+        os.environ.get("XDG_STATE_HOME") or HOME / ".local" / "state") / "pstack"
+    store = root / dash_slug(cwd)
+    store.mkdir(parents=True, exist_ok=True)
+    print(store)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="pstack", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    models = sub.add_parser("models")
+    models.add_argument("action", choices=["get", "show", "detect", "probe", "path"])
+    models.add_argument("role", nargs="*")
+    models.add_argument("--json", action="store_true")
+    models.set_defaults(func=cmd_models)
+
+    seat = sub.add_parser("seat")
+    seat.add_argument("slug")
+    seat.add_argument("--prompt-file", required=True)
+    seat.add_argument("--out")
+    seat.add_argument("--read-only", action="store_true")
+    seat.add_argument("--cwd")
+    seat.add_argument("--dry-run", action="store_true")
+    seat.set_defaults(func=cmd_seat)
+
+    transcripts = sub.add_parser("transcripts")
+    transcripts.add_argument("action", choices=["list", "show"])
+    transcripts.add_argument("file", nargs="?")
+    transcripts.add_argument("--cwd")
+    transcripts.add_argument("--harness", choices=["all", *SOURCES], default="all")
+    transcripts.add_argument("--limit", type=int, default=20)
+    transcripts.add_argument("--all-workspaces", action="store_true")
+    transcripts.add_argument("--tools", action="store_true")
+    transcripts.set_defaults(func=cmd_transcripts)
+
+    store = sub.add_parser("store")
+    store.add_argument("--cwd")
+    store.set_defaults(func=cmd_store)
+
+    args = parser.parse_args()
+    if getattr(args, "action", None) == "get" and not args.role:
+        parser.error("models get needs a ROLE")
+    if getattr(args, "action", None) == "show" and args.command == "transcripts" and not args.file:
+        parser.error("transcripts show needs a FILE")
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
