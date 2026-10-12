@@ -24514,8 +24514,8 @@ var MERMAID = String(mermaid_runtime_default).replace(/\n+$/, "");
 var hljsRuntime;
 function highlightRuntime() {
   if (hljsRuntime === undefined) {
-    const path = ["./", "../skills/artifact-design/scripts/"].map((dir) => fileURLToPath(new URL(dir + "hljs-runtime.html", import.meta.url))).find((candidate) => existsSync(candidate));
-    if (!path)
+    const path = fileURLToPath(new URL("../skills/artifact-design/scripts/hljs-runtime.html", import.meta.url));
+    if (!existsSync(path))
       throw new Error("the plugin's hljs-runtime.html is missing");
     hljsRuntime = readFileSync(path, "utf8").replace(/\n+$/, "");
   }

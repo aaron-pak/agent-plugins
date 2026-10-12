@@ -94,7 +94,7 @@ const SETTING: Setting = { store: STORE, drafts: DRAFTS, opens: OPEN_PAGES && CA
 
 type Run = { code: number | null; stdout: string; stderr: string; timedOut: boolean };
 
-/** Run a script with this runtime, as preview.mjs and publish.mjs expect, and collect its output. */
+/** Run a script with this runtime, as preview.mjs expects, and collect its output. */
 function runScript(args: string[], timeout: number): Promise<Run> {
   return new Promise((done) => {
     execFile(

@@ -1,7 +1,6 @@
 // Publish an HTML artifact as a local file, the way Claude Code's Artifact tool publishes one: the
 // page skeleton, the content policy, the Mermaid and highlight.js runtimes, the page's name, and
 // Markdown pages.
-// The MCP server and the publish.mjs script both build on this.
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -68,11 +67,9 @@ const MERMAID = String(MERMAID_RUNTIME).replace(/\n+$/, "");
 let hljsRuntime: string | undefined;
 function highlightRuntime(): string {
   if (hljsRuntime === undefined) {
-    // Beside this code in the publish.mjs bundle; in the plugin's scripts folder from mcp/ or src/.
-    const path = ["./", "../skills/artifact-design/scripts/"]
-      .map((dir) => fileURLToPath(new URL(dir + "hljs-runtime.html", import.meta.url)))
-      .find((candidate) => existsSync(candidate));
-    if (!path) throw new Error("the plugin's hljs-runtime.html is missing");
+    // In the plugin's scripts folder, from mcp/server.mjs and from src/ alike.
+    const path = fileURLToPath(new URL("../skills/artifact-design/scripts/hljs-runtime.html", import.meta.url));
+    if (!existsSync(path)) throw new Error("the plugin's hljs-runtime.html is missing");
     hljsRuntime = readFileSync(path, "utf8").replace(/\n+$/, "");
   }
   return hljsRuntime;

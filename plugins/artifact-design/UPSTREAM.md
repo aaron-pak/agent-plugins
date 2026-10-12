@@ -12,7 +12,7 @@ The three skills are Anthropic's built-in Claude Code skills, captured from Clau
 
 ## The `artifact` server
 
-Claude Code pairs these skills with its Artifact tool and checks pages with `ArtifactCheck`. The plugin's `artifact` MCP server (`mcp/server.mjs`, bundled from `src/`) stands in for both, and `scripts/publish.mjs` and `scripts/preview.mjs` do the same from the shell where the server isn't connected.
+Claude Code pairs these skills with its Artifact tool and checks pages with `ArtifactCheck`. The plugin's `artifact` MCP server (`mcp/server.mjs`, bundled from `src/`) stands in for both.
 
 What it takes from Claude Code:
 

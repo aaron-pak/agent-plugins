@@ -36,7 +36,7 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### The `artifact` server
 
-`artifact-design` runs its `artifact` MCP server and its `publish.mjs` script with `node` (20 or later), so that command must be on `PATH`. Each is one bundled file, so there is nothing to install. The server reads these environment variables:
+`artifact-design` runs its `artifact` MCP server with `node` (20 or later), so that command must be on `PATH`. The server is one bundled file, so there is nothing to install. The server reads these environment variables:
 
 - `ARTIFACTS_DIR`: where published artifacts go, one folder each (default `~/artifacts`). A relative path is taken from the folder the server starts in.
 - `ARTIFACT_OPEN=0`: don't open a first publish in the browser; the publish result then says the page was not opened.

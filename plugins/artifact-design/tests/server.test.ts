@@ -145,14 +145,15 @@ describe("Artifact tool", () => {
     await server.close();
   });
 
-  test("renders a Markdown file into the document template", async () => {
+  test("renders a Markdown file into the document template, with highlight.js for code", async () => {
     const server = await legacy("claude-code");
     const source = join(TEMP, "notes.md");
-    writeFileSync(source, "# Notes\n\nSome **text**.\n");
+    writeFileSync(source, "# Notes\n\nSome **text**.\n\n```js\nlet a = 1;\n```\n");
     expect((await server.call({ file_path: source, description: "Notes." })).isError).toBe(false);
     const page = readFileSync(join(STORE, "notes", "index.html"), "utf8");
     expect(page).toContain("<title>notes.md</title>");
     expect(page).toContain("<strong>text</strong>");
+    expect(page).toContain("highlight.js 11.11.1, 186 grammars");
     await server.close();
   });
 
