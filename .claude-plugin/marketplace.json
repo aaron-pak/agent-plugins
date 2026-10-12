@@ -29,12 +29,8 @@
     },
     {
       "name": "pstack",
-      "source": {
-        "source": "git-subdir",
-        "url": "cursor/plugins",
-        "path": "pstack"
-      },
-      "description": "Lauren Tan's pstack, installed straight from cursor/plugins and tracking upstream. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
+      "source": "./plugins/pstack",
+      "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
     },
     {
       "name": "session-manager",
