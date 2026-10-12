@@ -67,15 +67,18 @@ describe("allow-drafts.mjs", () => {
     return run.stdout ? JSON.parse(run.stdout).hookSpecificOutput.permissionDecision : "ask";
   };
 
-  test("allows Write and Edit into the drafts folder", () => {
+  test("allows Write, Edit and Read in the drafts folder", () => {
     expect(decide("Write", join(drafts, "session", "page.html"))).toBe("allow");
     expect(decide("Edit", join(drafts, "session", "page.html"))).toBe("allow");
+    expect(decide("Read", join(drafts, "session", "page.html"))).toBe("allow");
   });
 
   test("leaves everything else to the usual permission check", () => {
     expect(decide("Write", join(TEMP, "page.html"))).toBe("ask");
     expect(decide("Write", join(drafts, "session", "..", "..", "page.html"))).toBe("ask");
     expect(decide("Write", join(drafts, "session", "link.html"))).toBe("ask");
+    expect(decide("Read", join(drafts, "session", "link.html"))).toBe("ask");
+    expect(decide("Read", join(TEMP, "page.html"))).toBe("ask");
     expect(decide("Write", "page.html")).toBe("ask");
     expect(decide("Bash", join(drafts, "session", "page.html"))).toBe("ask");
     expect(node([HOOK], { input: "not json", env: { TMPDIR: temp } }).stdout).toBe("");

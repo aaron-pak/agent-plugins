@@ -40,7 +40,7 @@ function partsBelow(folder, path) {
 
 // plugins/artifact-design/src/allow-drafts.ts
 function draftsTarget(event) {
-  if (!["Write", "Edit", "MultiEdit"].includes(event.tool_name))
+  if (!["Write", "Edit", "MultiEdit", "Read"].includes(event.tool_name))
     return false;
   const path = event.tool_input?.file_path;
   if (typeof path !== "string" || !isAbsolute2(path) || !draftsRootIsOwn())
