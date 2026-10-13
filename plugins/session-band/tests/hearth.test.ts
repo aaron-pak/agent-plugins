@@ -1,11 +1,12 @@
-import { expect, mock, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
+import { expect, mock, test as kitTest } from 'claude-code/testing'
+import type { Engine, TestBody, TestOptions } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
-import Band from '../hooks/band'
+import Band from '../hooks/hearth/band'
 import { SPIN, cells, cut } from '../hooks/clawd'
-import { textPx } from '../hooks/desk'
-import type { BandProps } from '../types'
+import { textPx } from '../hooks/clawd'
+import { NAP_AFTER_MS, NAP_LATE_MS, clockText } from '../hooks/facts'
+import type { BandProps } from '../hooks/hearth/types'
 
 const BAND: RenderPropsOf['AbovePrompt'] = {
   hasSurvey: false,
@@ -14,6 +15,12 @@ const BAND: RenderPropsOf['AbovePrompt'] = {
   bodyColumns: 100,
   scroll: { offset: 0, bodyRows: 12 },
   view: {},
+}
+
+// Every test here draws the hearth: the look /config holds for them (the tide is the default).
+function test(name: string, ...rest: [TestBody] | [TestOptions, TestBody]): void {
+  const [given, body] = rest.length === 1 ? [{}, rest[0]] : rest
+  kitTest(name, { ...given, options: { look: 'hearth', ...given.options } }, body)
 }
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -151,12 +158,12 @@ type Read = { rows: string[]; clawd: string[]; marks: string[]; words: string[];
 async function band($: Engine, surface: Surface, props = BAND) {
   const ui = await $.ui.mount({ plugin: 'session-band', surface, component: 'AbovePrompt', props })
   if (surface === 'terminal') {
-    await ui.resize({ columns: props.bodyColumns, rows: 3, in: 'band' })
+    await ui.resize({ columns: props.bodyColumns, rows: 3, in: 'hearth' })
   }
 
   const read = async (): Promise<Read> => {
     if (surface === 'terminal') {
-      const tree = await ui.drawn({ in: 'band' })
+      const tree = await ui.drawn({ in: 'hearth' })
       const [sprite, marks, panel] = kids(tree)
       const clawd = kids(sprite).map(text)
       const marked = kids(marks).map(row => text(row).trimEnd())
@@ -369,7 +376,7 @@ test('Hearth shows where you are, how full things are and what is happening, on 
     const { words } = await read()
     const [where, fill, now] = words
 
-    expect(where).toContain('agent-plugins on main · 2 changed')
+    expect(where).toContain('agent-plugins on main · 2 uncommitted')
     expect(where).toContain('Opus 5.5')
     expect(fill).toContain('context')
     expect(fill).toContain('42%')
@@ -382,7 +389,7 @@ test('Hearth shows where you are, how full things are and what is happening, on 
   }
 })
 
-test('the terminal draws Claude Code’s own Clawd with theme colors, in three rows that never pad to the edge', async ($, on) => {
+test('the terminal draws Claude Code’s own Clawd with theme colors, in three rows that never pad to the edge', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($, 86, 1.94)
   const { ui, read } = await band($, 'terminal')
@@ -461,30 +468,40 @@ test('at every width from 34 to 160 columns, with long figures, every word fits 
   hold('Read')
   const reading = $.tool.call({ tool: 'Read', file_path: '/work/hooks/a-rather-long-file-name-for-the-band.tsx' }).catch(() => undefined)
   await clock.settle()
+  // The plan's line has its second (on both surfaces: the facts hold it), then the read has the line.
+  await clock.advance(1_250)
   await sweep(true, (columns, now) => {
     if (columns >= 64) {
-      // The model stays. The branch loses its prefix, then the count gets shorter, so the branch still shows whole.
+      // The branch loses its prefix, then the model goes, and the count goes whole: never a bare number.
       const where = now.lines[0]
-      expect(where?.right).toBe('Opus 5.5')
       expect(where?.left).toContain('agent-plugins on ')
-      // (The whole branch with its count and the model takes 55 cells.)
-      expect(where?.squeeze).toBe(now.panel < 55 ? 'first-mod' : 'claude/first-mod')
-      expect(cells(where?.left ?? '') + 2 + cells('Opus 5.5')).toBeLessThanOrEqual(now.panel)
+      // (The whole branch with its count and the model takes 59 cells; with the prefix gone, 52.)
+      expect(where?.squeeze).toBe(now.panel < 59 ? 'first-mod' : 'claude/first-mod')
+      expect(where?.right).toBe(now.panel < 52 ? '' : 'Opus 5.5')
+      expect(where?.left).toMatch(/ · 2 uncommitted$/)
+      expect(cells(where?.left ?? '') + (where?.right === '' ? 0 : 2 + cells('Opus 5.5'))).toBeLessThanOrEqual(now.panel)
       expect(now.words[2]).toContain('Reading a-rather-long')
-      expect(now.lines[2]?.right).toMatch(/^1( of |\/)3( done)?$/)
+      // The tally shows only beside the whole file name: it gives way before the name is cut.
+      expect(now.lines[2]?.right).toMatch(/^(1 of 3 done|1\/3 done)?$/)
+      if (now.lines[2]?.right !== '') expect(now.words[2]).toContain('Reading a-rather-long-file-name-for-the-band.tsx')
+      if (now.panel >= 61) expect(now.lines[2]?.right).toBe('1 of 3 done')
     }
   })
   release()
   await reading
 
-  // The turn lands with the context full: while he cheers the words say what finished, then that it is getting full.
+  // The turn lands with the context full: while he cheers the words say what finished, then that it is full.
   await $.turn.complete({ answer: 'Done.', durationMs: 41_000, turnId: 't1', ...ANSWERED } as TurnCompleteInput)
   await sweep(false, (columns, now) => {
     expect(now.words[2]).toMatch(/^Done/)
   })
   await clock.advance(5000)
+  // Then the 5h limit, reached: nothing more runs until it resets, so it comes before the context's
+  // own "Full" (which has its own test).
   await sweep(false, (columns, now) => {
-    if (columns >= 70) expect(now.words[2]).toContain('Getting full')
+    expect(now.words[2]).toMatch(/^At (the )?5h limit/)
+    if (columns >= 70) expect(now.words[2]).toContain('At the 5h limit · resets')
+    expect(now.words[2]).not.toContain('Getting')
   })
 
   // Near the five-hour limit, with its countdown.
@@ -500,11 +517,13 @@ test('a branch or a todo in CJK or emoji is measured in terminal cells, as the t
   expect(cells('é')).toBe(1)
   expect(cells('━━ 42% · ✻')).toBe(10)
 
-  world(on, { branch: 'claude/日本語のブランチ' })
+  const { clock } = world(on, { branch: 'claude/日本語のブランチ' })
   await start($)
   await prompt($)
   await $.tool.call({ tool: 'TaskCreate', subject: '🦀 カニを描く', description: '', activeForm: '🦀 カニを描いています' })
   await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'in_progress' })
+  // "Planning" has its second, then the todo under way has the line.
+  await clock.advance(1_250)
 
   const cuts = new Set<string>()
   for (let columns = 34; columns <= 160; columns++) {
@@ -523,12 +542,15 @@ test('a branch or a todo in CJK or emoji is measured in terminal cells, as the t
       })
     }
     if (columns === 64 || columns === 100) {
-      // The branch whole, its line whole: 64 columns keeps the model with `· 2`, 100 has room for it all.
+      // The branch whole: 64 columns gives up its prefix, the model and the count (whole, never a bare
+      // number), 100 has room for it all.
       const where = now.lines[0]
       expect(where?.squeeze).toBe(columns === 64 ? '日本語のブランチ' : 'claude/日本語のブランチ')
-      expect(where?.left).toMatch(columns === 64 ? / · 2$/ : / · 2 changed$/)
+      expect(where?.left).toBe(columns === 64 ? 'agent-plugins on 日本語のブランチ' : 'agent-plugins on claude/日本語のブランチ · 2 uncommitted')
+      expect(where?.right).toBe(columns === 64 ? '' : 'Opus 5.5')
       expect(cells(where?.left ?? '') + 2 + cells(where?.right ?? '')).toBeLessThanOrEqual(now.panel)
-      expect(now.words[2]).toContain('Now 🦀 カニを描いています')
+      expect(now.words[2]).toContain('🦀 カニを描いています')
+      expect(now.words[2]).not.toContain('Now ')
     }
     await ui.unmount()
   }
@@ -558,6 +580,9 @@ test('on the desktop, at every width from 34 to 160 with long figures, every lin
       for (const line of lines) {
         // Laid out as the band budgets it, each line fits its panel: nothing is left to be clipped.
         expect(deskWidth(line)).toBeLessThanOrEqual(panel * DESK_CELL)
+        // Even on a page whose cells run narrow (7.2 px), where the panel shrinks beside Clawd's 96 px.
+        const narrow = Math.min(panel * 7.2, (columns - 1) * 7.2 - 96)
+        expect([columns, deskWidth(line) <= narrow + 0.01]).toEqual([columns, true])
         // A box that clips holds only words that may be cut (a branch, a file name, a todo), never a figure.
         walk(line, node => {
           if (node.type === 'Box' && node.props?.overflow === 'hidden') expect(text(node)).not.toMatch(FIGURE)
@@ -572,13 +597,13 @@ test('on the desktop, at every width from 34 to 160 with long figures, every lin
       if (figures.includes('$')) expect(figures).toMatch(/%\$123\.45$/)
       if (columns >= 40) expect(figures).toMatch(/%5h( limit)?100%/)
       if (columns >= 50) expect(figures).toContain('$123.45')
-      // The pills come back from 60 columns, both at once.
+      // The pills come back from 61 columns, both at once (the room is counted at a narrow 7.2 px cell).
       const pills: number[] = []
       walk(fill, node => {
         if (node.type === 'Svg') pills.push(Number(node.props?.width))
       })
       expect(pills.length === 0 || pills.length === 2).toBe(true)
-      if (columns >= 60) expect(pills.length).toBe(2)
+      if (columns >= 61) expect(pills.length).toBe(2)
       if (columns >= 80) expect(pills).toEqual([72, 48])
       check(columns, words[2] ?? '')
       await ui.unmount()
@@ -596,25 +621,81 @@ test('on the desktop, at every width from 34 to 160 with long figures, every lin
   release()
   await reading
 
-  // Landed: "Done" while he cheers, "Getting full" after.
+  // Landed: "Done" while he cheers; after, the 5h limit it has reached, ahead of the context's "Full"
+  // (nothing more runs until the reset).
   await $.turn.complete({ answer: 'Done.', durationMs: 41_000, turnId: 't1', ...ANSWERED } as TurnCompleteInput)
   await sweep(false, (columns, third) => expect(third).toMatch(/^Done/))
   await clock.advance(5000)
   await sweep(false, (columns, third) => {
-    expect(third).toMatch(/^Getting full/)
+    expect(third).toMatch(/^At (the )?5h limit/)
     expect(third).not.toContain('…')
   })
 
-  // Near the 5h limit: the message takes a shorter form; it is never cut.
+  // At the 5h limit: the message takes a shorter form; it is never cut. (At 100%, never "Near".)
   await $.session.measure(measured(60, 123.45, 100))
   await sweep(false, (columns, third) => {
-    expect(third).toMatch(/^Near (the )?5h limit/)
+    expect(third).toMatch(/^At (the )?5h limit/)
     expect(third).not.toContain('…')
-    if (columns >= 64) expect(third).toMatch(/^Near the 5h limit/)
+    if (columns >= 64) expect(third).toMatch(/^At the 5h limit/)
   }, '60%')
 })
 
-test('a failed tool owns line 3 for its second, and Clawd flinches with it, even in a burst', async ($, on) => {
+// A step that fails while "Thinking it over" is up (a quick one the line never named) takes line 3
+// over at once on the terminal, as the facts' line does, never waiting out the thought's second.
+test('terminal: a failure while "Thinking it over" is up shows its hiccup at once, and he flinches with it', async ($, on) => {
+  world(on)
+  await start($)
+  const { ui, read } = await band($, 'terminal')
+  await ui.advance(1_000)
+  // The turn begins: "Thinking it over" goes up, and has been up 400 ms as the step fails.
+  await prompt($, 'run it')
+  await ui.redraw({ ...BAND, isWorking: true })
+  await ui.advance(400)
+  expect((await read()).words[2]).toContain('Thinking it over')
+  await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+  const now = await read()
+  expect([now.words[2], now.clawd[0]]).toEqual([expect.stringContaining('Hiccup · Run the tests'), HEAD.closed])
+  await ui.unmount()
+})
+
+// A question for you (or a plan to look over) is a wait: on the terminal he rests as he does between
+// turns (a blink, and every twenty seconds a look over at the words), never tapping along as at work.
+test('terminal: a question for you is a wait: Clawd rests, glancing at the words now and then, never tapping along', { timeoutMs: 60_000 }, async ($, on) => {
+  const { clock, hold, release } = world(on)
+  await start($)
+  const { ui, read } = await band($, 'terminal', { ...BAND, isWorking: true })
+  await prompt($, 'plan it')
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(2_000)
+  await ui.advance(2_000)
+  hold('AskUserQuestion')
+  const asking = $.tool.call({
+    tool: 'AskUserQuestion',
+    questions: [{ question: 'Which way should sign-in go?', header: 'Auth method', options: [{ label: 'OAuth', description: 'A browser sign-in' }, { label: 'Keys', description: 'An API key' }], multiSelect: false }],
+  } as Parameters<Engine['tool']['call']>[0])
+  await clock.settle()
+  await ui.redraw({ ...BAND, isWorking: true })
+  const heads = new Set<string>()
+  const rest = new Set<string>()
+  // Half a minute of waiting on the answer.
+  for (let i = 0; i < 120; i++) {
+    await clock.advance(250)
+    await ui.advance(250)
+    const now = await read()
+    expect([i, now.words[2]]).toEqual([i, expect.stringContaining('Asking you')])
+    heads.add(now.clawd[0] ?? '')
+    rest.add(`${now.clawd[1]}|${now.clawd[2]}`)
+  }
+  release()
+  await asking
+  // No claw up and no step: only his eyes move, open, shut for a blink, or over at the words.
+  expect([...heads].every(head => head === HEAD.open || head === HEAD.closed || isSideways(head))).toBe(true)
+  expect([...heads].some(isSideways)).toBe(true)
+  expect(rest.size).toBe(1)
+  await ui.unmount()
+})
+
+test('a failed tool owns line 3 for its second, and Clawd flinches with it, even in a burst', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, hold, release } = world(on)
   await start($)
 
@@ -674,6 +755,32 @@ test('a failed tool owns line 3 for its second, and Clawd flinches with it, even
   }
 })
 
+test('terminal: Esc within the second of a failure takes it back, and Clawd stops flinching at once rather than playing it on beside "Stopped"', { timeoutMs: 30_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  const { ui, read } = await band($, 'terminal', { ...BAND, isWorking: true })
+  const step = async (ms: number) => {
+    for (let left = ms; left > 0; left -= 125) {
+      await ui.advance(Math.min(125, left))
+      await clock.advance(Math.min(125, left))
+    }
+  }
+  await prompt($, 'run the tests')
+  await step(1_500)
+  await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+  // The hiccup goes up and he flinches, on the next tick.
+  await step(375)
+  const flinching = await read()
+  expect([flinching.clawd[0] === HEAD.closed, flinching.words[2]]).toEqual([true, 'Hiccup · Run the tests'])
+  // Esc, 375 ms after the failure: the turn takes it back (nothing failed: the person stopped it).
+  await $.turn.complete({ answer: '', durationMs: 5_000, turnId: 't1', reason: 'aborted', isAborted: true } as TurnCompleteInput)
+  await ui.redraw(BAND)
+  await step(250)
+  const stopped = await read()
+  expect([stopped.clawd[0] === HEAD.closed, stopped.words.some(line => line.includes('Hiccup')), stopped.words.join(' ').includes('Stopped after 5s')]).toEqual([false, false, true])
+  await ui.unmount()
+})
+
 test('a turn that lands with the context full says it is done while he cheers, then that it is getting full', async ($, on) => {
   const { clock } = world(on)
   await start($, 86, 1.94)
@@ -693,7 +800,7 @@ test('a turn that lands with the context full says it is done while he cheers, t
   }
 })
 
-test('when Claude Code says the work is over before the turn is written down, the band waits for it', async ($, on) => {
+test('when Claude Code says the work is over before the turn is written down, the band waits for it', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($)
   // A turn before, so there is an old summary that must not flash up.
@@ -728,7 +835,7 @@ test('when Claude Code says the work is over before the turn is written down, th
     expect(seen[seen.length - 1]?.third).toContain('Done in 9s')
     if (surface === 'desktop') {
       // Clawd goes from work to the cheer, with no idle Clawd in between (one reload, not two).
-      expect([...new Set(seen.map(shot => shot.alt))]).toEqual(['Clawd, at work', 'Clawd, cheering'])
+      expect([...new Set(seen.map(shot => shot.alt))]).toEqual(['Clawd taps along as Claude works.', 'Clawd cheers for a finished turn.'])
     }
     await ui.unmount()
 
@@ -736,8 +843,9 @@ test('when Claude Code says the work is over before the turn is written down, th
     const late = await band($, surface, { ...BAND, isWorking: true })
     await prompt($, 'again')
     await $.tool.call({ tool: 'Read', file_path: '/work/c.ts' })
-    if (surface === 'terminal') await late.ui.advance(2000)
+    // (The facts move on as the clock does, and the terminal takes the line up on its next tick.)
     await clock.advance(2000)
+    if (surface === 'terminal') await late.ui.advance(2000)
     await late.ui.redraw({ ...BAND, isWorking: false })
     expect((await late.read()).words[2]).toContain('Thinking')
     if (surface === 'terminal') await late.ui.advance(1750)
@@ -756,15 +864,16 @@ test('the desktop draws Clawd as a crisp Svg and the words with Box and Text, no
 
   expect(await ui.find({ type: 'Client' })).toBeUndefined()
   const svg = svgOf(tree)
-  expect(svg?.alt).toBe('Clawd')
+  // The alt text says what the picture shows: in a session's first moments, his hello.
+  expect(svg?.alt).toBe('Clawd waves hello.')
   expect(svg?.source).toContain('shape-rendering="crispEdges"')
   expect(svg?.source).toContain('svg:hover')
   expect(svg?.source).not.toContain('<script')
   expect(svg?.source.length ?? 0).toBeLessThan(131_072)
   expect(text(tree)).not.toMatch(/[▀-▟]/u)
   // A glance moves his pupils a pixel along the eye row, never up into the top of his head.
-  expect(svg?.source).toContain('<g class="hh-el-r" fill="#141413"><rect x="6" y="2" width="1" height="2"/></g>')
-  expect(svg?.source).toContain('<g class="hh-er-l" fill="#141413"><rect x="12" y="2" width="1" height="2"/></g>')
+  expect(svg?.source).toContain('<g class="hh-el-r" fill="#1B1A19"><rect x="6" y="2" width="1" height="2"/></g>')
+  expect(svg?.source).toContain('<g class="hh-er-l" fill="#1B1A19"><rect x="12" y="2" width="1" height="2"/></g>')
   // He sits close to his words: 96 px wide with his extras, 64 tall.
   let size = { width: 0, height: 0 }
   walk(tree, node => {
@@ -806,11 +915,80 @@ test('on the desktop every sparkle, z, bead of sweat and heart stays inside Claw
   expect(reach(sources[0] ?? '', 'hh-sw').bottom).toBeLessThanOrEqual(2)
   expect(sources[1]).toContain('class="hh-z"')
   expect(sources[1]).not.toContain('class="hh-sw"')
-  // The heart and the z are soft shapes beside a pixel Clawd.
-  expect(sources[1]).toMatch(/<g class="hh-z" fill="none" stroke="[^"]+"[^>]*><path d="M[^"]+L/)
-  expect(sources[1]).toMatch(/<g class="hh-ht"[^>]*><path d="M[^"]+C/)
+  // The z is a soft shape beside a pixel Clawd, in the tide's slate; the heart is the terminal's
+  // pixel heart, as the beach draws it: five runs of pixels, one path, in the tide's pink.
+  expect(sources[1]).toMatch(/<g class="hh-z" fill="none" stroke="#7E95B5"[^>]*><path d="M[^"]+L/)
+  const heart = /<g class="hh-ht" fill="#E9789B"[^>]*><path d="([^"]+)"\/><\/g>/u.exec(sources[1] ?? '')?.[1] ?? ''
+  expect([heart.match(/M/gu)?.length, /[CQ]/u.test(heart)]).toEqual([5, false])
+  // Held still (reduced motion, /band still), the heart's edges and the z's strokes fall on whole
+  // screen pixels (4 to a unit), so neither is soft beside him at 1x.
+  const z = /<g class="hh-z"[^>]*><path d="([^"]+)"/u.exec(sources[1] ?? '')?.[1] ?? ''
+  for (const shape of [heart, /<g class="hh-ht" fill="#E9789B"[^>]*><path d="([^"]+)"\/><\/g>/u.exec(sources[0] ?? '')?.[1] ?? '', z]) {
+    const numbers = shape.match(/-?[\d.]+/gu)?.map(Number) ?? []
+    expect(numbers.length).toBeGreaterThan(0)
+    for (const n of numbers) expect(Math.abs(n * 4 - Math.round(n * 4))).toBeLessThan(0.001)
+  }
   // The cheer's sparkle is a four-point twinkle, not a plus.
   expect(sources[0]).toMatch(/<g class="hh-sp"[^>]*><path d="M[^"]+Q/)
+  await ui.unmount()
+})
+
+test('on the desktop his z carries on from the frame he dozed off in: a turn that stopped dozed off a second before the nap redraw, a cheer never did', async ($, on) => {
+  const zAt = (source: string) => /\.hh-z\{[^}]*animation:hh-zz 3s ease-out (-?[\d.]+)s/u.exec(source)?.[1]
+  const dozy = (source: string) => /\.hh-z\{[^}]*animation:hh-zz 3s ease-out ([\d.]+)s/u.exec(source)?.[1]
+  const { clock } = world(on)
+  await start($)
+  const { ui, read } = await band($, 'desktop')
+
+  // Stopped: the frame that came as the turn landed was dozy, its z due as the nap falls; the nap's
+  // redraw comes a second after that (NAP_LATE_MS), so the z is a second into its drift.
+  await turn($, { reason: 'aborted', isAborted: true })
+  const landed = svgOf((await read()).tree)?.source ?? ''
+  expect(dozy(landed)).toBe(String(NAP_AFTER_MS / 1000))
+  await clock.advance(NAP_AFTER_MS + NAP_LATE_MS)
+  const stopped = svgOf((await read()).tree)?.source ?? ''
+  expect(stopped).toContain('class="hh-z"')
+  expect(zAt(stopped)).toBe('-1')
+
+  // Answered: the frame after the cheer has not dozed off when the nap redraws, so the z starts there.
+  await turn($)
+  await clock.advance(NAP_AFTER_MS + NAP_LATE_MS)
+  const answered = svgOf((await read()).tree)?.source ?? ''
+  expect(answered).toContain('class="hh-z"')
+  expect(zAt(answered)).toBe('0')
+  await ui.unmount()
+})
+
+test('on the desktop a nap frame that follows one already showing a z (still to lively, the beach to the hearth) carries the z on whole, and redraws through the nap keep its frame', async ($, on) => {
+  const zAt = (source: string) => /\.hh-z\{[^}]*animation:hh-zz 3s ease-out (-?[\d.]+)s/u.exec(source)?.[1]
+  const { clock } = world(on)
+  await start($)
+  const { ui, read } = await band($, 'desktop')
+  const source = async () => svgOf((await read()).tree)?.source ?? ''
+  await turn($)
+  await clock.advance(NAP_AFTER_MS + NAP_LATE_MS)
+  const dozed = await source()
+  expect(zAt(dozed)).toBe('0')
+  // A reading, a minute on: the same nap, the same frame.
+  await clock.advance(60_000)
+  await $.session.measure(measured(44, 0.33))
+  expect(await source()).toBe(dozed)
+
+  // Still, his z is drawn whole; lively again, it carries on from there, never shrinking to nothing.
+  await run($, 'band', 'still')
+  expect(await source()).toContain('.hh-z{opacity:1;transform:none;animation:none}')
+  await run($, 'band', 'lively')
+  const carried = await source()
+  expect(zAt(carried)).toBe('-1')
+  await clock.advance(30_000)
+  await $.session.measure(measured(45, 0.34))
+  expect(await source()).toBe(carried)
+
+  // From the beach's nap, whose z's drift as the switch comes, the same.
+  await run($, 'band', 'tide')
+  await clock.advance(10_000)
+  await run($, 'band', 'hearth')
+  expect(zAt(await source())).toBe('-1')
   await ui.unmount()
 })
 
@@ -831,9 +1009,10 @@ test('while a tool runs the band says what it is, and the todos count up', async
   for (const surface of SURFACES) {
     const { ui, read } = await band($, surface, { ...BAND, isWorking: true })
     peek = read
+    // The facts move on as the clock does, and the terminal takes the line up on its next tick.
     wait = async ms => {
-      if (surface === 'terminal') await ui.advance(ms)
       await clock.advance(ms)
+      if (surface === 'terminal') await ui.advance(ms)
     }
     await prompt($, 'go')
     await $.tool.call({ tool: 'TaskCreate', subject: 'Write the band tests', description: '', activeForm: 'Writing the band tests' })
@@ -875,15 +1054,53 @@ test('a described command reads as its description, starting where every line 3 
   }
 })
 
-test('a burst of quick tools reads as one calm stretch: at most three terminal changes, and one desktop Clawd', async ($, on) => {
+test('a long command with no description runs to the edge and ends in an ellipsis after a whole word, never a silent cut', async ($, on) => {
+  const command = 'node scripts/check-every-band.mjs --surface terminal --surface desktop --look tide --look hearth --motion still --motion lively --widths 34-160 --verbose'
+  let peek: (() => Promise<Read>) | undefined
+  let tick: (() => Promise<void>) | undefined
+  let during: Read | undefined
+  world(on, {
+    onCall: async tool => {
+      if (tool !== 'Bash') return
+      await tick?.()
+      during = await peek?.()
+    },
+  })
+  await start($)
+  expect(command.length).toBeGreaterThan(140)
+
+  for (const surface of SURFACES) {
+    const { ui, read } = await band($, surface, { ...BAND, bodyColumns: 160, isWorking: true })
+    peek = read
+    tick = async () => (surface === 'terminal' ? ui.advance(250) : undefined)
+    await prompt($, 'go')
+    await $.tool.call({ tool: 'Bash', command })
+
+    const third = during?.lines[2]
+    if (surface === 'terminal') {
+      // The whole command goes to the squeezed box, and Ink's own cut ends it with an ellipsis.
+      expect(third?.squeeze).toBe(command)
+      expect(cells(third?.squeeze ?? '')).toBeGreaterThan(during?.panel ?? 0)
+    } else {
+      // Cut to the room after a whole word of the command, on a letter: never "--…", "terminal …" or "term…".
+      expect(third?.left).toMatch(/^Running node scripts\/check-every-band\.mjs --surface( \S+)*(?<![\s/._-])…$/u)
+      const kept = (third?.left ?? '').replace(/^Running |…$/gu, '')
+      expect(command.startsWith(`${kept} `)).toBe(true)
+    }
+    await ui.unmount()
+  }
+})
+
+test('a burst of quick tools reads as one calm stretch: at most three terminal changes, and one desktop Clawd', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, hold, release } = world(on)
   await start($)
 
   for (const surface of SURFACES) {
     const { ui, read } = await band($, surface, { ...BAND, isWorking: true })
+    // The facts move on as the clock does, and the terminal takes the line up on its next tick.
     const step = async (ms: number) => {
-      if (surface === 'terminal') await ui.advance(ms)
       await clock.advance(ms)
+      if (surface === 'terminal') await ui.advance(ms)
     }
     await prompt($, 'look around')
     await step(1000)
@@ -960,13 +1177,119 @@ test('a failed tool is a hiccup, not an alarm, and Clawd flinches', async ($, on
     if (surface === 'terminal') {
       expect(clawd[0]).toBe(HEAD.closed)
     } else {
-      expect(svgOf(tree)?.source).toContain('@keyframes hh-mf-')
-      // The flinch over, he is back at work with the same Svg as any tool.
-      await clock.advance(1500)
-      expect(svgOf((await read()).tree)?.source).not.toContain('@keyframes hh-mf-')
+      const flinch = svgOf(tree)
+      expect(flinch?.source).toContain('@keyframes hh-mf-')
+      // The flinch over, its calm rest and all, he taps along again in that same frame, so its end
+      // loads nothing (a turn landing a moment later would load a second frame within the second).
+      await clock.advance(2000)
+      expect(svgOf((await read()).tree)?.source).toBe(flinch?.source)
+      expect(flinch?.alt).toBe('Clawd flinches at a failed step, then taps along again.')
     }
     await ui.unmount()
   }
+})
+
+for (const endsAt of [2_100, 2_900, null]) {
+  test(`on the desktop a flinch plays out its calm rest in its own frame${endsAt === null ? ', then taps along again in that same frame, three seconds in' : `: a turn that ends ${endsAt} ms in cheers straight from it, in one reload`}`, { timeoutMs: 30_000 }, async ($, on) => {
+    const { clock } = world(on)
+    await start($)
+    const { ui, read } = await band($, 'desktop', { ...BAND, isWorking: true })
+    await prompt($, 'run it')
+    await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+    // Each new frame, with when it came (ms after the failure).
+    const frames: Array<{ at: number; source: string }> = []
+    const look = async (at: number) => {
+      const source = svgOf((await read()).tree)?.source ?? ''
+      if (frames[frames.length - 1]?.source !== source) frames.push({ at, source })
+    }
+    await look(0)
+    for (let at = 100; at <= (endsAt ?? 4_000); at += 100) {
+      await clock.advance(100)
+      await look(at)
+    }
+    const kinds = () => frames.map(({ source }) => (source.includes('@keyframes hh-mf-') ? 'flinch' : source.includes('@keyframes hh-mc-') ? 'cheer' : 'work'))
+    if (endsAt === null) {
+      // The flinch's frame holds through its rest and goes on into the taps: no frame for its end.
+      expect(kinds()).toEqual(['flinch'])
+    } else {
+      await $.turn.complete({ answer: 'Done.', durationMs: 9_000, turnId: 'f1', ...ANSWERED } as TurnCompleteInput)
+      await ui.redraw(BAND)
+      await look(endsAt)
+      // One reload, from the flinch's rest to the cheer: never a tap source loaded half a second before it.
+      expect(kinds()).toEqual(['flinch', 'cheer'])
+    }
+    // No frame raises his claw to tap until three seconds after the flinch began, and the frame
+    // after the flinch opens on the tap the flinch's own frame had just begun.
+    for (const { at, source } of frames.filter(({ source }) => !source.includes('@keyframes hh-mc-'))) {
+      const tap = Number(/hh-ml-ra-u [\d.]+s step-end ([\d.]+)s/u.exec(source)?.[1])
+      expect([at, at / 1000 + tap >= 2.99, at / 1000 + tap <= 3.11]).toEqual([at, true, true])
+    }
+    await ui.unmount()
+  })
+}
+
+for (const change of ['bead', 'still'] as const) {
+  test(`on the desktop the flinch's frame, kept on into his taps, gives way to ${change === 'bead' ? 'a bead of sweat' : 'a moment of stillness'} and never comes back`, async ($, on) => {
+    const { clock } = world(on)
+    await start($)
+    const { ui, read } = await band($, 'desktop', { ...BAND, isWorking: true })
+    await prompt($, 'run it')
+    await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+    await clock.advance(3_000)
+    expect(svgOf((await read()).tree)?.alt).toBe('Clawd flinches at a failed step, then taps along again.')
+    if (change === 'bead') {
+      // The tide comes in high: a bead of sweat, in a frame of its own.
+      await $.session.measure(measured(86, 1.94))
+      await clock.advance(1_000)
+      await ui.redraw({ ...BAND, isWorking: true })
+    } else {
+      // Still for a moment, then lively again: his taps, never the flinch's frame once more.
+      await run($, 'band', 'still')
+      await ui.redraw({ ...BAND, isWorking: true })
+      expect(svgOf((await read()).tree)?.source).not.toContain('@keyframes hh-mf-')
+      await clock.advance(1_000)
+      await run($, 'band', 'lively')
+      await ui.redraw({ ...BAND, isWorking: true })
+    }
+    const after = svgOf((await read()).tree)
+    expect(after?.source).not.toContain('@keyframes hh-mf-')
+    expect(after?.alt).toBe(change === 'bead' ? 'Clawd taps along, a bead of sweat on his brow.' : 'Clawd taps along as Claude works.')
+    await ui.unmount()
+  })
+}
+
+test('on the desktop a second failure while he still flinches from the first makes him flinch again', { timeoutMs: 30_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  const { ui, read } = await band($, 'desktop', { ...BAND, isWorking: true })
+  await prompt($, 'run it')
+  const flinches: string[] = []
+  const thirds = new Set<string>()
+  const look = async () => {
+    const { words, tree } = await read()
+    const source = svgOf(tree)?.source ?? ''
+    thirds.add(words[2] ?? '')
+    if (/@keyframes hh-mf2?-/.test(source) && flinches[flinches.length - 1] !== source) flinches.push(source)
+  }
+  await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+  await look()
+  for (let k = 0; k < 8; k++) {
+    await clock.advance(100)
+    await look()
+  }
+  await $.tool.call({ tool: 'Bash', command: 'npm run lint -- fail', description: 'Lint the band' })
+  for (let k = 0; k < 40; k++) {
+    await clock.advance(100)
+    await look()
+  }
+
+  // Two hiccups, two flinches: the second is a source of its own, so the page plays it from the start.
+  expect([...thirds].filter(third => third.startsWith('Hiccup'))).toEqual(['Hiccup · Run the tests', 'Hiccup · Lint the band'])
+  expect(flinches).toHaveLength(2)
+  expect(flinches[1]).toContain('@keyframes hh-mf2-')
+  // And then he taps along again in the second flinch's own frame: its end loads nothing.
+  expect(svgOf((await read()).tree)?.source).toBe(flinches[1])
+  await ui.unmount()
 })
 
 test('if the band cannot write its state, the prompt and every tool go on untouched', async ($, on) => {
@@ -1006,6 +1329,15 @@ test('a finished turn says how it went, and Clawd raises his arms, hops and sett
 
     const landed = await read()
     expect(landed.words[2]).toContain('Done in 41s · 2 tools · 1 file changed')
+    // "Done" is green while he cheers for it, and plain ink once the cheer is over, as on the beach.
+    const colors = (tree: unknown) => {
+      let seen = ''
+      walk(tree, node => {
+        seen += ` ${String(node.props?.color ?? '')}`
+      })
+      return seen
+    }
+    expect(colors(landed.tree)).toContain('success')
     if (surface === 'terminal') {
       expect(landed.clawd[0]).toMatch(/^▗▟/)
       expect(landed.marks[0]?.trim()).toMatch(/^[✶✻]$/u)
@@ -1013,12 +1345,20 @@ test('a finished turn says how it went, and Clawd raises his arms, hops and sett
       expect((await read()).clawd[0]).toBe(HEAD.open)
     } else {
       const source = svgOf(landed.tree)?.source ?? ''
-      expect(svgOf(landed.tree)?.alt).toBe('Clawd, cheering')
+      expect(svgOf(landed.tree)?.alt).toBe('Clawd cheers for a finished turn.')
       expect(source).toContain('.hh-hop{animation:hh-hop')
+      // His arms stay up for the whole cheer (the two hops carry its beat), as on the terminal:
+      // the raised claws show from its first frame to its last, the lowered ones never.
+      expect(source).toContain('@keyframes hh-mc-la-u{0%{opacity:1}100%{opacity:1}}')
+      expect(source).toContain('@keyframes hh-mc-ra-u{0%{opacity:1}100%{opacity:1}}')
+      expect(source).toContain('@keyframes hh-mc-la-d{0%{opacity:0}100%{opacity:0}}')
       // The cheer over, the band redraws by itself and he settles.
       await clock.advance(5000)
-      expect(svgOf((await read()).tree)?.alt).toBe('Clawd')
+      expect(svgOf((await read()).tree)?.alt).toBe('Clawd rests.')
     }
+    const settled = await read()
+    expect(settled.words[2]).toContain('Done in 41s · 2 tools · 1 file changed')
+    expect(colors(settled.tree)).not.toContain('success')
     await ui.unmount()
   }
 })
@@ -1064,7 +1404,7 @@ test('an interrupted or declined turn is a calm "Stopped", with no green and no 
           })
           expect(colors).not.toContain('success')
         } else {
-          expect(svgOf(tree)?.alt).toBe('Clawd')
+          expect(svgOf(tree)?.alt).toBe('Clawd rests.')
           expect(svgOf(tree)?.source).not.toContain('@keyframes hh-mc-')
         }
         await ui.unmount()
@@ -1073,17 +1413,38 @@ test('an interrupted or declined turn is a calm "Stopped", with no green and no 
   }
 })
 
-test('past warnAt the number turns amber, Clawd sweats now and then and a toast suggests /compact', async ($, on) => {
+// The colour and weight of the run of text that reads exactly `text`.
+function runStyle(node: unknown, wanted: string): { color: unknown; bold: boolean } | null {
+  let found: { color: unknown; bold: boolean } | null = null
+  walk(node, one => {
+    const children = one.children ?? []
+    if (found === null && one.type === 'Text' && children.length > 0 && children.every(child => typeof child === 'string') && children.join('').trim() === wanted) {
+      found = { color: one.props?.color, bold: one.props?.bold === true }
+    }
+  })
+
+  return found
+}
+
+test('past warnAt the number turns clay and bold, Clawd sweats now and then and a toast suggests /compact', async ($, on) => {
   const { toasts } = world(on)
   await start($)
+  for (const surface of SURFACES) {
+    const { ui, read } = await band($, surface)
+    // Below it, the figure is plain, as every other figure on the line.
+    expect([surface, runStyle((await read()).lines[1]?.node, '42%')]).toEqual([surface, { color: undefined, bold: false }])
+    await ui.unmount()
+  }
   await $.session.measure(measured(86, 1.94))
-  expect(toasts).toEqual(['Context is 86% full. Run /compact soon.'])
+  expect(toasts).toEqual(["Context is 86% full. Run /compact when you're ready."])
 
   for (const surface of SURFACES) {
     const { ui, read } = await band($, surface)
-    const { words, tree } = await read()
+    const { words, tree, lines } = await read()
     expect(words[1]).toContain('86%')
-    expect(words[2]).toContain('Getting full · /compact when you are ready')
+    // Clay, as Claude Code marks what wants a look, and bold so it reads without colour too.
+    expect([surface, runStyle(lines[1]?.node, '86%')]).toEqual([surface, { color: 'claude', bold: true }])
+    expect(words[2]).toContain("Getting full · /compact when you're ready")
     if (surface === 'terminal') {
       // The bead forms beside his head, a cell clear of it, and slides down; it never touches him.
       // Idle, it comes once in sixteen seconds, on ticks 8 to 13 of its cycle.
@@ -1124,7 +1485,7 @@ test('past warnAt the number turns amber, Clawd sweats now and then and a toast 
   }
 })
 
-test('sweating while he works, the bead and his claw take turns: they never share a moment or a cell', async ($, on) => {
+test('sweating while he works, the bead and his claw take turns: they never share a moment or a cell', { timeoutMs: 30_000 }, async ($, on) => {
   let peek: (() => Promise<Read>) | undefined
   let peekUi: { advance: (ms: number) => Promise<unknown> } | undefined
   let peekDesk: (() => Promise<Read>) | undefined
@@ -1199,18 +1560,327 @@ test('sweating while he works, the bead and his claw take turns: they never shar
   await desk.ui.unmount()
 })
 
-test('near the five-hour limit the terminal says when it resets', async ($, on) => {
-  world(on)
+test('near the five-hour limit both surfaces say when it resets, as a time of day that never goes stale', async ($, on) => {
+  const { clock } = world(on)
   await start($, 42, 1.2, 91)
-  const { ui, read } = await band($, 'terminal')
+  const when = clockText(T0 + 130 * 60_000, T0)
+  expect(when).toMatch(/^\d{1,2}(:\d\d)?[ap]m$/)
+  for (const surface of SURFACES) {
+    const { ui, read } = await band($, surface)
+    expect((await read()).words[2]).toBe(`Near the 5h limit · resets ${when}`)
+    // A minute on, it still says the same: nothing in it counts down.
+    await clock.advance(60_000)
+    expect((await read()).words[2]).toBe(`Near the 5h limit · resets ${when}`)
+    await ui.unmount()
+  }
+})
 
-  expect((await read()).words[2]).toContain('Near the 5h limit · resets in 2h 10m')
-  await ui.unmount()
+test('near a limit its meter fills clay with its figure, on both surfaces, and at or past it the line says "At" or "Over", never "Near"', async ($, on) => {
+  world(on)
+  await start($, 42, 1.2, 23)
+  for (const [five, said] of [[79, null], [86, 'Near'], [100, 'At'], [104, 'Over']] as const) {
+    await $.session.measure(measured(42, 1.2, five))
+    for (const surface of SURFACES) {
+      const { ui, read } = await band($, surface)
+      const seen = await read()
+      if (said !== null) expect([surface, five, seen.words[2]]).toEqual([surface, five, expect.stringMatching(new RegExp(`^${said} the 5h limit · resets `, 'u'))])
+      if (surface === 'terminal') {
+        // The two meters' runs: the context's fill and track, then the limit's.
+        const runs: Array<unknown> = []
+        walk(seen.lines[1]?.node, node => {
+          const only = (node.children ?? []).every(child => typeof child === 'string')
+          if (node.type === 'Text' && only && /^━+$/u.test(text(node))) runs.push(node.props?.color)
+        })
+        expect([five, runs[2]]).toEqual([five, five >= 80 ? 'claude' : 'inactive'])
+      } else {
+        let pill = ''
+        walk(seen.tree, node => {
+          if (node.type === 'Svg' && node.props?.alt === `5h limit ${five}% used`) pill = String(node.props.source)
+        })
+        expect([five, pill.includes(five >= 80 ? '#D77757' : '#A39E93')]).toEqual([five, true])
+      }
+      await ui.unmount()
+    }
+  }
+})
+
+test('before the first reading the context says so plainly: a dash, never "0%", and the page reads it out', async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+  for (const surface of SURFACES) {
+    for (const columns of [100, 40, 34]) {
+      const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns })
+      const seen = await read()
+      expect([surface, columns, seen.words[1]]).toEqual([surface, columns, expect.stringMatching(/^context\b.*–/u)])
+      expect([surface, columns, seen.words.join(' ').includes('0%')]).toEqual([surface, columns, false])
+      if (surface === 'desktop' && columns >= 40) {
+        // The empty meter says it to anyone the page is read to (at 34 the meter gives way to its words).
+        const alts: string[] = []
+        walk(seen.tree, node => {
+          if (node.type === 'Svg') alts.push(String(node.props?.alt))
+        })
+        expect(alts).toContain('No context reading yet')
+      }
+      await ui.unmount()
+    }
+  }
+})
+
+test('a web search keeps its query as the band narrows, "Searching for ink…", the long verb whole or not at all', async ($, on) => {
+  const { clock, hold, release } = world(on)
+  await start($)
+  await prompt($, 'look it up')
+  hold('WebSearch')
+  const searching = $.tool.call({ tool: 'WebSearch', query: 'ink terminal hyperlinks', mode: 'standard' }).catch(() => undefined)
+  await clock.settle()
+  await clock.advance(1_500)
+  for (const surface of SURFACES) {
+    for (const columns of [100, 60, 46, 40]) {
+      const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking: true })
+      if (surface === 'terminal') await ui.advance(1_500)
+      const third = (await read()).words[2] ?? ''
+      if (columns === 100) expect([surface, third]).toEqual([surface, 'Searching the web for ink terminal hyperlinks'])
+      if (columns <= 46) expect([surface, columns, third]).toEqual([surface, columns, expect.stringMatching(/^Searching for ink( term|…$)/u)])
+      // The query is cut after a whole word, never inside one.
+      expect([surface, columns, /\w…$/u.test(third) && !/(ink|terminal)…$/u.test(third)]).toEqual([surface, columns, false])
+      expect([surface, columns, third]).toEqual([surface, columns, expect.stringMatching(/^Searching( the web for [^…]+| for .+)$/u)])
+      await ui.unmount()
+    }
+  }
+  release()
+  await searching
+})
+
+test('words a person wrote (a described command, a todo, a subagent\'s task, a raw command) are cut only after a whole word, on both surfaces at every width', { timeoutMs: 120_000 }, async ($, on) => {
+  const { clock, hold, release } = world(on)
+  await start($)
+  await prompt($, 'test it')
+  // `label` is the line's own lead-in ("Next up: "), never cut; `alone`, its shorter forms.
+  const sweep = async (said: string, alone: RegExp, label = '', isWorking = true) => {
+    for (const surface of SURFACES) {
+      for (let columns = 34; columns <= 80; columns++) {
+        const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking })
+        if (surface === 'terminal') await ui.advance(1_500)
+        // On the terminal the module hands Ink the whole text in a box as wide as what should show,
+        // and Ink cuts it there with its ellipsis: read it as Ink draws it. The todo's tally aside.
+        const seen = await read()
+        const line = seen.lines[2]
+        const box = line === undefined ? undefined : kids(kids(line.node)[0]).find(part => part.type === 'Box' && part.props?.flexShrink === 1)
+        const width = Number(box?.props?.width ?? Number.POSITIVE_INFINITY)
+        const squeeze = line?.squeeze ?? ''
+        const drawn = squeeze !== '' && cells(squeeze) > width ? (seen.words[2] ?? '').replace(squeeze, `${cut(squeeze, width - 1)}…`) : (seen.words[2] ?? '')
+        const third = drawn.replace(/\s+\d+(\/| of )\d+ done$/u, '').trim()
+        const shown = third.replace(/…$/u, '')
+        // Cut after a whole word, and only while seven characters show: "Regenerate…", never "Regen…".
+        const whole = `${label}${said}`
+        const isWhole = third === whole || alone.test(third) || (third.endsWith('…') && whole.startsWith(shown) && /^[,;:.]?\s/u.test(whole.slice(shown.length)) && [...shown].length - label.length >= 7)
+        expect([surface, columns, third, isWhole]).toEqual([surface, columns, third, true])
+        await ui.unmount()
+      }
+    }
+  }
+  hold('Bash')
+  const running = $.tool.call({ tool: 'Bash', command: 'npm test', description: 'Regenerate the test fixtures twice' }).catch(() => undefined)
+  await clock.settle()
+  await clock.advance(1_500)
+  await sweep('Regenerate the test fixtures twice', /^Running$/u)
+  release()
+  await running
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Draw the beach', description: '', activeForm: 'Drawing the whole beach, shell and all' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'in_progress' })
+  await clock.advance(1_500)
+  await sweep('Drawing the whole beach, shell and all', /^Thinking$/u)
+  // Queued next, beside its label: "Next up: Regenerate the test…", two whole words at least, never
+  // "Next up: Regenerate…"; narrower, what the line says with nothing queued.
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Regenerate the test fixtures', description: '', activeForm: 'Regenerating the fixtures' })
+  await $.turn.complete({ answer: 'Done.', durationMs: 41_000, turnId: 't1', ...ANSWERED } as TurnCompleteInput)
+  await clock.advance(10_000)
+  await sweep('Regenerate the test fixtures', /^Done\b/u, 'Next up: ', false)
+  // A subagent's task, and a raw command, are words too: "Delegating: Explore the hooks…", never
+  // "Delegating Explore the hoo…"; "Running git log…", never "Running git log --o…".
+  await prompt($, 'look around')
+  hold('Agent')
+  const delegating = $.tool.call({ tool: 'Agent', description: 'Explore the hooks folder', prompt: 'x', subagent_type: 'Explore' }).catch(() => undefined)
+  await clock.settle()
+  await clock.advance(1_500)
+  await sweep('Explore the hooks folder', /^Delegating$/u, 'Delegating: ')
+  release()
+  await delegating
+  hold('Bash')
+  const raw = $.tool.call({ tool: 'Bash', command: 'git log --oneline --graph --decorate' }).catch(() => undefined)
+  await clock.settle()
+  await clock.advance(1_500)
+  await sweep('git log --oneline --graph --decorate', /^Running$/u, 'Running ')
+  release()
+  await raw
+  // A raw command that failed: its hiccup keeps whole words too ("Hiccup · npm test…"); narrower,
+  // what failed in a word ("Hiccup · A command", "Hiccup · A tool"), then "Hiccup".
+  await $.tool.call({ tool: 'Bash', command: 'npm test -- fail --reporter=verbose' })
+  await clock.advance(1_500)
+  await sweep('npm test -- fail --reporter=verbose', /^Hiccup(?: · A (?:command|tool))?$/u, 'Hiccup · ')
+})
+
+test('a todo beside its tally is never cut: the tally goes first, and a narrower band never shows more of the todo than a wider one, on both surfaces', { timeoutMs: 240_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  await prompt($, 'test it')
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Draw the beach', description: '' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Draw the shell', description: '' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Write the tests for the splash ladder', description: '', activeForm: 'Writing the tests for the splash ladder' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '2', status: 'completed' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '3', status: 'in_progress' })
+  await clock.advance(3_000)
+  const tally = /\s+\d+(?:\/| of )\d+ done$/u
+  // `label` is the line's own lead-in ("Next up: "); `alone`, what the line says with no room for the todo.
+  const sweep = async (todo: string, alone: RegExp, label: string, isWorking: boolean) => {
+    for (const surface of SURFACES) {
+      let fewer = Number.POSITIVE_INFINITY
+      const seen: string[] = []
+      for (let columns = 80; columns >= 34; columns--) {
+        const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking })
+        if (surface === 'terminal') await ui.advance(1_500)
+        const third = await drawnThird(read)
+        const words = third.replace(tally, '')
+        // Beside a tally the todo is whole ("Writing… 2 of 3 done" read as an order cut short, and the
+        // tally won over the words it counts).
+        if (tally.test(third)) expect([surface, columns, third]).toEqual([surface, columns, `${label}${todo}${third.slice(words.length)}`])
+        // How much of the todo shows: never more at a narrower band.
+        const shown = alone.test(words) ? 0 : [...words.slice(label.length).replace(/…$/u, '')].length
+        expect([surface, columns, third, words.startsWith(label) || alone.test(words)]).toEqual([surface, columns, third, true])
+        expect([surface, columns, third, shown <= fewer]).toEqual([surface, columns, third, true])
+        fewer = shown
+        seen.push(third)
+        await ui.unmount()
+      }
+      // Wide, the whole todo and its tally; narrower, the todo alone, cut after a whole word.
+      expect([surface, seen.some(third => tally.test(third)), seen.some(third => /\s\S+…$/u.test(third))]).toEqual([surface, true, true])
+    }
+  }
+  await sweep('Writing the tests for the splash ladder', /^Thinking$/u, '', true)
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '3', status: 'pending' })
+  await $.turn.complete({ answer: 'Done.', durationMs: 41_000, turnId: 't1', ...ANSWERED } as TurnCompleteInput)
+  await clock.advance(10_000)
+  await sweep('Write the tests for the splash ladder', /^(?:Done|Ready)\b/u, 'Next up: ', false)
+})
+
+// Line 3 as it is drawn: on the terminal the module hands Ink the whole text in a box as wide as
+// what should show, and Ink cuts it there with its ellipsis.
+async function drawnThird(read: () => Promise<Read>): Promise<string> {
+  const seen = await read()
+  const line = seen.lines[2]
+  const box = line === undefined ? undefined : kids(kids(line.node)[0]).find(part => part.type === 'Box' && part.props?.flexShrink === 1)
+  const width = Number(box?.props?.width ?? Number.POSITIVE_INFINITY)
+  const squeeze = line?.squeeze ?? ''
+
+  return (squeeze !== '' && cells(squeeze) > width ? (seen.words[2] ?? '').replace(squeeze, `${cut(squeeze, width - 1)}…`) : (seen.words[2] ?? '')).trim()
+}
+
+test('a raw command with no space early on shows a part of itself on both surfaces, cut after a part of its path, never inside a word nor on a shell joint', { timeoutMs: 120_000 }, async ($, on) => {
+  const { clock, hold, release } = world(on)
+  await start($)
+  await prompt($, 'test it')
+  for (const command of ['node_modules/.bin/vitest-run-everything-without-spaces --watch', 'cd /Users/robin/projects/agent-plugins && npm test']) {
+    hold('Bash')
+    const running = $.tool.call({ tool: 'Bash', command }).catch(() => undefined)
+    await clock.settle()
+    await clock.advance(1_500)
+    for (const surface of SURFACES) {
+      for (const columns of [34, 40, 46, 52, 64, 80, 100, 140]) {
+        const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking: true })
+        if (surface === 'terminal') await ui.advance(1_500)
+        const third = await drawnThird(read)
+        // Something of it from 52 columns, where the panel has room: never the bare verb, even on
+        // the desktop, whose panel never had room for the whole first word.
+        if (columns >= 52) expect([surface, columns, third]).toEqual([surface, columns, expect.stringMatching(/^Running ./u)])
+        if (third.endsWith('…')) {
+          const shown = third.replace(/^Running /u, '').replace(/…$/u, '')
+          const isPart = command.startsWith(shown) && /^[\s/._-]/u.test(command.slice(shown.length)) && [...shown].length >= 7 && !/(&&|\|)$/u.test(shown)
+          expect([surface, columns, third, isPart]).toEqual([surface, columns, third, true])
+        }
+        await ui.unmount()
+      }
+    }
+    release()
+    await running
+  }
+})
+
+test('a cut of words a person wrote never ends on a little word ("why", "the", "at"), on either surface', { timeoutMs: 120_000 }, async ($, on) => {
+  const { clock, hold, release } = world(on)
+  await start($)
+  await prompt($, 'test it')
+  const said = 'Investigate why the desktop band reloads twice at startup'
+  hold('Bash')
+  const running = $.tool.call({ tool: 'Bash', command: 'npm test', description: said }).catch(() => undefined)
+  await clock.settle()
+  await clock.advance(1_500)
+  const little = /\s(?:a|an|and|at|by|for|from|in|into|of|on|or|the|to|why|with)$/iu
+  const seen = new Set<string>()
+  for (const surface of SURFACES) {
+    for (let columns = 34; columns <= 110; columns += 2) {
+      const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking: true })
+      if (surface === 'terminal') await ui.advance(1_500)
+      const third = await drawnThird(read)
+      seen.add(third)
+      if (third.endsWith('…')) expect([surface, columns, third, little.test(third.replace(/…$/u, ''))]).toEqual([surface, columns, third, false])
+      await ui.unmount()
+    }
+  }
+  expect([...seen]).toEqual(expect.arrayContaining(['Investigate…', 'Investigate why the desktop band reloads twice…']))
+  release()
+  await running
+})
+
+// The finer cuts, across every width, as on the beach: a task may stop after its first real word
+// ("Survey…", never the stub "Survey the…"); a name never stops inside its extension ("register.t…");
+// a command never stops on a one-letter flag whose argument is gone ("--noEmit -p…").
+const FINE_CUTS = [
+  { call: { tool: 'Agent', prompt: 'look', subagent_type: 'Explore', description: 'Survey the hooks folder' }, never: /Survey the…$/u, seen: 'Delegating: Survey…' },
+  // Nor a letter or two short of its stem ("registe…" reads as a typo).
+  { call: { tool: 'Read', file_path: '/work/hooks/register.tsx' }, never: /(?:register\.[a-z]{0,2}|registe|regist)…$/u, seen: 'Reading register…' },
+  // Too short before its dot to keep seven characters there: whole, or not at all.
+  { call: { tool: 'Read', file_path: '/work/public/site.webmanifest' }, never: /site(?:\.[a-z]*)?…$/u, seen: 'Reading site.webmanifest' },
+  { call: { tool: 'WebFetch', url: 'https://docs.anthropic.com/en/docs', prompt: 'read it' }, never: /docs\.anthropic\.[a-z]{0,2}…$/u, seen: 'Reading docs.anthropic…' },
+  { call: { tool: 'NotebookRead', notebook_path: '/work/notes/analysis.ipynb' }, never: /(?:analysis\.[a-z]{0,4}|analysi|analys)…$/u, seen: 'Reading analysis…' },
+  { call: { tool: 'Grep', pattern: 'useEffect' }, never: /useEff?e?…$/u, seen: 'Searching for useEffect' },
+  // A test's double extension is one: never half of it ("…name.test…").
+  { call: { tool: 'Read', file_path: '/work/hooks/an-extraordinarily-long-component-name.test.tsx' }, never: /\.(?:t|te|tes|test)(?:\.[a-z]*)?…$/u, seen: 'Reading an-extraordinarily-long-component-name…' },
+  // A described command never stops on a little word ("Run the…"): whole, or a shorter form.
+  { call: { tool: 'Bash', command: 'npm test', description: 'Run the tests' }, never: /Run the…$/u, seen: 'Run the tests' },
+  { call: { tool: 'Bash', command: 'npx tsc --noEmit -p tsconfig.build.json' }, never: /\s-\p{L}…$/u, seen: 'Running npx tsc --noEmit…' },
+] as const
+
+test('the finer cuts: a task may stop after its first real word, a name never inside its extension, a command never on a flag that lost its argument, on either surface', { timeoutMs: 240_000 }, async ($, on) => {
+  const { clock, hold, release } = world(on)
+  await start($)
+  await prompt($, 'test it')
+  for (const { call, never, seen } of FINE_CUTS) {
+    hold(call.tool)
+    const running = $.tool.call(call as never).catch(() => undefined)
+    await clock.settle()
+    await clock.advance(1_500)
+    for (const surface of SURFACES) {
+      const thirds = new Set<string>()
+      for (let columns = 34; columns <= 140; columns += 2) {
+        const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking: true })
+        if (surface === 'terminal') await ui.advance(1_500)
+        const third = await drawnThird(read)
+        thirds.add(third)
+        expect([call.tool, surface, columns, third, never.test(third)]).toEqual([call.tool, surface, columns, third, false])
+        await ui.unmount()
+      }
+      expect([call.tool, surface, thirds.has(seen)]).toEqual([call.tool, surface, true])
+    }
+    release()
+    await running
+  }
 })
 
 test('bold never sits right beside dim words, on either surface', async ($, on) => {
   world(on, { branch: 'claude/first-mod' })
-  // A full context (a bold amber figure) and a 5h limit near its end (another).
+  // A full context (a bold clay figure) and a 5h limit near its end (another).
   await start($, 100, 123.45, 100)
 
   for (const surface of SURFACES) {
@@ -1238,7 +1908,7 @@ test('bold never sits right beside dim words, on either surface', async ($, on) 
   }
 })
 
-test('calm keeps a flinch to one pose: eyes shut the whole time, then open', async ($, on) => {
+test('calm keeps a flinch to one pose: eyes shut the whole time, then open', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($)
   expect((await run($, 'band', 'still')).text).toContain('Band: still')
@@ -1246,8 +1916,9 @@ test('calm keeps a flinch to one pose: eyes shut the whole time, then open', asy
   await prompt($, 'run it')
   await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
 
-  const heads: string[] = []
-  for (let i = 0; i < 12; i++) {
+  // The hiccup goes up at once, over its own tool, as the desktop's does; six frames with his eyes shut.
+  const heads: string[] = [(await read()).clawd[0] ?? '']
+  for (let i = 0; i < 11; i++) {
     await ui.advance(250)
     heads.push((await read()).clawd[0] ?? '')
   }
@@ -1256,7 +1927,38 @@ test('calm keeps a flinch to one pose: eyes shut the whole time, then open', asy
   await ui.unmount()
 })
 
-test('he waves hello when the band first appears in a session, and not each time it comes back', async ($, on) => {
+test('still, the desktop draws no hello, and its alt text says none: he rests', async ($, on) => {
+  world(on)
+  await start($)
+  await run($, 'band', 'still')
+  const { ui, read } = await band($, 'desktop')
+  const svg = svgOf((await read()).tree)
+  expect([svg?.alt, svg?.source.includes('@keyframes hh-qw-')]).toEqual(['Clawd rests.', false])
+  await ui.unmount()
+})
+
+// Still, he sits without a move, so the words never say he "taps along".
+test('still, at work, the alt text says he sits quietly, never that he taps along; a bead of sweat is said as it shows', async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  await run($, 'band', 'still')
+  const busy = await band($, 'desktop', { ...BAND, isWorking: true })
+  const now = async () => svgOf((await busy.read()).tree)
+  await prompt($, 'more')
+  await $.tool.call({ tool: 'Edit', file_path: '/work/b.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(3_000)
+  expect((await now())?.alt).toBe('Clawd sits quietly while Claude works.')
+  await $.session.measure(measured(87, 2.2))
+  await clock.advance(600)
+  expect(await now()).toEqual(expect.objectContaining({ alt: 'Clawd sits quietly while Claude works, a bead of sweat on his brow.', source: expect.stringContaining('class="hh-sw"') }))
+  // Lively again, he taps along.
+  await run($, 'band', 'lively')
+  await clock.advance(600)
+  expect((await now())?.alt).toBe('Clawd taps along, a bead of sweat on his brow.')
+  await busy.ui.unmount()
+})
+
+test('he waves hello when the band first appears in a session, and not each time it comes back', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($)
   const raised = async (surface: Surface) => {
@@ -1283,6 +1985,36 @@ test('he waves hello when the band first appears in a session, and not each time
   expect(await raised('desktop')).toBe(false)
 })
 
+// The hello as a band that comes and goes shows it: whether his claw is up, tick by tick.
+async function claws($: Engine, clock: ReturnType<typeof mock.clock>, ticks: number): Promise<boolean[]> {
+  const { ui, read } = await band($, 'terminal')
+  const up: boolean[] = []
+  for (let i = 0; i < ticks; i++) {
+    up.push((await read()).clawd[0]?.endsWith('▄') ?? false)
+    await ui.advance(250)
+    await clock.advance(250)
+  }
+  await ui.unmount()
+
+  return up
+}
+
+test('terminal: a band back mid-hello carries the wave on from where it was, never from the start', async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  // Up, down, up again, as one hello: half a second of it, a dialog, then the rest.
+  const first = await claws($, clock, 2)
+  const rest = await claws($, clock, 10)
+  expect([...first, ...rest]).toEqual([true, true, true, false, false, true, true, true, false, false, false, false])
+})
+
+test('terminal: a band back late in the hello waves no more: a lone claw going up would not read as hello', async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  expect(await claws($, clock, 6)).toEqual([true, true, true, false, false, true])
+  expect(await claws($, clock, 8)).toEqual(new Array(8).fill(false))
+})
+
 test('after a while idle Clawd naps, eyes closed, and the words stay as they were', async ($, on) => {
   const { clock } = world(on)
   await start($)
@@ -1296,13 +2028,13 @@ test('after a while idle Clawd naps, eyes closed, and the words stay as they wer
     if (surface === 'terminal') {
       expect(clawd[0]).toBe(HEAD.closed)
     } else {
-      expect(svgOf(tree)?.alt).toBe('Clawd, napping')
+      expect(svgOf(tree)?.alt).toBe('Clawd naps.')
     }
     await ui.unmount()
   }
 })
 
-test('on the terminal he dozes off by himself while the band stays up, and a z drifts up', async ($, on) => {
+test('on the terminal he dozes off by himself while the band stays up, and a z drifts up', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($)
   const { ui, read } = await band($, 'terminal')
@@ -1337,7 +2069,7 @@ test('a fresh session left alone dozes off too, on the terminal as on the deskto
   expect(svgOf((await desk.read()).tree)?.source).toMatch(/\.hh-el-c\{opacity:0;animation:[^}]*hh-mn-el-c 1s step-end 180s 1 forwards\}/)
   // Three minutes on, a redraw comes by itself and draws him asleep.
   await clock.advance(3 * 60_000 + 2000)
-  expect(svgOf((await desk.read()).tree)?.alt).toBe('Clawd, napping')
+  expect(svgOf((await desk.read()).tree)?.alt).toBe('Clawd naps.')
   await desk.ui.unmount()
 })
 
@@ -1346,14 +2078,19 @@ test('clicking Clawd on the terminal spins him round, then he winks with a pixel
   await start($)
 
   const term = await band($, 'terminal')
-  await term.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'band' })
+  await term.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'hearth' })
+  // The click's frame goes up at once and holds through the next tick, the clock with it, so a
+  // click just before a tick never makes a fifth frame in that second, and no frame is lost.
+  const clicked = (await term.read()).clawd
+  await term.ui.advance(250)
+  expect((await term.read()).clawd).toEqual(clicked)
   // Claude Code's own 13 turning frames, a tick each; a second click mid-spin changes nothing.
   const turning: string[][] = []
   for (let i = 0; i < SPIN.length; i++) {
     const now = await term.read()
     turning.push(now.clawd)
     expect(now.marks).toEqual(['', '', ''])
-    if (i === 3) await term.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'band' })
+    if (i === 3) await term.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'hearth' })
     await term.ui.advance(250)
   }
   expect(turning).toEqual(SPIN.map(([head, , , middle, , , feet]) => [head.trimEnd(), middle.trimEnd(), feet.trimEnd()]))
@@ -1370,18 +2107,18 @@ test('clicking Clawd on the terminal spins him round, then he winks with a pixel
   await term.ui.unmount()
 })
 
-test('calm, or in Apple’s Terminal, a click is the wink and the heart alone', async ($, on) => {
+test('calm, or in Apple’s Terminal, a click is the wink and the heart alone', { timeoutMs: 30_000 }, async ($, on) => {
   world(on, { env: { TERM_PROGRAM: 'Apple_Terminal' } })
   await start($)
 
   const apple = await band($, 'terminal')
-  await apple.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'band' })
+  await apple.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'hearth' })
   expect((await apple.read()).marks).toEqual(['', '▗█▟▙', ' ▀▛▘'])
   await apple.ui.unmount()
 
   await run($, 'band', 'still')
   const calm = await band($, 'terminal')
-  await calm.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'band' })
+  await calm.ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'hearth' })
   const marks = new Set<string>()
   for (let i = 0; i < 12; i++) {
     marks.add((await calm.read()).marks.join('|'))
@@ -1412,11 +2149,34 @@ test('on the desktop a pet needs the pointer to rest on him a moment, and every 
   sources.push(svgOf((await still.read()).tree)?.source ?? '')
   await still.ui.unmount()
 
-  for (const source of sources) {
+  for (const [i, source] of sources.entries()) {
     // The petted Clawd shows only once the pointer has rested 150 ms; leaving takes him back at once.
     expect(source).toContain('.hh-pet{opacity:0;transition:opacity 0s}')
     expect(source).toContain('svg:hover .hh-pet{opacity:1;transition:opacity 0s 0.15s}')
-    expect(source).toContain('svg:hover .hh-mood{opacity:0;transition:opacity 0s 0.15s}')
+    if (i < 2) {
+      expect(source).toContain('svg:hover .hh-mood{opacity:0;transition:opacity 0s 0.15s}')
+      expect(source).toContain('class="hh-pop"')
+    } else {
+      // Asleep (5 minutes on, lively, then still) he is not woken, as on the beach: his eyes stay
+      // shut and the z keeps drifting; only a heart comes, over his head.
+      expect(source).not.toContain('svg:hover .hh-mood')
+      expect(source).not.toContain('class="hh-pop"')
+      expect(source).toContain('class="hh-z"')
+      expect(source).toContain('class="hh-ht"')
+      // The heart pops up over his head (his body starts at y 0), and never covers the z, the
+      // z's pen included.
+      const box = (group: string) => {
+        const d = new RegExp(`class="${group}"[^>]*><path d="([^"]+)"`).exec(source)?.[1] ?? ''
+        const at = [...d.matchAll(/-?[\d.]+/g)].map(found => Number(found[0]))
+        const xs = at.filter((_, k) => k % 2 === 0)
+        const ys = at.filter((_, k) => k % 2 === 1)
+        return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) }
+      }
+      const [heart, z] = [box('hh-ht'), box('hh-z')]
+      const pen = 0.25
+      const isApart = heart.right <= z.left - pen || heart.left >= z.right + pen || heart.bottom <= z.top - pen || heart.top >= z.bottom + pen
+      expect([i, heart.bottom <= 0, isApart]).toEqual([i, true, true])
+    }
     const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
     for (const [, names] of source.matchAll(/class="([^"]+)"/g)) {
       for (const name of (names ?? '').split(' ')) expect(name.startsWith('hh-')).toBe(true)
@@ -1430,12 +2190,13 @@ test('on the desktop a pet needs the pointer to rest on him a moment, and every 
   // Lively, the heart rises and he hops once the pointer has rested; calm, both keep still.
   // The heart rises twice, like his hop: a pointer left resting on him does not release hearts forever.
   expect(sources[0]).toMatch(/svg:hover \.hh-ht\{animation:hh-ht 2s ease-out 0\.15s 2 both\}/)
+  expect(sources[2]).toMatch(/svg:hover \.hh-ht\{animation:hh-hn 2s ease-out 0\.15s 2 both\}/)
   for (const source of sources) expect(source).not.toMatch(/svg:hover[^{]*\{[^}]*infinite/)
   expect(sources[0]).toMatch(/svg:hover \.hh-pop\{animation:hh-pop \.9s ease-out 0\.15s 2\}/)
   expect(sources[3]).toContain('svg:hover .hh-pop,svg:hover .hh-ht{animation:none}')
 })
 
-test('the terminal stays still between moments: at most four frames a second, none while idle', async ($, on) => {
+test('the terminal stays still between moments: at most four frames a second, none while idle', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($)
   await turn($)
@@ -1475,7 +2236,7 @@ test('eyes open is home: at work he looks sideways under 30% of the time, glanci
   let peek: (() => Promise<Read>) | undefined
   let peekUi: { advance: (ms: number) => Promise<unknown> } | undefined
   const seen: Record<string, Read[]> = {}
-  world(on, {
+  const { clock } = world(on, {
     onCall: async tool => {
       const frames: Read[] = []
       for (let i = 0; i < 240; i++) {
@@ -1500,6 +2261,9 @@ test('eyes open is home: at work he looks sideways under 30% of the time, glanci
   await thinking.ui.unmount()
 
   for (const [, call] of kinds) {
+    // The last tool's line has had its second and its pause, and "Thinking it over" its own second:
+    // this one has the line from its start.
+    await clock.advance(3_000)
     const { ui, read } = await band($, 'terminal', { ...BAND, isWorking: true })
     peek = read
     peekUi = ui
@@ -1528,9 +2292,11 @@ test('eyes open is home: at work he looks sideways under 30% of the time, glanci
       }
     })
     if (kind === 'Read' || kind === 'Grep' || kind === 'WebFetch') {
-      // A read starts (shown on the next tick): he looks over at the words for two seconds, then back at you...
+      // A read starts (shown on the next tick, so the beat he is in has its tick): he looks over at
+      // the words for two seconds, then back at you...
+      expect(heads[0]).toBe(HEAD.open)
       expect(heads.slice(1, 9).every(head => head.includes('█▟███▟'))).toBe(true)
-      expect(heads[10]).toBe(HEAD.open)
+      expect(heads[9]).toBe(HEAD.open)
       // ...and again every ten to sixteen seconds, two seconds each time.
       const looks = runs(heads.map(head => head.includes('█▟███▟'))).filter(([isLook]) => isLook)
       expect(looks.length).toBeGreaterThanOrEqual(4)
@@ -1591,6 +2357,7 @@ test('the terminal module calls setState only when the frame it would draw has c
     todos: null,
     cheers: 0,
     oops: 0,
+    shownForMs: null,
   }
   const draw = Band as unknown as (props: BandProps, surface: unknown) => unknown
   const tick = () => ticks.forEach(fn => fn())
@@ -1602,6 +2369,139 @@ test('the terminal module calls setState only when the frame it would draw has c
   draw({ ...props, cost: '$0.33', percent: 43 }, surface)
   for (let i = 0; i < 8; i++) tick()
   expect(sets).toBe(1)
+})
+
+test('a cheer never ends on a blink: his eyes stay open for the 750 ms after his arms come down', () => {
+  const draw = Band as unknown as (props: BandProps, surface: unknown) => unknown
+  const props: BandProps = {
+    isStill: false,
+    isAppleTerminal: false,
+    isGreeting: false,
+    columns: 100,
+    isWorking: false,
+    isHigh: false,
+    model: 'Opus 5.5',
+    project: 'agent-plugins',
+    branch: 'main',
+    dirty: 2,
+    percent: 42,
+    cost: '$0.31',
+    limit: null,
+    idleMs: 10_000,
+    activity: null,
+    slip: null,
+    lastSlip: null,
+    slipAgoMs: null,
+    flinchAgoMs: null,
+    lastTurn: { seconds: 41, tools: 2, files: 1, ending: 'answer' },
+    todos: null,
+    cheers: 0,
+    oops: 0,
+    shownForMs: null,
+  }
+  // The cheer lands at every point of two stretches of his blink rhythm (one blink in each 23 ticks, placed by the dice).
+  for (let offset = 0; offset < 46; offset++) {
+    let state: { drawn: string } | undefined
+    const ticks: Array<() => void> = []
+    const surface = {
+      elements: { Box: 'Box', Text: 'Text' },
+      get state() {
+        return state
+      },
+      setState: (next: { drawn: string }) => {
+        state = next
+      },
+      columns: 100,
+      rows: 3,
+      every: (_ms: number, fn: () => void) => {
+        ticks.push(fn)
+        return () => undefined
+      },
+      onPointer: () => () => undefined,
+      onKey: () => () => undefined,
+      post: () => undefined,
+    }
+    const tick = () => ticks.forEach(fn => fn())
+    const shut = () => JSON.stringify((JSON.parse(state?.drawn ?? '{}') as { sprite?: unknown[] }).sprite?.[0] ?? '').includes('▂')
+
+    draw(props, surface)
+    for (let i = 0; i < offset; i++) tick()
+    draw({ ...props, cheers: 1, idleMs: 0, lastTurn: { seconds: 9, tools: 1, files: 1, ending: 'answer' } }, surface)
+    const eyes: boolean[] = []
+    for (let i = 0; i < 16 + 3; i++) {
+      tick()
+      eyes.push(shut())
+    }
+    // Ticks 16 to 18 after the cheer began: his arms are down and his eyes open.
+    expect([offset, eyes.slice(15, 18)]).toEqual([offset, [false, false, false]])
+  }
+})
+
+test('idle, he blinks every 4.5 to 7 seconds, never on a fixed beat', () => {
+  const draw = Band as unknown as (props: BandProps, surface: unknown) => unknown
+  const props: BandProps = {
+    isStill: false,
+    isAppleTerminal: false,
+    isGreeting: false,
+    columns: 100,
+    isWorking: false,
+    isHigh: false,
+    model: 'Opus 5.5',
+    project: 'agent-plugins',
+    branch: 'main',
+    dirty: 2,
+    percent: 42,
+    cost: '$0.31',
+    limit: null,
+    idleMs: 10_000,
+    activity: null,
+    slip: null,
+    lastSlip: null,
+    slipAgoMs: null,
+    flinchAgoMs: null,
+    lastTurn: { seconds: 41, tools: 2, files: 1, ending: 'answer' },
+    todos: null,
+    cheers: 0,
+    oops: 0,
+    shownForMs: null,
+  }
+  let state: { drawn: string } | undefined
+  const ticks: Array<() => void> = []
+  const surface = {
+    elements: { Box: 'Box', Text: 'Text' },
+    get state() {
+      return state
+    },
+    setState: (next: { drawn: string }) => {
+      state = next
+    },
+    columns: 100,
+    rows: 3,
+    every: (_ms: number, fn: () => void) => {
+      ticks.push(fn)
+      return () => undefined
+    },
+    onPointer: () => () => undefined,
+    onKey: () => () => undefined,
+    post: () => undefined,
+  }
+  const shut = () => JSON.stringify((JSON.parse(state?.drawn ?? '{}') as { sprite?: unknown[] }).sprite?.[0] ?? '').includes('▂')
+  draw(props, surface)
+  // Two minutes idle, well short of a nap.
+  const eyes: boolean[] = []
+  for (let i = 0; i < 480; i++) {
+    ticks.forEach(fn => fn())
+    eyes.push(shut())
+  }
+  const blinks = eyes.flatMap((isShut, i) => (isShut && !eyes[i - 1] ? [i] : []))
+  const gaps = blinks.slice(1).map((at, i) => at - (blinks[i] ?? 0))
+  expect(blinks.length).toBeGreaterThanOrEqual(15)
+  // One tick each, 4.5 s apart at the least; a gap past 7 s is a blink kept clear of a glance.
+  expect(eyes.filter(Boolean).length).toBe(blinks.length)
+  for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(18)
+  expect(gaps.filter(gap => gap <= 28).length).toBeGreaterThanOrEqual(gaps.length - 3)
+  // Not clockwork: at least four different gaps.
+  expect(new Set(gaps).size).toBeGreaterThanOrEqual(4)
 })
 
 test('lively too, the terminal module never draws a frame that matches the one on screen', () => {
@@ -1665,7 +2565,7 @@ test('lively too, the terminal module never draws a frame that matches the one o
     dirty: 2,
     percent: 86,
     cost: '$0.31',
-    limit: { label: '5h', percent: 91, resetsInMs: 130 * 60_000 },
+    limit: { label: '5h', percent: 91, resetsAt: '4:30pm' },
     idleMs: 1000,
     activity: null,
     slip: null,
@@ -1676,8 +2576,9 @@ test('lively too, the terminal module never draws a frame that matches the one o
     todos: null,
     cheers: 0,
     oops: 0,
+    shownForMs: null,
   }
-  const work = (kind: 'edit' | 'run' | 'read', verb: string, target: string): BandProps => ({ ...idle, isGreeting: false, isWorking: true, activity: { kind, verb, target } })
+  const work = (kind: 'edit' | 'run' | 'read', verb: string, target: string): BandProps => ({ ...idle, isGreeting: false, isWorking: true, activity: { kind, verb, target, what: target } })
   const cases: Array<[BandProps, number?]> = [
     [idle],
     [work('edit', 'Editing', 'a.ts')],
@@ -1695,7 +2596,7 @@ test('lively too, the terminal module never draws a frame that matches the one o
   }
 })
 
-test('the desktop hands the page the same Clawd while the moment is the same, whatever the tools', async ($, on) => {
+test('the desktop hands the page the same Clawd while the moment is the same, whatever the tools', { timeoutMs: 30_000 }, async ($, on) => {
   let peek: (() => Promise<Read>) | undefined
   const during = new Set<string>()
   const { clock } = world(on, {
@@ -1720,7 +2621,7 @@ test('the desktop hands the page the same Clawd while the moment is the same, wh
   await clock.advance(2000)
   expect([...during]).toEqual([working])
   expect(svgOf((await busy.read()).tree)?.source).toBe(working)
-  expect(svgOf((await busy.read()).tree)?.alt).toBe('Clawd, at work')
+  expect(svgOf((await busy.read()).tree)?.alt).toBe('Clawd taps along as Claude works.')
   peek = undefined
   await busy.ui.unmount()
 
@@ -1740,30 +2641,79 @@ test('the desktop hands the page the same Clawd while the moment is the same, wh
   await ui.unmount()
 })
 
-test('/band still keeps Clawd to one pose per moment, and /band hearth lets him move again', async ($, on) => {
+test('desktop: a reading past warnAt just before the turn lands draws one new frame, the cheer, never a bead first', { timeoutMs: 30_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  const { ui, read } = await band($, 'desktop', { ...BAND, isWorking: true })
+  const source = async () => svgOf((await read()).tree)?.source ?? ''
+  await prompt($, 'go')
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  await clock.advance(3_000)
+  const working = await source()
+  const seen = [working]
+  // The context crosses warnAt (42% to 86%) a tenth of a second before the answer lands.
+  await $.session.measure(measured(86, 1.94))
+  await clock.advance(100)
+  seen.push(await source())
+  expect((await read()).words[1]).toContain('86%')
+  await $.turn.complete({ answer: 'Done.', durationMs: 3_200, isAborted: false, turnId: 't1', reason: 'answer' })
+  await ui.redraw(BAND)
+  for (let i = 0; i < 30; i++) {
+    seen.push(await source())
+    await clock.advance(50)
+  }
+  expect(new Set(seen).size).toBe(2)
+  expect(seen[1]).toBe(working)
+  expect(svgOf((await read()).tree)?.alt).toBe('Clawd cheers for a finished turn.')
+  await ui.unmount()
+
+  // A turn that goes on: the bead comes a moment after the reading, in a frame of its own.
+  const busy = await band($, 'desktop', { ...BAND, isWorking: true })
+  const now = async () => svgOf((await busy.read()).tree)
+  await $.session.measure(measured(40, 2.1))
+  await prompt($, 'more')
+  await $.tool.call({ tool: 'Read', file_path: '/work/b.ts' })
+  await clock.advance(3_000)
+  const calm = await now()
+  expect(calm?.alt).toBe('Clawd taps along as Claude works.')
+  await $.session.measure(measured(87, 2.2))
+  await clock.advance(100)
+  expect((await now())?.source).toBe(calm?.source)
+  await clock.advance(400)
+  expect(await now()).toEqual(expect.objectContaining({ alt: 'Clawd taps along, a bead of sweat on his brow.', source: expect.stringContaining('class="hh-sw"') }))
+  await busy.ui.unmount()
+})
+
+test('/band still keeps Clawd to one pose per moment, and /band lively lets him move again', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($)
-
-  expect((await run($, 'band')).text).toContain('Band: still')
-  for (const surface of SURFACES) {
-    const { ui, read } = await band($, surface, { ...BAND, isWorking: true })
-    if (surface === 'terminal') {
-      const frames = new Set<string>()
-      for (let i = 0; i < 16; i++) {
-        frames.add(JSON.stringify((await read()).tree))
-        await ui.advance(250)
+  const moves = async (isMoving: boolean) => {
+    for (const surface of SURFACES) {
+      const { ui, read } = await band($, surface, { ...BAND, isWorking: true })
+      if (surface === 'terminal') {
+        // Thinking, a lively Clawd blinks or glances every few seconds: 25 s shows it.
+        const frames = new Set<string>()
+        for (let i = 0; i < (isMoving ? 100 : 16); i++) {
+          frames.add(JSON.stringify((await read()).tree))
+          await ui.advance(250)
+        }
+        expect(frames.size > 1).toBe(isMoving)
+      } else {
+        const source = svgOf((await read()).tree)?.source ?? ''
+        expect(source.includes('infinite')).toBe(isMoving)
+        expect(source.includes('@keyframes hh-ml-')).toBe(isMoving)
       }
-      expect(frames.size).toBe(1)
-    } else {
-      const source = svgOf((await read()).tree)?.source ?? ''
-      expect(source).not.toContain('infinite')
-      expect(source).not.toContain('@keyframes hh-ml-')
+      await ui.unmount()
     }
-    await ui.unmount()
   }
 
+  expect((await run($, 'band', 'still')).text).toContain('Band: still')
+  await moves(false)
+
   expect((await run($, 'band', 'hearth')).text).toContain('Band: hearth')
-  expect((await run($, 'band', 'sparkly')).text).toContain('No band style "sparkly"')
+  expect((await run($, 'band', 'sparkly')).text).toContain('Band: "sparkly" isn\'t a look or a motion.')
+  expect((await run($, 'band', 'lively')).text).toContain('Band: lively')
+  await moves(true)
 })
 
 test('reduced motion holds Clawd still, and he still cheers, flinches and naps (one pose each)', async ($, on) => {
@@ -1790,7 +2740,7 @@ test('reduced motion holds Clawd still, and he still cheers, flinches and naps (
   await full.ui.unmount()
 })
 
-test('a change to reduced motion takes hold with the next prompt, or with /band, without a restart', async ($, on) => {
+test('a change to reduced motion takes hold with the next prompt, or with /band, without a restart', { timeoutMs: 30_000 }, async ($, on) => {
   const settings: Record<string, unknown> = {}
   world(on, { settings })
   await start($)
@@ -1817,10 +2767,10 @@ test('a change to reduced motion takes hold with the next prompt, or with /band,
   expect(await isLively()).toBe(false)
 
   settings.prefersReducedMotion = false
-  expect((await run($, 'band', 'hearth')).text).toContain('Clawd blinks')
+  expect((await run($, 'band', 'hearth')).text).toBe('Band: hearth, lively. Look: /band tide or /config. Motion: /band still.')
   expect(await isLively()).toBe(true)
   settings.prefersReducedMotion = true
-  expect((await run($, 'band', 'hearth')).text).toContain('Your reduced-motion setting keeps Clawd to one pose per moment')
+  expect((await run($, 'band', 'hearth')).text).toBe('Band: hearth, still for your reduced-motion setting. Look: /band tide or /config.')
   expect(await isLively()).toBe(false)
 })
 
@@ -1855,5 +2805,86 @@ test('a survey keeps the band', async ($, on) => {
     expect(await ui.find({ text: 'How is Claude doing?' })).toBeDefined()
     expect(await ui.find({ type: 'Client' })).toBeUndefined()
     await ui.unmount()
+  }
+})
+
+test('the uncommitted count keeps its word or goes whole, a cut ends on a letter, and nothing on line 1 or 3 comes back as the band narrows', { timeoutMs: 60_000 }, async ($, on) => {
+  world(on, { branch: 'claude/first-mod' })
+  await start($)
+  const sweep = async (what: string, isWorking: boolean) => {
+    for (const surface of SURFACES) {
+      let wider: string[] | null = null
+      for (let columns = 160; columns >= 34; columns--) {
+        const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns, isWorking })
+        const { words } = await read()
+        const where = words[0] ?? ''
+        // The count says what it counts, or is not there: never "files" (line 3's word), never a bare number.
+        expect([surface, columns, where, /· \d+$|· \d+ (?!uncommitted)|\bfiles?\b/u.test(where)]).toEqual([surface, columns, where, false])
+        for (const i of [0, 2]) {
+          const line = words[i] ?? ''
+          // A cut ends on a letter: never "first-…", "register.…" or "the …".
+          expect([surface, columns, line, /[\s/._-]…/u.test(line)]).toEqual([surface, columns, line, false])
+          for (const part of ['Opus 5.5', 'uncommitted', 'claude/', ' done']) {
+            if (line.includes(part)) expect([what, surface, columns, line, wider?.[i]?.includes(part) ?? true]).toEqual([what, surface, columns, line, true])
+          }
+        }
+        wider = words
+        await ui.unmount()
+      }
+    }
+  }
+  await turn($)
+  await sweep('idle', false)
+  await prompt($, 'go')
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Draw the beach', description: '', activeForm: 'Drawing the beach' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Ship it', description: '' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed' })
+  await sweep('thinking', true)
+})
+
+test('at 100% the context is "Full", a limit reached comes first, and every meter the page reads out starts with a capital', async ($, on) => {
+  world(on)
+  await start($, 100, 2.5)
+  await $.session.measure({
+    context: { tokens: 200_000, window: 200_000, percent: 100 },
+    rateLimits: [{ kind: 'spend_limit', percentUsed: 104, resetsAt: new Date(T0 + 130 * 60_000).toISOString() }],
+    cost: { usd: 2.5 },
+    changed: ['context', 'cost', 'rateLimits'],
+  })
+  for (const surface of SURFACES) {
+    for (const columns of [34, 48, 64, 100]) {
+      const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns })
+      const seen = await read()
+      // Over a spend limit, that comes first; the context's own words wait behind it, never "Getting full".
+      expect([surface, columns, seen.words.join(' ').includes('Getting full')]).toEqual([surface, columns, false])
+      expect([surface, columns, seen.words[2]]).toEqual([surface, columns, expect.stringMatching(/^Over (the )?spend limit/u)])
+      if (surface === 'desktop' && columns === 100) {
+        const alts: string[] = []
+        walk(seen.tree, node => {
+          if (node.type === 'Svg') alts.push(String(node.props?.alt))
+        })
+        expect(alts).toContain('Context 100% full')
+        expect(alts).toContain('Spend limit 104% used')
+      }
+      await ui.unmount()
+    }
+  }
+  // At the 5h limit (99.6% reads 100% on its meter), the limit still comes first, with the context high.
+  await $.session.measure(measured(86, 2.5, 99.6))
+  for (const surface of SURFACES) {
+    for (const [columns, line] of [[100, 'At the 5h limit'], [34, 'At 5h limit']] as const) {
+      const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns })
+      expect([surface, columns, (await read()).words[2]]).toEqual([surface, columns, expect.stringMatching(new RegExp(`^${line}`, 'u'))])
+      await ui.unmount()
+    }
+  }
+  // With no limit near, line 3 says it plainly, down to the narrowest band.
+  await $.session.measure(measured(100, 2.5, 23))
+  for (const surface of SURFACES) {
+    for (const [columns, line] of [[100, "Full · /compact when you're ready"], [34, 'Full']] as const) {
+      const { ui, read } = await band($, surface, { ...BAND, bodyColumns: columns })
+      expect([surface, columns, (await read()).words[2]]).toEqual([surface, columns, expect.stringMatching(new RegExp(`^${line.replace(/[/.]/gu, '\\$&')}`, 'u'))])
+      await ui.unmount()
+    }
   }
 })

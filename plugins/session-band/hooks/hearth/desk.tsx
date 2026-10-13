@@ -1,8 +1,9 @@
 import type { Elements, RenderElement } from 'claude-code'
 
-import type { BandProps } from '../types'
-import { cells } from './clawd'
-import { DIM, firstFit, happeningForms, squeezeRoom, whereForms } from './words'
+import type { BandProps } from './types'
+import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, HOVER_S, pixelHeart, textPx } from '../clawd'
+import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
+import { DIM, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
 
 // Hearth, on the desktop: a vector Clawd (an Svg drawn from his pixel form,
@@ -20,26 +21,43 @@ import type { Line, Measure, Row, Said, Seg } from './words'
 
 type Desk = Elements['desktop']
 
-type DeskView = BandProps
+/**
+ * What the desktop draws: the band's props, whether this flinch came while the last still played (see
+ * moodOf), and whether his picture wears the bead of sweat (`isSweating`; absent, as the context is
+ * high). The hooks module holds a change of the bead a moment while Claude works, so a turn whose
+ * last reading crosses the line as it lands reloads his frame once, for the cheer.
+ */
+/**
+ * What the desktop draws from: the band's props, and what only the hooks module knows (it remembers
+ * the frames it handed out). `dozedS`: asleep, how far the z of the frame before had drifted (see
+ * Mood); absent, the turn's ending says.
+ */
+type DeskView = BandProps & { isFlinchAgain?: boolean; isFlinchKept?: boolean; isSweating?: boolean; dozedS?: number }
 
-const NAP_AFTER_MS = 3 * 60_000
 /** He dozes off this long after his Svg appears, idle (a CSS delay: nothing ticks here). */
-const NAP_AFTER_S = 180
+const NAP_AFTER_S = NAP_AFTER_MS / 1000
 /** How long after a turn lands he is drawn cheering (the hooks module redraws as it ends), and how long a cheer lasts. */
 export const CHEER_FOR_MS = 4000
 const CHEER_S = 3.2
-/** How long after a tool fails he is drawn flinching; the hooks module redraws as it ends. */
-export const FLINCH_MS = 2000
-/** A pointer must rest on him this long before it counts as petting: one passing on its way to the composer does not. */
-const HOVER_S = 0.15
+/**
+ * The calm rest that ends a lively flinch (seconds), after his eyes shut and his glance away.
+ */
+const FLINCH_REST_S = 1.5
+/**
+ * How long after a tool fails he is drawn flinching, its rest included; the hooks module redraws
+ * as it ends. The flinch's own frame plays the whole rest and then the taps, so the frame after it
+ * opens on the very tap it was at, and a turn that ends inside the rest goes from the flinch to the
+ * cheer in one reload, with nothing between.
+ */
+export const FLINCH_MS = (0.5 + 1 + FLINCH_REST_S) * 1000
 
 // Colors inside an Svg cannot follow the page's theme, so each one here reads on
-// both claude.ai backgrounds (#faf9f5 and #262624).
-const CLAY = '#D77757'
-const EYE = '#141413'
-const PINK = '#E5739A'
+// both claude.ai backgrounds (#faf9f5 and #262624). His eye, his heart and his
+// z's are the tide's own, so /band switches the scene and never the Clawd.
+const EYE = EYE_INK
+const PINK = HEART_PINK
 const SKY = '#5B9BD5'
-const ZED = '#8F8A80'
+const ZED = DOZE_SLATE
 const LIMIT = '#A39E93'
 const TRACK = 'rgba(140,134,122,0.28)'
 
@@ -65,17 +83,20 @@ export function desk(els: Desk, view: DeskView): RenderElement {
     // Too narrow for words: Clawd keeps the band alone.
     return <Box flexDirection="row">{clawd}</Box>
   }
-  const room = panel * CELL_PX
+  // The room is the panel as a page with narrow cells (7.2 px) lays it out: beside Clawd's fixed
+  // 96 px the panel then shrinks, so the words keep one to four cells to spare (fewest on the
+  // narrowest bands) and no line ever runs past the band's edge.
+  const room = Math.min(panel * NARROW_CELL_PX, (view.columns - 1) * NARROW_CELL_PX - VIEW.width * SCALE)
   const said: Said = {
     isWorking: view.isWorking,
     activity: view.activity,
     slip: view.slip,
     todos: view.todos,
     isHigh: view.isHigh,
+    percent: view.percent,
     limit: view.limit,
     lastTurn: view.lastTurn,
-    resetsIn: null,
-    isStatic: true,
+    resetsAt: view.limit?.resetsAt ?? null,
     // While he cheers, the words say what finished; a warning waits for the cheer to end.
     isLanding: mood.isCheer,
   }
@@ -100,39 +121,22 @@ export function desk(els: Desk, view: DeskView): RenderElement {
 // The desktop draws Text in a proportional font, so the terminal's forms
 // (words.ts) are measured here in pixels, generously: each glyph at the widest
 // of three common UI fonts, and a cell at a little under the 7.8 px measured
-// in a desktop preview. A line fits when it fits that budget.
+// in a desktop preview; the room they must fit is the panel as a page with
+// narrower cells still would lay it out. A line fits when it fits that budget.
 
-/** Pixels to a cell in the budget: a little under the desktop's, so a fit is a fit. */
+/** Pixels to a cell in the budget (the margins and the figures' boxes): a little under the desktop's, so a fit is a fit. */
 const CELL_PX = 7.6
 /** The words' panel, in cells: up to 64 beside Clawd's 96 px and a cell of gap; under 16, Clawd keeps the band alone. */
 const PANEL_MAX = 64
 const PANEL_MIN = 16
+/** The narrowest cell a page is expected to draw (the desktop's measures 7.8 px): the room is counted at this. */
+const NARROW_CELL_PX = 7.2
 /** Each percentage sits in a box this many cells wide, so a meter group never shifts as a digit comes or goes. */
 const FIGURE_CELLS = 5
 
-// Glyph advances at 14 px, in tenths of a pixel, for ASCII 32 to 126: the widest
-// of Inter, DejaVu Sans and Liberation Sans (Arial's metrics), regular and semibold.
-// prettier-ignore
-const REGULAR = [45,57,66,118,90,138,110,42,55,55,71,118,45,65,45,51,90,90,90,90,91,90,90,90,90,90,48,48,118,118,118,78,143,97,96,103,108,94,86,109,106,42,80,95,80,127,106,111,94,111,102,94,91,105,97,139,96,95,96,55,51,55,118,78,70,86,89,80,89,87,52,89,89,39,39,82,39,137,89,86,89,89,58,74,55,89,83,115,83,83,78,90,48,90,118]
-// prettier-ignore
-const BOLD = [49,64,74,118,98,141,123,46,64,64,76,118,54,66,54,53,98,98,98,98,98,98,98,98,98,98,56,56,118,118,118,86,140,109,107,104,117,96,96,115,118,53,82,109,90,140,118,119,103,119,108,101,96,114,109,155,108,102,102,64,53,64,118,78,70,95,101,83,101,95,61,101,100,48,48,94,48,146,100,97,101,101,69,84,67,100,92,130,91,92,82,100,52,100,118]
-
-/** A text's width in pixels at 14 px, erring wide: CJK and emoji at 18, any other symbol at 14. */
-export function textPx(text: string, isBold: boolean): number {
-  let px = 0
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0
-    const ascii = code >= 32 && code < 127 ? (isBold ? BOLD : REGULAR)[code - 32] : undefined
-    px += ascii !== undefined ? ascii / 10 : char === '·' ? 5.4 : cells(char) === 0 ? 0 : cells(char) === 2 ? 18 : 14
-  }
-
-  return px
-}
-
-export const PX: Measure = {
+const PX: Measure = {
   row: row => row.reduce((sum, seg) => sum + textPx(seg.text, seg.bold === true), 0),
   gap: 2 * CELL_PX,
-  least: n => n * 9,
 }
 
 const ELLIPSIS = '…'
@@ -153,7 +157,10 @@ function cutToFit(line: Line, room: number): Line {
     for (const char of seg.text) {
       const w = textPx(char, seg.bold === true)
       if (used + w > left) {
-        out.push({ ...seg, text: `${kept}${ELLIPSIS}` })
+        // Never an ellipsis straight after a hyphen, a slash, a dot or a space; words a person wrote
+        // end on their last whole word ("Run the…").
+        const neat = squeezeCut(line, seg.text, kept)
+        out.push({ ...seg, text: `${neat === '' ? kept : neat}${ELLIPSIS}` })
         return { ...line, squeeze: out }
       }
       used += w
@@ -220,7 +227,7 @@ const FILLS: Fill[] = [
 ]
 
 /** How wide a form of line 2 is drawn, in pixels: every label, pill, margin and figure box. */
-export function fillPx(view: Pick<DeskView, 'percent' | 'isHigh' | 'limit' | 'cost'>, shape: Fill): number {
+function fillPx(view: Pick<DeskView, 'percent' | 'isHigh' | 'limit' | 'cost'>, shape: Fill): number {
   const figure = (text: string, isWarm: boolean) => Math.max(FIGURE_CELLS * CELL_PX, textPx(text, isWarm))
   // A pill has a cell either side; without one, a cell sits between the label and its figure.
   const pill = (px: number | null) => (px === null ? CELL_PX : CELL_PX + px + CELL_PX)
@@ -237,7 +244,7 @@ export function fillPx(view: Pick<DeskView, 'percent' | 'isHigh' | 'limit' | 'co
 }
 
 function labelOf(label: string, isLong: boolean): string {
-  return isLong && label === '5h' ? '5h limit' : label
+  return isLong ? `${label} limit` : label
 }
 
 // How full things are: the context and the 5h limit as rounded pills with
@@ -258,22 +265,24 @@ function fill(els: Desk, view: DeskView, room: number): RenderElement {
   // proportional font, so a meter group never shifts when a percentage gains a digit.
   const figure = (percent: number | null, isWarm: boolean, hasPill: boolean) => (
     <Box minWidth={FIGURE_CELLS} flexShrink={0} marginLeft={hasPill ? 0 : 1}>
-      <Text color={isWarm ? 'warning' : undefined} bold={isWarm}>
+      <Text color={isWarm ? 'claude' : undefined} bold={isWarm}>
         {percentText(percent)}
       </Text>
     </Box>
   )
 
+  // With the pills, the cost keeps to the right edge, under the model; without them (a narrow
+  // band, where the model has gone too) it follows the figures, so no hole opens in the line.
   return (
-    <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+    <Box flexDirection="row" justifyContent={shape.ctx === null ? 'flex-start' : 'space-between'} alignItems="center">
       <Box flexDirection="row" alignItems="center" flexShrink={0}>
         <Text dimColor>context</Text>
-        {meter(shape.ctx, view.percent, CLAY, `Context ${view.percent ?? 0}% full`)}
+        {meter(shape.ctx, view.percent, CLAY, view.percent === null ? 'No context reading yet' : `Context ${Math.round(view.percent)}% full`)}
         {figure(view.percent, view.isHigh, shape.ctx !== null)}
         {limit === null || !shape.hasLimit ? null : (
           <Box flexDirection="row" alignItems="center" marginLeft={1} flexShrink={0}>
             <Text dimColor>{labelOf(limit.label, shape.isLong)}</Text>
-            {meter(shape.lim, limit.percent, LIMIT, `${limit.label} limit ${limit.percent}% used`)}
+            {meter(shape.lim, limit.percent, isNear ? CLAY : LIMIT, `${capitalized(limit.label)} limit ${limit.percent}% used`)}
             {figure(limit.percent, isNear, shape.lim !== null)}
           </Box>
         )}
@@ -287,8 +296,13 @@ function fill(els: Desk, view: DeskView, room: number): RenderElement {
   )
 }
 
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function percentText(percent: number | null): string {
-  return percent === null ? '-' : `${Math.round(percent)}%`
+  // No reading yet (a new session, a /clear): an en dash, never a "0%" that was never measured.
+  return percent === null ? '–' : `${Math.round(percent)}%`
 }
 
 // ── The pill meter ─────────────────────────────────────────────────────────────
@@ -319,11 +333,22 @@ type Mood = {
   isCheer: boolean
   isWave: boolean
   isFlinch: boolean
+  /** A flinch that comes while the last still plays is drawn under a second name: a new source, so the page starts it over. */
+  isFlinchAgain: boolean
   isHigh: boolean
   /** `/band still` or Claude Code's reduced motion: one pose per moment, nothing moves. */
   isStill: boolean
   /** Idle and awake: he dozes off by himself, NAP_AFTER_S after his Svg appears. */
   isDozy: boolean
+  /**
+   * Asleep: how far (seconds) the z of the frame before had drifted when this frame came, so his z
+   * carries on rather than shrinking to nothing and growing again. The nap's own redraw follows the
+   * frame he dozed off in: one that appeared as a stopped turn landed dozed off as the nap fell due,
+   * a second before (NAP_LATE_MS); one that came after a cheer (or the hello) has not dozed off yet,
+   * so its z starts here. Any other nap frame (still to lively, the beach to the hearth, a reload)
+   * follows one that already showed a z: a second in, where the z is whole.
+   */
+  dozedS: number
 }
 
 const REST: Pose = { eyes: 'open', arms: 'down', feet: 'both' }
@@ -332,30 +357,47 @@ const PET: Pose = { eyes: 'wink', arms: 'up', feet: 'both' }
 // The moment, and nothing finer: every redraw within the same moment gives the same mood.
 function moodOf(view: DeskView): Mood {
   const isIdle = !view.isWorking
+  // Waiting on you (a question, a plan to look over): he rests, as between turns, but never dozes.
+  const isWaiting = view.isWorking && view.activity?.kind === 'ask'
   const idle = view.idleMs ?? 0
   const isNap = isIdle && view.idleMs !== null && idle >= NAP_AFTER_MS
-  const mode: Mode = isNap ? 'nap' : isIdle ? 'idle' : 'work'
+  const mode: Mode = isNap ? 'nap' : isIdle || isWaiting ? 'idle' : 'work'
+
+  // A moment that began before this look came on screen (a /band or /config switch) is over for
+  // it: the new frame starts at rest, rather than playing the moment from its first beat only for
+  // the moment's end to cut it short.
+  const isSeen = (ago: number | null) => view.shownForMs === null || (ago !== null && ago <= view.shownForMs)
+  // Over, the flinch's frame may stay up through the turn (`isFlinchKept`): it has gone on into his taps.
+  const isFlinch = !isIdle && view.flinchAgoMs !== null && (view.flinchAgoMs < FLINCH_MS || view.isFlinchKept === true) && isSeen(view.flinchAgoMs)
 
   return {
     mode,
-    isCheer: isIdle && !isNap && view.lastTurn?.ending === 'answer' && idle < CHEER_FOR_MS,
-    isWave: isIdle && view.isGreeting && !isNap,
-    isFlinch: !isIdle && view.flinchAgoMs !== null && view.flinchAgoMs < FLINCH_MS,
-    isHigh: view.isHigh,
+    isCheer: isIdle && !isNap && view.lastTurn?.ending === 'answer' && idle < CHEER_FOR_MS && isSeen(view.idleMs),
+    // Still, no wave is drawn, so none is said (the beach is the same: its hello never shows still).
+    isWave: isIdle && view.isGreeting && !isNap && !view.isStill,
+    isFlinch,
+    isFlinchAgain: isFlinch && view.isFlinchAgain === true,
+    isHigh: view.isSweating ?? view.isHigh,
     isStill: view.isStill,
     isDozy: isIdle && !isNap,
+    dozedS: !isNap ? 0 : (view.dozedS ?? (view.lastTurn !== null && view.lastTurn.ending !== 'answer' ? NAP_LATE_MS / 1000 : 0)),
   }
 }
 
+// What the picture shows, his moment or else what he is up to, in short sentences in the tide's
+// voice, so a screen reader hears one writer whichever look is on.
 function altOf(mood: Mood): string {
-  switch (mood.mode) {
-    case 'nap':
-      return 'Clawd, napping'
-    case 'work':
-      return 'Clawd, at work'
-    default:
-      return mood.isCheer ? 'Clawd, cheering' : 'Clawd'
+  if (mood.mode === 'nap') return 'Clawd naps.'
+  if (mood.isFlinch) return mood.isStill ? 'Clawd flinches at a failed step.' : 'Clawd flinches at a failed step, then taps along again.'
+  if (mood.mode === 'work') {
+    // Still, he does not tap: he sits as Claude works.
+    const doing = mood.isStill ? 'Clawd sits quietly while Claude works' : 'Clawd taps along'
+    return mood.isHigh ? `${doing}, a bead of sweat on his brow.` : mood.isStill ? `${doing}.` : 'Clawd taps along as Claude works.'
   }
+  if (mood.isCheer) return 'Clawd cheers for a finished turn.'
+  if (mood.isWave) return 'Clawd waves hello.'
+
+  return mood.isHigh ? 'Clawd rests, a bead of sweat on his brow.' : 'Clawd rests.'
 }
 
 // The pose he holds when nothing moves.
@@ -419,10 +461,15 @@ function tracksOf(mood: Mood, isCalm: boolean): Track[] {
     tracks.push({ name: 'w', steps: [[0.5, wave], [0.3, REST], [0.5, wave], [0.3, REST]], delay: 0.3, isLoop: false })
   }
   if (mood.isCheer) {
-    tracks.push({ name: 'c', steps: isCalm ? [[CHEER_S, up]] : [[1.2, up], [0.4, REST], [1.6, up]], delay: 0, isLoop: false })
+    // Arms up for the whole cheer, lively or calm: his two hops carry its beat, as on the terminal.
+    tracks.push({ name: 'c', steps: [[CHEER_S, up]], delay: 0, isLoop: false })
   }
   if (mood.isFlinch) {
-    tracks.push({ name: 'f', steps: isCalm ? [[1.5, shut]] : [[0.5, shut], [1.0, { ...REST, eyes: 'left' }]], delay: 0, isLoop: false })
+    // Eyes shut, a look at what failed, then a calm moment at rest before the taps come back, all
+    // of it inside FLINCH_MS: the taps start in this frame, so the one that takes over at its end
+    // opens on the same tap. Calm, his eyes stay shut a moment and then he rests.
+    const steps: Array<[number, Pose]> = isCalm ? [[1.5, shut]] : [[0.5, shut], [1.0, { ...REST, eyes: 'left' }], [FLINCH_REST_S, REST]]
+    tracks.push({ name: mood.isFlinchAgain ? 'f2' : 'f', steps, delay: 0, isLoop: false })
   }
   const lead = leadOf(tracks)
   if (!isCalm) {
@@ -503,15 +550,19 @@ function clawdSvg(mood: Mood): string {
   }
   // Petting him (a hover that rests on him a moment): his moment gives way to a
   // winking, arms-up Clawd and a heart. The delay is the hover's intent; leaving
-  // takes him back at once.
+  // takes him back at once. Asleep, as on the beach, he is not woken: his eyes
+  // stay shut, the z keeps drifting, and a heart comes up over his head beside it.
+  const isNap = mood.mode === 'nap'
   css.push(
     `.${P}pet{opacity:0;transition:opacity 0s}.${P}mood{transition:opacity 0s}`,
-    `svg:hover .${P}pet{opacity:1;transition:opacity 0s ${HOVER_S}s}svg:hover .${P}mood{opacity:0;transition:opacity 0s ${HOVER_S}s}`,
+    `svg:hover .${P}pet{opacity:1;transition:opacity 0s ${HOVER_S}s}` +
+      (isNap ? '' : `svg:hover .${P}mood{opacity:0;transition:opacity 0s ${HOVER_S}s}`),
   )
 
   // Little things around him: sparkles for a cheer, a z for a nap, a bead of
   // sweat when the context runs high, and a heart while he is petted. He is
-  // pixels; these are soft, smooth shapes, so they read as his feelings.
+  // pixels; the sparkles, z and bead are soft, smooth shapes, so they read as
+  // his feelings, and the heart is the terminal's pixel heart, as on the beach.
   const extras: string[] = []
   if (mood.isCheer) {
     extras.push(
@@ -521,15 +572,18 @@ function clawdSvg(mood: Mood): string {
   }
   if (mood.mode === 'nap' || mood.isDozy) {
     extras.push(
-      `<g class="${P}z" fill="none" stroke="${ZED}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision">${zed(19, 1.2, 2)}</g>`,
+      `<g class="${P}z" fill="none" stroke="${ZED}" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round" shape-rendering="geometricPrecision">${zed(19, 1.25, 2)}</g>`,
     )
   }
   if (mood.isHigh && mood.mode !== 'nap') {
     extras.push(`<g class="${P}sw" fill="${SKY}" shape-rendering="geometricPrecision">${drop(17, -1.2)}</g>`)
   }
+  // The heart beside his raised claw, or over his sleeping head; on whole pixels, so held still
+  // (reduced motion, /band still) it is as crisp as he is.
+  const [hx, hy] = isNap ? NAP_HEART : PET_HEART
   const petted =
-    `<g class="${P}pet"><g class="${P}pop">${still(PET)}</g>` +
-    `<g class="${P}ht" fill="${PINK}" shape-rendering="geometricPrecision">${heart(19, 0.6, 3.4, 3)}</g></g>`
+    `<g class="${P}pet">${isNap ? '' : `<g class="${P}pop">${still(PET)}</g>`}` +
+    `<g class="${P}ht" fill="${PINK}" shape-rendering="geometricPrecision">${heart(hx, hy)}</g></g>`
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.width} ${VIEW.height}" ` +
@@ -554,7 +608,8 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
     rules.push(`.${P}${part.name}{opacity:${part.shows(rest) ? 1 : 0};animation:${anims.length === 0 ? 'none' : anims.map(a => a.use).join(',')}}`)
   }
 
-  const lead = leadOf(tracks.filter(track => !track.isLoop && !track.isHeld))
+  // Where his loop begins (its bead of sweat keeps its place in it), or else where his moments end.
+  const lead = tracks.find(track => track.isLoop)?.delay ?? leadOf(tracks.filter(track => !track.isLoop && !track.isHeld))
   const napAt = Math.max(lead, NAP_AFTER_S)
   if (isCalm) {
     // One pose per moment: a sparkle shown for the cheer, a z once he sleeps, a bead of sweat held, a still heart.
@@ -579,30 +634,37 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
   const period = sweatPeriod(mood)
   const pct = (seconds: number) => round((seconds / period) * 100)
   keyframes.push(
-    // A sparkle twinkles in, holds, and fades; twice.
-    `@keyframes ${P}tw{0%{opacity:0;transform:scale(.3) rotate(-20deg)}25%{opacity:1;transform:scale(1) rotate(0deg)}65%{opacity:1;transform:scale(.9)}100%{opacity:0;transform:scale(.5)}}`,
+    // A sparkle twinkles up from a point, holds, and shrinks back to one; twice. Never faded: a
+    // half-faded clay star on the dark page is a muddy brown smudge (the tide's stars do the same).
+    `@keyframes ${P}tw{0%{opacity:1;transform:scale(0) rotate(-20deg)}25%{opacity:1;transform:scale(1) rotate(0deg)}65%{opacity:1;transform:scale(.9) rotate(0deg);animation-timing-function:ease-in}100%{opacity:1;transform:scale(0) rotate(0deg)}}`,
     // Two little hops as his arms go up.
     `@keyframes ${P}hop{0%,16%,50%,64%,100%{transform:translate(0,0)}7%,56%{transform:translate(0,-1px)}}`,
-    // One z at a time drifts up and away from him, growing a little as it goes.
-    `@keyframes ${P}zz{0%{opacity:0;transform:translate(0,0) scale(.6)}20%{opacity:1}75%{opacity:.85}100%{opacity:0;transform:translate(1.5px,-4.5px) scale(1)}}`,
+    // One z at a time pops up beside him and drifts up and away, shrinking as it goes: at full
+    // colour throughout, as the tide's z's, since a half-faded slate is a muddy grey on the dark page.
+    `@keyframes ${P}zz{0%{opacity:1;transform:translate(0,0) scale(0)}12%{opacity:1;transform:translate(.1px,-.3px) scale(1.1)}22%{opacity:1;transform:translate(.25px,-.7px) scale(1)}70%{opacity:1;transform:translate(1.1px,-3.3px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(1.5px,-4.5px) scale(0)}}`,
     // A bead of sweat forms, slides a little, and goes: from 2 s to 4.5 s of
     // his loop, which at work is the rest after the tap (the claw is down by
     // 1.5 s) and before the glance (4.8 s), and idle the rest before his first
     // blink (5.4 s); it stops above his claw.
     `@keyframes ${P}sw{0%,${pct(2)}%{opacity:0;transform:translate(0,0)}${pct(2.5)}%{opacity:1;transform:translate(0,0)}` +
       `${pct(4)}%{opacity:1;transform:translate(0,1px)}${pct(4.5)}%,100%{opacity:0;transform:translate(0,1px)}}`,
-    // The heart rises from beside his raised claw and fades near the top.
-    `@keyframes ${P}ht{0%{opacity:0;transform:translate(0,1px) scale(.6)}20%{opacity:1;transform:translate(0,0) scale(1)}70%{opacity:1}100%{opacity:0;transform:translate(0,-3.4px) scale(1)}}`,
+    // The heart pops up from a point beside his raised claw, rises, and shrinks back to a point near
+    // the top: at full colour throughout, as the sparkles do, since a half-faded pink is a muddy
+    // mauve on the dark page.
+    `@keyframes ${P}ht{0%{opacity:1;transform:translate(0,1px) scale(0)}16%{opacity:1;transform:translate(0,0) scale(1.12)}30%{opacity:1;transform:translate(0,-.4px) scale(1)}72%{opacity:1;transform:translate(0,-2.4px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(0,-3.4px) scale(0)}}`,
+    // Over a sleeping head there is less sky: the heart pops up in its place and only lifts a little.
+    `@keyframes ${P}hn{0%{opacity:1;transform:translate(0,.5px) scale(0)}16%{opacity:1;transform:translate(0,0) scale(1.12)}30%{opacity:1;transform:translate(0,0) scale(1)}72%{opacity:1;transform:translate(0,-.25px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(0,-.5px) scale(0)}}`,
     `@keyframes ${P}pop{0%,40%,100%{transform:translate(0,0)}15%{transform:translate(0,-1px)}}`,
   )
   rules.push(
     `.${P}sp{opacity:0;transform-box:fill-box;transform-origin:center;animation:${P}tw 1.5s ease-out 0.1s 2 both}`,
     `.${P}sp2{animation-delay:.7s}`,
-    `.${P}z{opacity:0;transform-box:fill-box;transform-origin:center;animation:${P}zz 3s ease-out ${mood.mode === 'nap' ? 0 : napAt}s infinite}`,
+    // Asleep, the z carries on from the frame he dozed off in (see dozedS): never popping up afresh.
+    `.${P}z{opacity:0;transform-box:fill-box;transform-origin:center;animation:${P}zz 3s ease-out ${mood.mode === 'nap' ? -mood.dozedS : napAt}s infinite}`,
     `.${P}sw{opacity:0;transform:none;animation:${P}sw ${period}s ease-in ${round(lead)}s infinite${mood.isDozy ? `,${P}off 1s step-end ${napAt}s 1 forwards` : ''}}`,
     `.${P}ht{opacity:1;transform-box:fill-box;transform-origin:center}`,
     // Twice, like his hop: a pointer left resting on him does not keep releasing hearts.
-    `svg:hover .${P}ht{animation:${P}ht 2s ease-out ${HOVER_S}s 2 both}`,
+    `svg:hover .${P}ht{animation:${mood.mode === 'nap' ? `${P}hn` : `${P}ht`} 2s ease-out ${HOVER_S}s 2 both}`,
     mood.isCheer ? `.${P}hop{animation:${P}hop ${CHEER_S}s ease-out 0s 1 none}` : `.${P}hop{animation:none}`,
     `.${P}pop{transform-box:fill-box;transform-origin:50% 100%}svg:hover .${P}pop{animation:${P}pop .9s ease-out ${HOVER_S}s 2}`,
   )
@@ -663,21 +725,16 @@ function drop(x: number, y: number): string {
   return `<path d="M${x} ${y}C${x + 0.85} ${round(y + 1)} ${x + 0.75} ${round(y + 2)} ${x} ${round(y + 2.1)}C${x - 0.75} ${round(y + 2)} ${x - 0.85} ${round(y + 1)} ${x} ${y}Z"/>`
 }
 
-// A soft heart in the box (x, y, w, h): two round lobes and a point, every
-// control point inside the box.
-function heart(x: number, y: number, w: number, h: number): string {
-  const at = (u: number, v: number) => `${round(x + u * w)} ${round(y + v * h)}`
-  const curves: Array<[number, number, number, number, number, number]> = [
-    [0.18, 0.72, 0, 0.52, 0, 0.3],
-    [0, 0.12, 0.12, 0, 0.27, 0],
-    [0.39, 0, 0.47, 0.07, 0.5, 0.18],
-    [0.53, 0.07, 0.61, 0, 0.73, 0],
-    [0.88, 0, 1, 0.12, 1, 0.3],
-    [1, 0.52, 0.82, 0.72, 0.5, 0.96],
-  ]
-
-  return `<path d="M${at(0.5, 0.96)}${curves.map(([a, b, c, d, e, f]) => `C${at(a, b)} ${at(c, d)} ${at(e, f)}`).join('')}Z"/>`
+// The terminal's block heart, as the tide draws it on the beach, its corner at (x, y): pixels half
+// a unit wide and three quarters tall (2 by 3 screen pixels at SCALE), so every edge falls on a
+// whole pixel and the held heart is crisp at 1x and 2x.
+function heart(x: number, y: number): string {
+  return pixelHeart(x, y, 0.5, 0.75)
 }
+
+/** Where the petted heart stands: beside his raised right claw, and over his head (right of centre, beside the z) as he naps. */
+const PET_HEART: [number, number] = [18.75, 0.75]
+const NAP_HEART: [number, number] = [12.5, -3.5]
 
 // A soft z, s units square, its corner at (x, y): drawn with a round pen.
 function zed(x: number, y: number, s: number): string {

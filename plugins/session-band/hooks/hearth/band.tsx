@@ -1,9 +1,12 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
-import type { BandProps, Doing } from '../types'
-import { APPLE_EYES, ARMS, EYES, FEET, SPIN, cells, cut } from './clawd'
-import type { Arms, Eyes, Feet } from './clawd'
-import { ACCENT, DIM, SPACE, WARN, firstFit, happeningForms, span, squeezeRoom, whereForms } from './words'
+import type { BandProps, Doing } from './types'
+import { APPLE_EYES, ARMS, EYES, FEET, HEART_PINK, SPIN, cells, cut } from '../clawd'
+import { NAP_AFTER_MS } from '../facts'
+import type { Arms, Eyes, Feet } from '../clawd'
+import { ACCENT, DIM, SPACE, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
+import { hasRoom, isHeld, isSettled, newPace, spend, tick } from '../pace'
+import type { Pace } from '../pace'
 import type { Form, Line, Measure, Row, Seg } from './words'
 
 // Hearth, on the terminal: Claude Code's own Clawd on the left, three calm lines
@@ -13,11 +16,14 @@ import type { Form, Line, Measure, Row, Seg } from './words'
 // different from the last one drawn, so an idle band is still.
 //
 // What the band shows of the work under way (line 3, and the pose that goes
-// with it) is held at least a second, a pause between tools shorter than three
-// quarters of a second is no pause, and it moves on only on a tick of the
-// clock: a burst of quick tools reads as one calm stretch of work.
+// with it) is the line the facts' hold settled on (stepHeld in facts.ts: held at
+// least a second, and a pause between tools shorter than three quarters of a
+// second is no pause), the very one the desktop shows, taken up at once when the
+// frame on screen has been up a tick (else on the next tick of this clock), so the
+// line and his pose move together and no beat is cut short: a burst of quick tools
+// reads as one calm stretch of work, and the two surfaces name the same tools.
 
-type Frame = { sprite: Row[]; marks: Row[]; lines: Line[]; panel: number }
+type Frame = { sprite: Row[]; marks: Row[]; lines: Line[]; panel: number; columns: number }
 
 /** What line 3 and Clawd's working pose are drawn from: held on screen as one piece. */
 type Shown = Pick<BandProps, 'isWorking' | 'activity' | 'slip' | 'todos'>
@@ -31,9 +37,17 @@ type Live = {
   shown: Shown
   shownKey: string
   shownTick: number
-  /** What the props say to show, and since when: a pause must last before it shows. */
+  /**
+   * What the props have asked to show since `wantTick`; the tick they first moved off what is shown
+   * (`offTick`, NEVER while they agree); and how many ticks late what is shown came up here (`lag`:
+   * a tick at most, when the beat on screen had its tick first). See hold.
+   */
   wantKey: string
   wantTick: number
+  offTick: number
+  lag: number
+  /** When "Thinking" last came up: his slow glance away while Claude thinks counts from there. */
+  thinkAt: number
   /** His look at the words while Claude reads: the latest one, and the next one due. */
   glanceAt: number
   nextGlance: number
@@ -49,24 +63,39 @@ type Live = {
   petAt: number
   waveUntil: number
 }
-/** `drawn` is the frame on screen, as JSON: a tick that composes the same frame draws nothing. */
-type State = { live: Live; drawn: string }
+/**
+ * `frame` is the frame on screen, and `drawn` the same as JSON: a tick that composes the same frame
+ * draws nothing. `pace` keeps every second to four changes and every frame up a tick at least (see
+ * pace.ts): a change between ticks (a pet, a turn landing, a /band switch) shows at once when the
+ * second has room for it, else on the next tick that has; a tick that would change a frame put up
+ * just before it holds, clock and all. A look switch to the hearth starts a fresh pace: what he
+ * carries on from the beach (a cheer, a hiccup, a glance) holds its first pose half a second at
+ * least, so his first tick never changes the frame the switch put up.
+ */
+type State = { live: Live; drawn: string; frame: Frame; pace: Pace }
 
 const TICK_MS = 250
 const NEVER = -1_000_000
-const NAP_AFTER_MS = 3 * 60_000
 const CHEER_TICKS = 16
+/** The fewest ticks of a cheer left for a new band to carry it on (1.5 s). */
+const RESUME_CHEER = 6
+/** The ticks after a cheer with no blink (750 ms): the cheer never ends on closed eyes. */
+const AFTER_CHEER = 3
+const BLINK_EVERY = 23
 const OOPS_TICKS = 6
 const WAVE_TICKS = 10
-/** What he shows of the work stays at least this many ticks (a second)... */
+/** The latest tick of the hello a band that comes back carries on from: the second wave's first. */
+const WAVE_RESUME = 5
+/**
+ * A hiccup this band queued itself (a failure, whatever starts next) has its second, and goes up once
+ * what is up has had its own here (a second). Every other line is the facts', already held a second.
+ */
 const HOLD_TICKS = 4
-/** ...and a pause between tools must last this many (three quarters of a second) to show. */
-const GAP_TICKS = 3
 /** A look at the words while Claude reads: two seconds, as a read starts and then every 10 to 16 s. */
 const GLANCE_TICKS = 8
 const GLANCE_EVERY: [number, number] = [40, 64]
-/** A read that starts this soon after his last look does not earn another. */
-const GLANCE_REST = 32
+/** A read that starts this soon after his last look (12 s) does not earn another: he notices, now and then. */
+const GLANCE_REST = 48
 /** A claw tap and a step come round every four seconds. */
 const BEAT = 16
 /** A bead of sweat comes every eight seconds at work and every sixteen idle, on ticks 8 to 13 of its cycle. */
@@ -92,7 +121,7 @@ const BODY = 'clawd_body'
 const DARK = 'clawd_background'
 const TRACK = 'subtle'
 const SWEAT = 'ide'
-const HEART = '#E86A92'
+const HEART = HEART_PINK
 
 /** Something beside Clawd: `lines` drawn from `row` down, starting `col` cells into the marks column. */
 type Mark = { row: number; col: number; lines: string[]; color: string }
@@ -115,7 +144,9 @@ const Band: ClientModule<BandProps, State> = (props, surface) => {
     // Drawn for the first time: say hello in a fresh session, and catch a turn
     // that landed (or a tool that failed) just before he appeared.
     const isFresh = props.isGreeting && !props.isWorking && !props.isStill
-    const justLanded = props.lastTurn?.ending === 'answer' && !props.isWorking && (props.idleMs ?? Infinity) < 3000
+    // A cheer under way (the other look was on screen as the turn landed) carries on from where it
+    // is, and only with a second and a half of it to go: never its last beat on its own.
+    const cheerLeft = props.lastTurn?.ending === 'answer' && !props.isWorking ? CHEER_TICKS - Math.floor((props.idleMs ?? Infinity) / TICK_MS) : 0
     const justSlipped = props.isWorking && props.activity === null && (props.slipAgoMs ?? Infinity) < 2000
     const slipDue = justSlipped ? (props.lastSlip ?? props.slip) : null
     const shown = slipDue === null ? shownOf(props) : { ...shownOf(props), activity: null, slip: slipDue }
@@ -130,52 +161,68 @@ const Band: ClientModule<BandProps, State> = (props, surface) => {
       shownTick: -HOLD_TICKS,
       wantKey: key,
       wantTick: 0,
+      offTick: NEVER,
+      lag: 0,
+      thinkAt: 0,
       glanceAt: NEVER,
       nextGlance: NEVER,
       seenCheers: props.cheers,
       seenOops: props.oops,
       slipDue,
       slipUpAt: slipDue === null ? NEVER : 0,
-      cheerUntil: justLanded ? CHEER_TICKS : NEVER,
+      cheerUntil: cheerLeft >= RESUME_CHEER ? cheerLeft : NEVER,
       oopsFrom: slipDue === null ? NEVER : 0,
       oopsUntil: slipDue === null ? NEVER : OOPS_TICKS,
       petAt: NEVER,
-      waveUntil: isFresh ? WAVE_TICKS : NEVER,
+      waveUntil: isFresh ? waveUntil(props.greetedMs) : NEVER,
     }
     // A read under way as he appears: he looks over at it.
     notice(live, null)
-    state = { live, drawn: '' }
+    const frame = compose(live, widthOf(surface, props))
+    state = { live, drawn: JSON.stringify(frame), frame, pace: newPace() }
     surface.setState(state)
     surface.every(TICK_MS, () => advance(surface))
     surface.onPointer(event => pet(surface, event))
   }
-  receive(state.live, props)
-  const frame = compose(state.live, widthOf(surface))
-  // What this call draws is now on screen: the next tick compares against it,
-  // so new props never cost a second, identical frame.
-  state.drawn = JSON.stringify(frame)
+  const columns = widthOf(surface, props)
+  // A new width shows at once (the frame on screen no longer fits); anything else between ticks shows
+  // at once only when the second has room for it. Otherwise a landing waits for the next tick that
+  // has (his cheer starts there, whole), and any other change waits for it on screen.
+  const isNow = columns !== state.frame.columns || hasRoom(state.pace)
+  // A look at the words he began less than a tick ago (as the last read showed) has its tick: a turn
+  // that lands now goes up with its cheer on the next tick, never cutting the glance to a flash.
+  const isGlanceNew = !isSettled(state.pace) && isLookingNow(state.live)
+  receive(state.live, props, { isNow, isFree: isNow && isSettled(state.pace), canLand: isNow && !isGlanceNew })
+  const frame = compose(state.live, columns)
+  const drawn = JSON.stringify(frame)
+  if (drawn !== state.drawn && isNow) {
+    spend(state.pace, false)
+    state.drawn = drawn
+    state.frame = frame
+  }
+  const shown = state.frame
 
   const draw = (row: Row) => row.map(({ text, ...style }) => <Text {...style}>{text}</Text>)
 
   return (
     <Box flexDirection="row" height={3} paddingLeft={MARGIN}>
       <Box flexDirection="column" width={SPRITE} flexShrink={0}>
-        {frame.sprite.map(row => (
+        {shown.sprite.map(row => (
           <Box height={1} overflow="hidden">
             <Text>{draw(row)}</Text>
           </Box>
         ))}
       </Box>
       <Box flexDirection="column" width={MARKS} flexShrink={0}>
-        {frame.marks.map(row => (
+        {shown.marks.map(row => (
           <Box height={1} overflow="hidden">
             <Text>{row.length === 0 ? ' ' : draw(row)}</Text>
           </Box>
         ))}
       </Box>
-      {frame.panel > 0 && (
-        <Box flexDirection="column" width={frame.panel} marginLeft={GAP} flexShrink={0}>
-          {frame.lines.map(line => (
+      {shown.panel > 0 && (
+        <Box flexDirection="column" width={shown.panel} marginLeft={GAP} flexShrink={0}>
+          {shown.lines.map(line => (
             <Box height={1} flexDirection="row" overflow="hidden">
               <Box flexGrow={1} flexShrink={1} flexDirection="row" overflow="hidden">
                 {line.squeeze === undefined
@@ -207,10 +254,26 @@ const Band: ClientModule<BandProps, State> = (props, surface) => {
 
 export default Band
 
+// The tick the hello ends on: he waves as the session starts, and a band that comes back mid-wave (a
+// dialog that briefly took the prompt's place) picks the wave up where it is, as long as its second
+// wave is still to come; later, only a claw's last moment would be left: no hello.
+function waveUntil(greetedMs: number | null | undefined): number {
+  const gone = Math.max(0, Math.floor((greetedMs ?? 0) / TICK_MS))
+
+  return gone <= WAVE_RESUME ? WAVE_TICKS - gone : NEVER
+}
+
+/**
+ * When new props may show between two ticks. `isNow`: the second has room for a change. `isFree`: and
+ * the frame on screen has been up a whole tick, so a line that could as well wait cuts no beat short.
+ * `canLand`: and no glance he began less than a tick ago is up, so a turn that lands may show at once.
+ */
+type Between = { isNow: boolean; isFree: boolean; canLand: boolean }
+
 // New props: note when they came, start a cheer for a new turn, queue the
-// hiccup of a failed tool, and see whether what is shown may move on (only a
-// landing may, between ticks).
-function receive(live: Live, props: BandProps): void {
+// hiccup of a failed tool, and see whether what is shown may move on between
+// ticks (see Between and hold).
+function receive(live: Live, props: BandProps, between: Between): void {
   // Compared by value: the module is called again after every frame with the
   // same props, and only new ones restart the idle and reset clocks.
   const key = JSON.stringify(props)
@@ -219,19 +282,39 @@ function receive(live: Live, props: BandProps): void {
     live.propsTick = live.tick
   }
   if (props.cheers > live.seenCheers) {
-    live.cheerUntil = live.tick + CHEER_TICKS
+    // With no room now, or a glance just begun (as the last read showed), his cheer starts on the
+    // next tick, whole, and the glance has its tick.
+    live.cheerUntil = live.tick + (between.canLand ? 0 : 1) + CHEER_TICKS
     live.waveUntil = NEVER
   }
   const slip = props.lastSlip ?? props.slip
   if (props.oops > live.seenOops && slip !== null) {
-    // The hiccup goes up on a tick, as soon as what is shown has had its second; he flinches with it.
+    // The hiccup goes up as soon as what is shown has had its second (at once over its own tool or
+    // "Thinking it over"); he flinches with it.
     live.slipDue = slip
     live.slipUpAt = NEVER
+  }
+  // A moment the facts take back ends at once, never playing on beside words that have moved on: a
+  // /clear's fresh conversation has no turn to cheer and no step that stumbled; a failure Esc caused
+  // (the count goes back down) is no hiccup.
+  const isFresh = !props.isWorking && props.lastTurn === null
+  if (isFresh && live.tick < live.cheerUntil) {
+    live.cheerUntil = NEVER
+  }
+  if ((isFresh || props.oops < live.seenOops) && (live.slipDue !== null || live.tick < live.oopsUntil)) {
+    live.slipDue = null
+    live.slipUpAt = NEVER
+    live.oopsFrom = NEVER
+    live.oopsUntil = NEVER
   }
   live.seenCheers = props.cheers
   live.seenOops = props.oops
   live.props = props
-  hold(live, false)
+  if (between.isNow) {
+    hold(live, between)
+  } else {
+    note(live, JSON.stringify(wanted(live)))
+  }
 }
 
 function shownOf(props: BandProps): Shown {
@@ -250,11 +333,16 @@ function wanted(live: Live): Shown {
 }
 
 /**
- * Moves what he shows to what the props say: on a tick, once what is up has
- * been up a second, and a pause only once it has lasted three quarters of one.
- * A turn that lands shows at once (the cheer is now).
+ * Moves what he shows to what the props say: the facts' held line (stepHeld, which has already held
+ * each line its second), or a hiccup waiting its turn. On a tick, or between ticks once the frame on
+ * screen has been up a whole tick (`isFree`), so his pose and the line move together and a beat he
+ * has started (a glance, a blink, a claw tap) is up a tick at least. Between ticks (only when the second has room:
+ * `receive` calls on this then) what must not wait shows at once: a turn that starts ("Thinking it
+ * over" is now), a hiccup over its own tool or "Thinking it over", and a turn that lands, with its
+ * cheer, as the beach's does (unless a glance he has just begun is up: `canLand`; then both wait for
+ * the next tick).
  */
-function hold(live: Live, isTick: boolean): void {
+function hold(live: Live, between: Omit<Between, 'isNow'>): void {
   if (live.slipDue !== null && (!live.props.isWorking || (live.slipUpAt !== NEVER && live.tick - live.slipUpAt >= HOLD_TICKS))) {
     // The hiccup has had its second (or the turn is over): what is happening now comes next.
     live.slipDue = null
@@ -262,33 +350,73 @@ function hold(live: Live, isTick: boolean): void {
   }
   const want = wanted(live)
   const key = JSON.stringify(want)
+  note(live, key)
   if (key === live.shownKey) {
-    live.wantKey = key
     return
   }
+  // The turn begins (and a napping Clawd's eyes open with the frame its words come in on), or lands.
+  const isStart = want.isWorking && !live.shown.isWorking
+  const hasLanded = live.shown.isWorking && !want.isWorking
+  // A hiccup takes over at once from its own tool (the line keeps its subject and says it stumbled)
+  // and from "Thinking it over", as the facts' line does (stepHeld): a failure is never held back.
+  const isOwn = want.slip !== null && (JSON.stringify(want.slip) === JSON.stringify(live.shown.activity) || isThinking(live.shown))
+  // A line that came up here a tick late (its beat had the tick first) stays that tick longer once
+  // the facts move on, so it has its second here too; once it has had it, it goes with the facts,
+  // and the terminal is back in step. A hiccup this band queued itself has its second here.
+  const isQueued = live.slipDue !== null && want.slip === live.slipDue
+  const isHeld = isQueued ? live.tick - live.shownTick < HOLD_TICKS : live.tick < Math.min(live.offTick + live.lag, live.shownTick + HOLD_TICKS)
+  if ((hasLanded && between.canLand) || isStart || isOwn || (between.isFree && !isHeld)) {
+    show(live, want, key)
+  }
+}
+
+/**
+ * Notes what the props ask to show, as they arrive (with room for a change or not): since when they
+ * have asked for it, and since when they have asked for something other than what is shown.
+ */
+function note(live: Live, key: string): void {
   if (key !== live.wantKey) {
     live.wantKey = key
     live.wantTick = live.tick
   }
-  const hasLanded = live.shown.isWorking && !want.isWorking
-  const isHeld = live.tick - live.shownTick < HOLD_TICKS
-  const isPause =
-    want.isWorking && want.activity === null && want.slip === null && live.shown.activity !== null && live.tick - live.wantTick < GAP_TICKS
-  // A hiccup takes over from its own tool at once: the line keeps its subject and says it stumbled.
-  const isOwn = want.slip !== null && JSON.stringify(want.slip) === JSON.stringify(live.shown.activity)
-  if (hasLanded || (isTick && (isOwn || (!isHeld && !isPause)))) {
-    const before = live.shown
-    live.shown = want
-    live.shownKey = key
-    live.shownTick = live.tick
-    if (live.slipDue !== null && want.slip === live.slipDue && live.slipUpAt === NEVER) {
-      // The hiccup goes up: he squeezes his eyes shut, then glances away.
-      live.slipUpAt = live.tick
-      live.oopsFrom = live.tick
-      live.oopsUntil = live.tick + OOPS_TICKS
-    }
-    notice(live, before)
+  if (key === live.shownKey) {
+    live.offTick = NEVER
+  } else if (live.offTick === NEVER) {
+    live.offTick = live.tick
   }
+}
+
+function show(live: Live, want: Shown, key: string): void {
+  const before = live.shown
+  if (isThinking(want) && !isThinking(before)) {
+    live.thinkAt = live.tick
+  }
+  live.shown = want
+  live.shownKey = key
+  live.shownTick = live.tick
+  // (A tick at most, and never more in practice: a tick always has room to show what waits once
+  // its hold is over, which is a tick at most past when the props moved off what is shown, no later
+  // than they asked for this; and a tick the second has no room for rolls its clock back. The cap
+  // only says so, and drawing would be the same without it.)
+  live.lag = Math.min(1, live.tick - live.wantTick)
+  live.offTick = NEVER
+  if (live.slipDue !== null && want.slip === live.slipDue && live.slipUpAt === NEVER) {
+    // The hiccup goes up: he squeezes his eyes shut, then glances away.
+    live.slipUpAt = live.tick
+    live.oopsFrom = live.tick
+    live.oopsUntil = live.tick + OOPS_TICKS
+  }
+  notice(live, before)
+}
+
+// Claude at work: not between turns, and not waiting on you (a question, a plan to look over), when
+// he rests as he does between turns.
+function isBusy(shown: Shown): boolean {
+  return shown.isWorking && shown.activity?.kind !== 'ask'
+}
+
+function isThinking(shown: Shown): boolean {
+  return shown.isWorking && shown.activity === null && shown.slip === null
 }
 
 function isReading(shown: Shown): boolean {
@@ -309,11 +437,22 @@ function notice(live: Live, before: Shown | null): void {
 }
 
 // A tiny deterministic dice, so a frame is a function of the tick.
+function dice(seed: number, sides: number): number {
+  const n = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0
+
+  return ((n ^ (n >>> 13)) >>> 0) % sides
+}
+
 function later(tick: number): number {
-  const n = Math.imul((tick * 8 + 3) ^ 0x9e3779b9, 0x85ebca6b) >>> 0
   const [low, high] = GLANCE_EVERY
 
-  return tick + low + (((n ^ (n >>> 13)) >>> 0) % (high - low + 1))
+  return tick + low + dice(tick * 8 + 3, high - low + 1)
+}
+
+// One blink in each stretch of BLINK_EVERY ticks, at a place the dice picks,
+// so the gaps run 4.5 to 7 seconds and he reads as alive rather than clockwork.
+function isBlinkTick(tick: number): boolean {
+  return tick % BLINK_EVERY === 8 + dice(Math.floor(tick / BLINK_EVERY) * 8 + 5, 6)
 }
 
 function advance(surface: ClientSurface<State>): void {
@@ -321,15 +460,29 @@ function advance(surface: ClientSurface<State>): void {
   if (state === undefined) {
     return
   }
-  const live = state.live
+  const { live, pace } = state
+  tick(pace)
+  const was = { ...live }
   live.tick += 1
-  hold(live, true)
+  hold(live, { isFree: true, canLand: true })
   // Reading on: the next look at the words comes round.
   if (!live.props.isStill && isReading(live.shown) && live.tick >= live.nextGlance) {
     live.glanceAt = live.tick
     live.nextGlance = later(live.tick)
   }
-  repaint(surface, state)
+  const frame = compose(live, widthOf(surface))
+  const drawn = JSON.stringify(frame)
+  if (drawn === state.drawn) {
+    return
+  }
+  // A frame put up since the last tick keeps this one, and no second has more than four changes:
+  // the tick holds, clock and all, and the next one moves on from where this one began.
+  if (isHeld(pace)) {
+    Object.assign(live, was)
+    return
+  }
+  spend(pace, true)
+  surface.setState({ ...state, drawn, frame })
 }
 
 function pet(surface: ClientSurface<State>, event: ClientPointerEvent): void {
@@ -340,21 +493,23 @@ function pet(surface: ClientSurface<State>, event: ClientPointerEvent): void {
   const live = state.live
   const isSpinning = live.tick - live.petAt < SPIN.length
   if (!isSpinning && event.y <= 2 && event.x >= MARGIN && event.x < MARGIN + SPRITE + MARKS) {
-    live.petAt = live.tick
-    repaint(surface, state)
+    // At once, or with the next tick when the second has no room for it (he is cheering, say).
+    const isNow = hasRoom(state.pace)
+    live.petAt = isNow ? live.tick : live.tick + 1
+    if (isNow) {
+      const frame = compose(live, widthOf(surface))
+      const drawn = JSON.stringify(frame)
+      if (drawn !== state.drawn) {
+        spend(state.pace, false)
+        surface.setState({ ...state, drawn, frame })
+      }
+    }
   }
 }
 
-// Draw again only when the frame differs from the one on screen.
-function repaint(surface: ClientSurface<State>, state: State): void {
-  const drawn = JSON.stringify(compose(state.live, widthOf(surface)))
-  if (drawn !== state.drawn) {
-    surface.setState({ live: state.live, drawn })
-  }
-}
-
-function widthOf(surface: ClientSurface<State>): number {
-  return surface.columns > 0 ? surface.columns : (surface.state?.live.props.columns ?? 100)
+/** The band's width in columns: the surface's, else the props' (a mount before the first layout), else 100. */
+function widthOf(surface: ClientSurface<State>, props?: BandProps): number {
+  return surface.columns > 0 ? surface.columns : ((props ?? surface.state?.live.props)?.columns ?? 100)
 }
 
 /**
@@ -380,12 +535,22 @@ function compose(live: Live, columns: number): Frame {
   const sweat = pose.arms === 'down' && pose.turn === null && pose.canSweat ? sweatAt(live, live.tick) : null
   const sprite = pose.turn !== null ? turned(pose.turn) : live.props.isAppleTerminal ? appleSprite(pose) : body(pose)
 
-  return { sprite, marks: marks(pose, sweat), lines: words(live, panel), panel }
+  return { sprite, marks: marks(pose, sweat), lines: words(live, panel), panel, columns }
 }
 
 // ── Clawd ──────────────────────────────────────────────────────────────────────
 
 const REST: Pose = { eyes: 'open', arms: 'down', feet: 'both', turn: null, mark: null, canSweat: true }
+
+/** Whether he looks at the words on the frame on screen (a glance he began, finishing whatever the line says). */
+function isLookingNow(live: Live): boolean {
+  return live.shown.isWorking && !live.props.isStill && live.tick >= live.glanceAt && live.tick < live.glanceAt + GLANCE_TICKS
+}
+
+/** Whether he cheers on this tick: from the tick his cheer starts on (this one, or the next: see receive) to its end. */
+function isCheering(live: Live, tick: number): boolean {
+  return tick >= live.cheerUntil - CHEER_TICKS && tick < live.cheerUntil
+}
 
 /** His pose at a tick, from what he knows now (later ticks too: the bead looks ahead for a quiet stretch). */
 function poseAt(live: Live, tick: number): Pose {
@@ -401,7 +566,7 @@ function poseAt(live: Live, tick: number): Pose {
     const age = tick - live.oopsFrom
     return { ...REST, eyes: still || age < 2 ? 'closed' : 'left' }
   }
-  if (tick < live.cheerUntil) {
+  if (isCheering(live, tick)) {
     return { ...cheer(tick - (live.cheerUntil - CHEER_TICKS), still), canSweat: false }
   }
   if (tick < live.waveUntil) {
@@ -409,7 +574,7 @@ function poseAt(live: Live, tick: number): Pose {
     const age = tick - (live.waveUntil - WAVE_TICKS)
     return { ...REST, arms: age < 3 || (age >= 5 && age < 8) ? 'one-up' : 'down' }
   }
-  if (live.shown.isWorking) {
+  if (isBusy(live.shown)) {
     return working(live, tick)
   }
   if (isNapping(live, tick)) {
@@ -421,11 +586,13 @@ function poseAt(live: Live, tick: number): Pose {
   if (still) {
     return REST
   }
-  // Idle: still, but alive. A blink every five or six seconds, and every twenty
-  // a glance over at the words (never a blink right beside it).
+  // Idle: still, but alive. A blink every five or six seconds, never quite on
+  // the beat, and every twenty a glance over at the words (never a blink right
+  // beside it, and never in the three ticks after a cheer, so his arms come
+  // down with his eyes open).
   const t = tick % 80
   const isGlance = t >= 40 && t < 44
-  const isBlink = tick % 22 === 21 && !(t >= 38 && t < 46)
+  const isBlink = isBlinkTick(tick) && !(t >= 38 && t < 46) && !(tick >= live.cheerUntil && tick - live.cheerUntil < AFTER_CHEER)
 
   return { ...REST, eyes: isGlance ? 'right' : isBlink ? 'closed' : 'open' }
 }
@@ -454,8 +621,10 @@ function petted(age: number, props: BandProps): Pose {
   return { ...REST, mark: heart(0), canSweat: false }
 }
 
-// A turn landed: arms up and held, a happy shuffle of the feet, a dip, arms up
-// again, while a clay sparkle twinkles beside his raised claw. Four seconds.
+// A turn landed: arms up and held through a happy shuffle of the feet, while a
+// clay sparkle twinkles beside his raised claw, as Claude Code's own spinner
+// glyphs do: big, bigger, big, small, bigger. Four seconds. (His arms stay up
+// all the while: a beat with them down read as the cheer dropping out.)
 function cheer(age: number, still: boolean): Pose {
   const sparkle = (text: string): Mark => ({ row: 0, col: 1, lines: [text], color: ACCENT })
   if (still) {
@@ -471,8 +640,8 @@ function cheer(age: number, still: boolean): Pose {
     return { ...REST, arms: 'up', feet: 'right', mark: sparkle('✶') }
   }
   if (age < 10) {
-    // The dip: arms down, the sparkle small for a moment.
-    return { ...REST, mark: sparkle('✢') }
+    // Both feet down again, and the sparkle small for a moment before it flares.
+    return { ...REST, arms: 'up', mark: sparkle('✢') }
   }
 
   return { ...REST, arms: 'up', mark: sparkle('✻') }
@@ -481,13 +650,23 @@ function cheer(age: number, still: boolean): Pose {
 // While Claude works his pose says what kind of work it is, calmly: Claude
 // Code's own spinner is already moving right above him. Eyes open is home.
 function working(live: Live, tick: number): Pose {
+  const pose = workPose(live, tick)
+  // A look at the words he has started finishes, whatever the line moves on to (his eyes never flick
+  // over and straight back): its two seconds, with whatever his claws and feet do for the new work.
+  const isLooking = !live.props.isStill && tick >= live.glanceAt && tick < live.glanceAt + GLANCE_TICKS
+
+  return isLooking ? { ...pose, eyes: 'right' } : pose
+}
+
+function workPose(live: Live, tick: number): Pose {
   const activity = live.shown.activity
   if (live.props.isStill) {
     return REST
   }
   if (activity === null) {
-    // Thinking: eyes on you; now and then a slow glance away, or a blink.
-    const t = tick % 64
+    // Thinking: eyes on you; now and then a slow glance away, or a blink. Counted from when "Thinking"
+    // came up, so a turn never opens on a sideways look: the first comes five seconds in.
+    const t = (((tick - live.thinkAt) % 64) + 64) % 64
     return { ...REST, eyes: t >= 20 && t < 24 ? 'left' : t === 31 || t === 52 ? 'closed' : 'open' }
   }
   switch (activity.kind) {
@@ -499,7 +678,7 @@ function working(live: Live, tick: number): Pose {
         return { ...REST, eyes: 'right' }
       }
       const isNear = [-2, -1, 1, 2].some(d => isGlancing(live, tick + d))
-      return { ...REST, eyes: tick % 22 === 21 && !isNear ? 'closed' : 'open' }
+      return { ...REST, eyes: isBlinkTick(tick) && !isNear ? 'closed' : 'open' }
     }
     case 'edit': {
       // Writing: a claw taps twice, half a second up each time, then rests; a blink in the rest.
@@ -512,7 +691,7 @@ function working(live: Live, tick: number): Pose {
       return { ...REST, eyes: tick % 32 === 27 ? 'closed' : 'open', feet: t < 2 ? 'left' : t >= 4 && t < 6 ? 'right' : 'both' }
     }
     default:
-      return { ...REST, eyes: tick % 22 === 21 ? 'closed' : 'open' }
+      return { ...REST, eyes: isBlinkTick(tick) ? 'closed' : 'open' }
   }
 }
 
@@ -534,7 +713,7 @@ function sweatAt(live: Live, tick: number): string | null {
   if (props.isStill) {
     return '▖'
   }
-  const every = live.shown.isWorking ? SWEAT_AT_WORK : SWEAT_IDLE
+  const every = isBusy(live.shown) ? SWEAT_AT_WORK : SWEAT_IDLE
   const phase = tick % every
   if (phase < 8 || phase >= 14) {
     return null
@@ -636,19 +815,19 @@ function marks(pose: Pose, sweat: string | null): Row[] {
 // its end, in a box of its own, and never below six cells.
 
 /** Terminal cells: wide CJK characters and emoji count two (see `cells`). */
-const CELLS: Measure = { row: width, gap: 2, least: n => n }
+const CELLS: Measure = { row: width, gap: 2 }
 
 function words(live: Live, panel: number): Line[] {
   const { props } = live
   const said = {
     ...live.shown,
     isHigh: props.isHigh,
+    percent: props.percent,
     limit: props.limit,
     lastTurn: props.lastTurn,
-    resetsIn: props.limit?.resetsInMs == null ? null : span(props.limit.resetsInMs - (live.tick - live.propsTick) * TICK_MS),
-    isStatic: false,
+    resetsAt: props.limit?.resetsAt ?? null,
     // While he cheers, the words say what finished; a warning waits for the cheer to end.
-    isLanding: live.tick < live.cheerUntil,
+    isLanding: isCheering(live, live.tick),
   }
 
   return [firstFit(whereForms(props), panel, CELLS), fill(props, panel), firstFit(happeningForms(said), panel, CELLS)].map(line => cutAt(line, panel))
@@ -674,7 +853,13 @@ function cutAt(line: Line, panel: number): Line {
     return line
   }
 
-  return { ...line, squeezeWidth: Math.max(1, cells(cut(text, room - 1)) + 1) }
+  // Never an ellipsis straight after a hyphen, a slash, a dot or a space ("first-…", "register.…"):
+  // the cut steps back to the last letter, as the tide's does; words a person wrote, to the end of
+  // their last whole word ("Run the…").
+  const kept = cut(text, room - 1)
+  const neat = squeezeCut(line, text, kept)
+
+  return { ...line, squeezeWidth: Math.max(1, cells(neat === '' ? kept : neat) + 1) }
 }
 
 // How full things are: context and the five-hour limit as soft meters, and the cost.
@@ -695,18 +880,26 @@ function fill(props: BandProps, panel: number): Line {
     { ctx: null, lim: null, gap: 2, isLong: false, hasCost: false, hasLimit: false },
   ]
   const forms = shapes.map(({ ctx, lim, gap, isLong, hasCost, hasLimit }): Form => {
-    // Meters keep Clawd's clay (the limit a quiet grey); only the number turns
-    // amber past the line, so a full band reads clearly without shouting. Each
-    // number hugs its meter and pads after itself, so nothing after it moves.
+    // Meters keep Clawd's clay (the limit a quiet grey); past the line the number
+    // turns clay and bold, in the one warm voice line 3's "Getting full" speaks
+    // in (amber beside clay read as two alarms), so a full band reads clearly
+    // without shouting. Each number hugs its meter and pads after itself, so
+    // nothing after it moves.
     const left: Row = [{ text: 'context', color: DIM }, SPACE, ...(ctx === null ? [] : [...meter(props.percent, ctx, ACCENT), SPACE]), ...figure(props.percent, props.isHigh)]
     if (limit !== null && hasLimit) {
       left.push(
         { text: ' '.repeat(gap) },
-        { text: isLong && limit.label === '5h' ? '5h limit' : limit.label, color: DIM },
+        { text: isLong ? `${limit.label} limit` : limit.label, color: DIM },
         SPACE,
-        ...(lim === null ? [] : [...meter(limit.percent, lim, DIM), SPACE]),
+        // Its fill turns clay with its figure once the limit is near, so the warning reads as one thing.
+        ...(lim === null ? [] : [...meter(limit.percent, lim, limit.percent >= 80 ? ACCENT : DIM), SPACE]),
         ...figure(limit.percent, limit.percent >= 80),
       )
+    }
+    // With the meters, the cost keeps to the panel's right edge, under the model; without them (a
+    // narrow band, where the model has gone too) it follows the figures, so no hole opens in the line.
+    if (ctx === null && hasCost && cost.length > 0) {
+      return { line: { left: [...left, { text: ' '.repeat(gap) }, ...cost], right: [] }, least: 0 }
     }
 
     return { line: { left, right: hasCost ? cost : [] }, least: 0 }
@@ -715,11 +908,12 @@ function fill(props: BandProps, panel: number): Line {
   return firstFit(forms, panel, CELLS)
 }
 
-// "42%" and its padding to four cells, apart: a warm figure is bold, and its padding is plain.
+// "42%" and its padding to four cells, apart: a warm figure is clay and bold, and its padding is plain.
 function figure(percent: number | null, isWarm: boolean): Row {
-  const text = percent === null ? '-' : `${Math.round(percent)}%`
+  // No reading yet (a new session, a /clear): an en dash, never a "0%" that was never measured.
+  const text = percent === null ? '–' : `${Math.round(percent)}%`
 
-  return [isWarm ? { text, color: WARN, bold: true } : { text }, { text: ' '.repeat(Math.max(0, 4 - cells(text))) }].filter((seg: Seg) => seg.text !== '')
+  return [isWarm ? { text, color: ACCENT, bold: true } : { text }, { text: ' '.repeat(Math.max(0, 4 - cells(text))) }].filter((seg: Seg) => seg.text !== '')
 }
 
 // A soft meter: one even track, filled from the left.

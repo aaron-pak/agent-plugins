@@ -1,15 +1,25 @@
 {
   "name": "session-band",
-  "description": "Clawd and the session at a glance in the band above the prompt: where you are, how full the context and the 5-hour limit are, and what Claude is doing, in three calm lines beside Claude Code's own Clawd (a vector Clawd on the desktop). /band still keeps him still. Claude Code only.",
+  "description": "Clawd above the prompt with your session at a glance. Two looks: tide (the default) puts him on a little beach where the tide rises as context fills; hearth sets him beside three calm lines. Switch with /band or in /config. /band still keeps either look calm, and /band lively brings the motion back. Works in the terminal and the desktop Code tab. Claude Code only.",
   "author": {
     "name": "Aaron Pak"
   },
   "types": "./types/index.d.ts",
   "userConfig": {
+    "look": {
+      "type": "string",
+      "title": "Band look",
+      "description": "tide: Clawd on a little beach, where the tide rises as your context fills. hearth: Clawd beside three calm lines. /band tide and /band hearth switch it too, and /band still keeps either look calm.",
+      "options": [
+        "tide",
+        "hearth"
+      ],
+      "default": "tide"
+    },
     "warnAt": {
       "type": "number",
       "title": "Warn at",
-      "description": "Context fill, in percent, where Clawd starts to sweat, the number turns amber and a toast suggests /compact.",
+      "description": "Context fill, in percent, where the band nudges toward /compact (high tide on the beach; an orange percent and a sweating Clawd by the hearth), with a toast each time the context crosses it.",
       "default": 80
     }
   }
