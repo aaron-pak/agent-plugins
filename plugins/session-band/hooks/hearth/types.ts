@@ -1,5 +1,5 @@
 // Hearth's own view of the session: exactly the facts and props its band was built and tested on.
-// The merged facts (types/index.d.ts) are turned into this `Info` by hearthInfo() in ./view.ts.
+// The shared facts (types/index.d.ts) are turned into this `Info` by hearthInfo() in ./view.ts.
 
 /** One todo, from TodoWrite or the Task tools. */
 export type Todo = { id: string; subject: string; activeForm: string | null; status: 'pending' | 'in_progress' | 'completed' }
@@ -10,7 +10,7 @@ export type Activity = { id: string; kind: ActivityKind; verb: string; target: s
 /** `ask`: a wait on you (a question, a plan to look over): he rests, and the words are dim. */
 export type ActivityKind = 'read' | 'edit' | 'run' | 'web' | 'plan' | 'ask' | 'other'
 
-/** How the last turn went: the merged facts' own (types/index.d.ts), the same for both looks. */
+/** How the last turn went: the shared facts' own (types/index.d.ts), the same for both looks. */
 export type { LastTurn, Limit } from '../../types'
 import type { LastTurn, Limit } from '../../types'
 

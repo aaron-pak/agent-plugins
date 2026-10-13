@@ -312,7 +312,7 @@ function cheerForms(turn: LastTurn | null): Words[] {
 // A finished turn, cheered (a clay ✻ and a bold green "Done") or settled after (the ✻ dim, as
 // Claude Code marks a finished turn, and "Done" plain). Both are the same words in the same chain,
 // so at any width the cheer hands over to the settled line without a word changing: only the
-// colours calm down. The ✻ goes before any figure does.
+// colors calm down. The ✻ goes before any figure does.
 function doneForms(turn: LastTurn, isCheer: boolean): Words[] {
   const done: Piece = isCheer ? { text: 'Done', tone: 'good', bold: true } : { text: 'Done', fitsAsBold: true }
   const sparkle: Words = [{ text: '✻', tone: isCheer ? 'clay' : 'dim' }, { text: ' ' }]
@@ -372,16 +372,16 @@ function tideForms(known: Info, isHigh: boolean, now: number): Words[] {
     return [...drops(none('No context reading yet'), extras(known, now)), none('No reading yet'), none('No reading')]
   }
   // The number in plain bold, the clearest text in the band; the water carries the sea blue. At high
-  // tide it is in Claude's clay, as the nudge after it is: one colour for the one warning (the
+  // tide it is in Claude's clay, as the nudge after it is: one color for the one warning (the
   // theme's warning yellow beside the clay read as two alarms). A plain space between bold and
-  // dim: Ink closes both with one code, so neighbours would bleed.
+  // dim: Ink closes both with one code, so neighbors would bleed.
   const figure: Piece = { text: `${Math.round(known.percent)}%`, tone: isHigh ? 'clay' : 'plain', bold: true }
-  const labelled: Words = [figure, { text: ' ' }, { text: 'context', tone: 'dim' }]
+  const labeled: Words = [figure, { text: ' ' }, { text: 'context', tone: 'dim' }]
   // The nudge's words are in the clay, and its separator is dim, as every other on the line is, so
   // the dots keep one rhythm. Right after the bold percent a plain space comes first, as a limit's
   // separator there has (see nearLimit), since Ink closes bold and dim with one code.
   const nudge = (ask: string): Words => [{ text: ' ' }, { text: '· ', tone: 'dim' }, { text: ask, tone: 'clay' }]
-  const head: Words = isHigh ? [...labelled, SEP, { text: 'try /compact', tone: 'clay' }] : labelled
+  const head: Words = isHigh ? [...labeled, SEP, { text: 'try /compact', tone: 'clay' }] : labeled
   const bare = isHigh ? [figure, ...nudge('try /compact')] : [figure]
   const near = nearLimit(known)
   // With a limit near its end, the line never shows its head alone: the limit goes only after "context" has.
@@ -394,7 +394,7 @@ function tideForms(known: Info, isHigh: boolean, now: number): Words[] {
   // shows: "86% context · 5h limit 100%", "86% · 5h limit 100%", "86% · 5h 100%", "5h 100%".
   const limit = known.limit
   if (near !== null && limit !== null && Math.round(limit.percent) >= 100) {
-    const reached = drops(labelled, extras(known, now)).slice(0, -1)
+    const reached = drops(labeled, extras(known, now)).slice(0, -1)
     return [...reached, ...near.map(one => [figure, ...one]), [{ text: `${limitLabel(limit.kind)} `, tone: 'dim' }, { text: `${Math.round(limit.percent)}%`, tone: 'clay' }]]
   }
 

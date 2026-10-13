@@ -1,4 +1,4 @@
-// The merged facts, seen exactly as the tide's beach was built and tested to see them.
+// The shared facts, seen exactly as the beach's code reads them.
 
 import type { Activity as Fact, Info as Facts } from '../../types'
 import { shownTodos } from '../facts'
@@ -9,7 +9,9 @@ export function tideInfo(known: Facts): Info {
   const turn = known.lastTurn
 
   return {
-    model: known.model,
+    // The model stands after the branch on line 3: it joins with git's first answer, so the branch
+    // never pushes it along (the project is up from the first frame).
+    model: known.isGitRead ? known.model : null,
     project: known.project,
     branch: known.branch,
     dirty: known.dirty,

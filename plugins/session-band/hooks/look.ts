@@ -3,6 +3,7 @@
 // row, and a pick made by /band shows at once, before /config's reload lands.
 
 import type { Look, LookPick, Motion } from '../types'
+import { cells, cut } from './clawd'
 
 const PLUGIN = 'session-band'
 /** The /config row of the look, as a plugin's own `userConfig` field is keyed; `$.config.list()` finds it when it is keyed otherwise. */
@@ -17,8 +18,7 @@ const ASKS = new Set(['help', 'h', '?', 'status', ...SETTINGS])
 const OFFS = new Set(['off', 'none', 'hide', 'disable'])
 /**
  * The words the band's own replies use for its settings ("/band still calms them"), and a few a person
- * reaches for, read as those settings: the tide was Tidepool before the merge, and people who knew it
- * then still call it that ("/band tidepool", "tide-pool").
+ * reaches for, read as those settings: the beach is a tidepool too ("/band tidepool", "tide-pool").
  */
 const SAYS: Record<string, Look | Motion> = { calm: 'still', quiet: 'still', stop: 'still', pause: 'still', beach: 'tide', tidepool: 'tide', pool: 'tide' }
 
@@ -80,20 +80,36 @@ export function parseBand(args: string): BandAsk {
     } else if (SETTINGS.has(word)) {
       // "/band look hearth": a setting's name before the setting says nothing more.
     } else {
-      return { error: `Band: "${meant.get(word) ?? word}" isn't a look or a motion. Try tide, hearth, still or lively.` }
+      // What /band takes first, then the word it did not know, cut to fit the line (see unknownReply).
+      return { error: unknownReply(meant.get(word) ?? word) }
     }
   }
   if (looks.length > 1) {
-    return { error: 'Band: one look at a time. /band tide or /band hearth.' }
+    return { error: 'One look at a time: /band tide or /band hearth.' }
   }
   if (motions.length > 1) {
-    return { error: 'Band: one motion at a time. /band still or /band lively.' }
+    return { error: 'One motion at a time: /band still or /band lively.' }
   }
   if (isOff && looks.length + motions.length === 0) {
     return { off: true }
   }
   // "/band hearth off": the look it names, and then the word on turning the band off.
   return { look: looks[0] ?? null, motion: motions[0] ?? null, ...(isOff ? { off: true as const } : {}) }
+}
+
+/**
+ * The reply to a word /band does not know: what it takes, then the word quoted back. A word too long
+ * for the line (a long pasted token, or a word in a wide script) is cut with an ellipsis, counted as
+ * two cells since terminals differ on its width, so the reply stays one line like every other.
+ */
+function unknownReply(word: string): string {
+  const said = (quoted: string) => `Try tide, hearth, still or lively, not "${quoted}".`
+  const room = REPLY_MOST - cells(said(''))
+  if (cells(word) <= room) {
+    return said(word)
+  }
+
+  return said(`${cut(word, room - 2)}\u2026`)
 }
 
 /**
@@ -151,12 +167,21 @@ export function migrateMotion(motion: unknown, style: unknown): Motion {
  * already happened, and a look already back on the hearth (/config) needs no word.
  */
 export function upgradeToast(motion: unknown, style: unknown, look: Look): string | null {
-  return !isMotion(motion) && style === 'hearth' && look === 'tide' ? 'Band: the beach is the new look. /band hearth brings the hearth back.' : null
+  return !isMotion(motion) && style === 'hearth' && look === 'tide' ? `The beach is the new look. ${BACK.tide}` : null
 }
 
 export function newActivation(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
+
+/**
+ * The most cells a /band reply takes. Claude Code prints a command's reply after a 19-cell prefix
+ * that already names the plugin ("  ⎿  session-band: "), so 61 would fill an 80-column terminal to
+ * its last cell; 60 keeps one to spare, should the host hold the last column back. A reply that fits
+ * there never leaves a word alone on a second line at any wider width. Only /config's own reason for
+ * a refusal may run past it; a word /band does not know is cut to fit (see unknownReply).
+ */
+export const REPLY_MOST = 60
 
 /** What /band did, for its one-line reply. `look` and `motion` are what is on after the command. */
 type Reply = {
@@ -170,103 +195,143 @@ type Reply = {
   isSessionOnly?: boolean
   /** /config refused the look, and why. */
   denied?: string
+  /** The words named a motion too ("/band hearth still"), so a refusal's reply keeps the motion: it is news. */
+  isMotionAsked?: boolean
   /** The words asked for no band too ("/band hearth off"): the reply ends on how to turn it off. */
   isOff?: boolean
 }
 
 const OTHER: Record<Look, Look> = { tide: 'hearth', hearth: 'tide' }
+const OTHER_MOTION: Record<Motion, Motion> = { lively: 'still', still: 'lively' }
+// A look's name as a reply opens on it: the prefix before the reply already says whose it is.
+const NAME: Record<Look, string> = { tide: 'Tide', hearth: 'Hearth' }
 
 // How each look moves, and how it rests, each said once in its own voice.
 const LIVELY: Record<Look, string> = {
-  tide: 'Waves lap the shore and Clawd potters about.',
-  hearth: 'Clawd blinks, reads along and cheers.',
+  tide: 'Waves lap the shore.',
+  hearth: 'Clawd blinks and cheers.',
 }
 const STILL: Record<Look, string> = {
-  tide: 'The waves rest, and the tide shows your context.',
-  hearth: 'Clawd sits quietly, and the lines keep you posted.',
+  tide: 'The waves rest.',
+  hearth: 'Clawd rests.',
 }
 // The way back from a look to the other one: what an opt-out most needs to say.
 const BACK: Record<Look, string> = {
   tide: '/band hearth to switch back.',
   hearth: '/band tide to switch back.',
 }
-// The way from one motion to the other.
+// The way from one motion to the other, after the sentence that says who "them" and "him" are.
 const TO_STILL: Record<Look, string> = { tide: '/band still calms them.', hearth: '/band still calms him.' }
 const TO_LIVELY: Record<Look, string> = { tide: '/band lively brings them back.', hearth: '/band lively lets him move.' }
-// The same, with nothing before it to say who "them" and "him" are (see replyFor's shorter forms).
-const ALONE: Record<string, string> = {
-  [TO_STILL.tide]: '/band still calms the waves.',
-  [TO_STILL.hearth]: '/band still calms Clawd.',
-  [TO_LIVELY.tide]: '/band lively brings the waves back.',
-  [TO_LIVELY.hearth]: '/band lively lets Clawd move.',
-}
 // Reduced motion on: whatever /band asks, the look stays still, and the reply says so instead of
 // pointing at a /band lively that would change nothing.
 const CALM: Record<Look, string> = {
-  tide: 'Your reduced-motion setting keeps the beach calm either way.',
-  hearth: 'Your reduced-motion setting keeps Clawd calm either way.',
+  tide: 'Reduced motion keeps the beach calm either way.',
+  hearth: 'Reduced motion keeps Clawd calm either way.',
 }
-const FOR_CALM = 'still for your reduced-motion setting'
+const FOR_CALM = 'still for reduced motion'
 // Lively asked for under reduced motion: when it will be, and what holds it still till then.
 const LIVELY_LATER: Record<Look, string> = {
-  tide: 'Band: lively once reduced motion is off; until then the beach stays calm.',
-  hearth: 'Band: lively once reduced motion is off; until then Clawd stays calm.',
+  tide: 'Lively once reduced motion is off; the waves rest till then.',
+  hearth: 'Lively once reduced motion is off; Clawd rests till then.',
 }
 /** The band has no off switch of its own: the plugin manager turns it off. */
 const TURN_OFF = '/plugin turns the band off.'
+/** Before /config's own reason for a refusal. */
+const KEPT = '/config kept the look:'
 
 /**
- * /band's reply: one line, in the voice of the look on screen, at most 100 characters (a refusal
- * quotes /config's own reason, which may run longer). It says what is on, then the one thing most
- * worth knowing next: after a look, the way back; after a motion, the way to the other one.
+ * /band's reply: one line, in the voice of the look on screen, of at most REPLY_MOST cells (a
+ * refusal quotes /config's own reason, which may run longer). It says what is on, then the one
+ * thing most worth knowing next: after a look, the way back; after a motion, the way to the other.
  */
 export function replyFor(reply: Reply): string {
   const line = replyLine(reply)
+  if (reply.denied !== undefined) {
+    // /config's reason runs as long as it runs, so it comes last, after a plain part: what is on, the
+    // off note when the words asked for it, and "/config kept the look:". What is on gives way to a
+    // shorter form when that lets the whole reply fit the line (never to the look's name alone when
+    // the words asked for a motion, which is news); when nothing lets it fit, the shortest form goes
+    // first, so the reason wraps as little as it can. So the plain part always fits, and a wrap only
+    // ever moves the reason. The refusal is the news, so a look /config could not save before goes
+    // unmarked here. A reason with no words in it ("", "...") leaves the reply on "/config kept the look."
+    const off = reply.isOff === true ? ` ${TURN_OFF}` : ''
+    const reason = reasonOf(reply.denied)
+    const plains = whatIsOn(reply, NAME[reply.look]).map(on => `${on}${off} ${KEPT}`)
+    const whole = (plain: string) => (reason === '' ? `${plain.slice(0, -1)}.` : `${plain} ${reason}.`)
+    const kept = reply.isMotionAsked === true ? plains.slice(0, -1) : plains
+    const plain = kept.find(form => cells(whole(form)) <= REPLY_MOST) ?? [...kept].reverse().find(form => cells(form) <= REPLY_MOST) ?? plains[plains.length - 1] ?? line
+
+    return whole(plain)
+  }
   if (reply.isOff !== true) {
     return line
   }
-  // Then how to turn the band off: after the whole reply where it fits, else after what is on and
-  // the way on from it (the look's words on how it moves go, so the way on names who moves: "the
-  // waves", "Clawd", never a "them" with nothing before it), else after what is on alone.
-  // ("Band: lively once reduced motion is off" is what is on, without what holds it still till then.)
-  const sentences = line.split(/(?<=\.) /u)
-  const [head = line] = sentences
-  const last = sentences.at(-1) ?? ''
-  const forms = [line, sentences.length > 2 ? `${head} ${ALONE[last] ?? last}` : line, head, head.replace(/;.*$/u, '.')].map(form => `${form} ${TURN_OFF}`)
+  // Then how to turn the band off, after what is on: all the reply would say if that fits, else what
+  // is on, as short as it needs to be ("Tide, lively.", "Hearth, still.", "Hearth.").
+  const forms = [line, ...whatIsOn(reply)].map(form => `${form} ${TURN_OFF}`)
 
-  return forms.find(form => form.length <= 100) ?? forms[forms.length - 1] ?? line
+  return forms.find(form => cells(form) <= REPLY_MOST) ?? forms[forms.length - 1] ?? line
+}
+
+/** The look as a reply names it, marked when /config could not save it ("Hearth (session only)"). */
+function nameOf(reply: Reply): string {
+  return reply.isSessionOnly === true ? `${NAME[reply.look]} (session only)` : NAME[reply.look]
+}
+
+/** What is on as a reply opens on it, longest first: "Hearth, still for reduced motion.", "Hearth, still.", "Hearth." */
+function whatIsOn(reply: Reply, named = nameOf(reply)): string[] {
+  const forms = [`${named}, ${reply.isCalm ? FOR_CALM : reply.motion}.`, `${named}, ${reply.isCalm ? 'still' : reply.motion}.`, `${named}.`]
+
+  return [...new Set(forms)]
 }
 
 function replyLine(reply: Reply): string {
   const { kind, look, motion, isCalm } = reply
   const isSessionOnly = reply.isSessionOnly === true
-  // "This session only" belongs to the look, never the motion (which is always remembered).
-  const named = isSessionOnly ? `${look} (this session only)` : look
+  // "Session only" belongs to the look, never the motion (which is always remembered).
+  const named = nameOf(reply)
   const moving = isCalm ? FOR_CALM : motion
   if (reply.denied !== undefined) {
-    return `Band: ${named}, ${moving}. /config kept the look: ${reasonOf(reply.denied)}.`
+    // What is on; replyFor adds /config's refusal after it.
+    return `${NAME[look]}, ${moving}.`
   }
   if (kind === 'status') {
-    const where = isSessionOnly ? `Look: /band ${OTHER[look]}.` : `Look: /band ${OTHER[look]} or /config.`
+    // The ways to change what is on: the other look, the other motion (none under reduced motion,
+    // where it would change nothing), and /config, which holds the look (unless it cannot be reached).
+    // Short of room (a look /config could not save), the ways go from the last, so the way to the
+    // other look stays longest; under reduced motion "still" gives up its reason before that way goes;
+    // with no room even for that, what is on is the news.
+    const ways = [`/band ${OTHER[look]}`, ...(isCalm ? [] : [`/band ${OTHER_MOTION[motion]}`]), ...(isSessionOnly ? [] : ['/config'])]
+    for (const on of whatIsOn(reply).slice(0, isCalm ? 2 : 1)) {
+      for (let kept = ways.length; kept > 0; kept--) {
+        const some = ways.slice(0, kept)
+        const offered = some.length > 1 ? `${some.slice(0, -1).join(', ')} or ${some.at(-1) ?? ''}` : (some[0] ?? '')
+        const said = `${on} Try ${offered}.`
+        if (cells(said) <= REPLY_MOST) {
+          return said
+        }
+      }
+    }
 
-    return isCalm ? `Band: ${named}, ${FOR_CALM}. ${where}` : `Band: ${named}, ${motion}. ${where} Motion: /band ${motion === 'still' ? 'lively' : 'still'}.`
+    return `${named}, ${moving}.`
   }
   if (kind === 'motion') {
     if (isCalm) {
-      return motion === 'lively' ? LIVELY_LATER[look] : `Band: ${motion}. ${CALM[look]}`
+      return motion === 'lively' ? LIVELY_LATER[look] : `Still. ${CALM[look]}`
     }
 
-    return motion === 'still' ? `Band: still. ${STILL[look]} ${TO_LIVELY[look]}` : `Band: lively. ${LIVELY[look]} ${TO_STILL[look]}`
+    return motion === 'still' ? `Still. ${STILL[look]} ${TO_LIVELY[look]}` : `Lively. ${LIVELY[look]} ${TO_STILL[look]}`
   }
   if (isSessionOnly) {
-    // Still the way back, as every look reply gives it.
-    return `Band: ${named}${motion === 'still' && !isCalm ? ', still' : ''}; /config could not save it. ${BACK[look]}`
+    // Why it lasts this session only, said once, when it happens; /band alone gives the way back.
+    return `${named}${motion === 'still' && !isCalm ? ', still' : ''}. /config couldn't save it.`
   }
   if (isCalm) {
-    return `Band: ${look}, ${FOR_CALM}. ${BACK[look]}`
+    return `${named}, ${FOR_CALM}. ${BACK[look]}`
   }
 
-  return motion === 'still' ? `Band: ${look}, still. ${STILL[look]} ${BACK[look]}` : `Band: ${look}. ${LIVELY[look]} ${BACK[look]}`
+  return motion === 'still' ? `${named}, still. ${STILL[look]} ${BACK[look]}` : `${named}. ${LIVELY[look]} ${BACK[look]}`
 }
 
 /**
@@ -289,14 +354,24 @@ const NAMES = new Set(['Claude', 'Anthropic'])
 
 /**
  * `/band off`: the band has no such switch, so the reply says what turns it off (the plugin manager,
- * /plugin), then offers the quietest ways it has, from the look on screen: the hearth is already the
- * plainer one. With reduced motion on, the band is still already, so the reply says so rather than
- * offer a /band still that would change nothing.
+ * /plugin), then offers the quietest ways it has, from what is on: the hearth is the plainer look,
+ * and still the quieter motion. A band that is still already, by its motion or by reduced motion, is
+ * never offered a /band still that would change nothing, and a still hearth is as quiet as it gets,
+ * which the reply says (naming reduced motion when that is what keeps it still).
  */
-export function offReply(look: Look, isCalm = false): string {
-  const still = isCalm ? 'reduced motion keeps it still' : '/band still stops the motion'
+export function offReply(look: Look, motion: Motion, isCalm: boolean): string {
+  const isStill = isCalm || motion === 'still'
+  const ways = [...(isStill ? [] : ['/band still']), ...(look === 'tide' ? ['/band hearth'] : [])]
+  if (ways.length > 0) {
+    return `${TURN_OFF} Try ${ways.join(' or ')}.`
+  }
 
-  return look === 'hearth' ? `Band: ${TURN_OFF} The hearth is the plainer look, and ${still}.` : `Band: ${TURN_OFF} ${isCalm ? 'Reduced motion keeps it still' : '/band still stops the motion'}; /band hearth is the plainer look.`
+  return isCalm ? `${TURN_OFF} Reduced motion keeps it still.` : `${TURN_OFF} It's as quiet as it gets.`
+}
+
+/** /band's answer when the store refused a write: it never leaves the person without one. */
+export function troubleReply(isStatus: boolean): string {
+  return `Couldn't ${isStatus ? 'check' : 'switch'} just now. Try /band again in a moment.`
 }
 
 /**
@@ -306,5 +381,5 @@ export function offReply(look: Look, isCalm = false): string {
 export function toastFor(look: Look, percent: number): string {
   const rounded = Math.round(percent)
 
-  return look === 'tide' ? `The tide is coming in: context is ${rounded}% full. Try /compact soon.` : `Context is ${rounded}% full. Run /compact when you're ready.`
+  return look === 'tide' ? `High tide: context is ${rounded}% full. Try /compact soon.` : `Context is ${rounded}% full. Run /compact when you're ready.`
 }

@@ -1413,7 +1413,7 @@ test('an interrupted or declined turn is a calm "Stopped", with no green and no 
   }
 })
 
-// The colour and weight of the run of text that reads exactly `text`.
+// The color and weight of the run of text that reads exactly `text`.
 function runStyle(node: unknown, wanted: string): { color: unknown; bold: boolean } | null {
   let found: { color: unknown; bold: boolean } | null = null
   walk(node, one => {
@@ -1442,7 +1442,7 @@ test('past warnAt the number turns clay and bold, Clawd sweats now and then and 
     const { ui, read } = await band($, surface)
     const { words, tree, lines } = await read()
     expect(words[1]).toContain('86%')
-    // Clay, as Claude Code marks what wants a look, and bold so it reads without colour too.
+    // Clay, as Claude Code marks what wants a look, and bold so it reads without color too.
     expect([surface, runStyle(lines[1]?.node, '86%')]).toEqual([surface, { color: 'claude', bold: true }])
     expect(words[2]).toContain("Getting full · /compact when you're ready")
     if (surface === 'terminal') {
@@ -1604,7 +1604,7 @@ test('near a limit its meter fills clay with its figure, on both surfaces, and a
   }
 })
 
-test('before the first reading the context says so plainly: a dash, never "0%", and the page reads it out', async ($, on) => {
+test('before the first reading the context says so plainly: the meter an empty track and a dash for its figure, never "0%", and the page reads it out', async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
   for (const surface of SURFACES) {
@@ -1613,6 +1613,17 @@ test('before the first reading the context says so plainly: a dash, never "0%", 
       const seen = await read()
       expect([surface, columns, seen.words[1]]).toEqual([surface, columns, expect.stringMatching(/^context\b.*–/u)])
       expect([surface, columns, seen.words.join(' ').includes('0%')]).toEqual([surface, columns, false])
+      if (surface === 'terminal') {
+        // Where the meter has room it shows as its empty track, all of it the track's quiet color,
+        // and where it has none the line reads "context –".
+        const runs: unknown[] = []
+        walk(seen.lines[1]?.node, node => {
+          const only = (node.children ?? []).every(child => typeof child === 'string')
+          if (node.type === 'Text' && only && /^━+$/u.test(text(node))) runs.push(node.props?.color)
+        })
+        expect([columns, seen.words[1]]).toEqual([columns, expect.stringMatching(columns >= 40 ? /^context ━{8,20} – *$/u : /^context – *$/u)])
+        expect([columns, runs]).toEqual([columns, columns >= 40 ? ['subtle'] : []])
+      }
       if (surface === 'desktop' && columns >= 40) {
         // The empty meter says it to anyone the page is read to (at 34 the meter gives way to its words).
         const alts: string[] = []
@@ -1624,6 +1635,13 @@ test('before the first reading the context says so plainly: a dash, never "0%", 
       await ui.unmount()
     }
   }
+  // The first reading fills the meter in place: its figure takes the dash's cell, and nothing before it moves.
+  const { ui, read } = await band($, 'terminal')
+  const before = (await read()).words[1] ?? ''
+  await $.session.measure(measured(42, 0.31, 23))
+  const after = (await read()).words[1] ?? ''
+  expect([after.indexOf('42%'), after.indexOf('━'), [...after.slice(0, after.indexOf('42%'))].length]).toEqual([before.indexOf('–'), before.indexOf('━'), [...before.slice(0, before.indexOf('–'))].length])
+  await ui.unmount()
 })
 
 test('a web search keeps its query as the band narrows, "Searching for ink…", the long verb whole or not at all', async ($, on) => {
@@ -1911,7 +1929,7 @@ test('bold never sits right beside dim words, on either surface', async ($, on) 
 test('calm keeps a flinch to one pose: eyes shut the whole time, then open', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($)
-  expect((await run($, 'band', 'still')).text).toContain('Band: still')
+  expect((await run($, 'band', 'still')).text).toMatch(/^Still\. /u)
   const { ui, read } = await band($, 'terminal', { ...BAND, isWorking: true })
   await prompt($, 'run it')
   await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
@@ -2025,6 +2043,26 @@ test('after a while idle Clawd naps, eyes closed, and the words stay as they wer
     const { ui, read } = await band($, surface)
     const { clawd, words, tree } = await read()
     expect(words[2]).toContain('Done in 41s · 2 tools · 1 file changed')
+    if (surface === 'terminal') {
+      expect(clawd[0]).toBe(HEAD.closed)
+    } else {
+      expect(svgOf(tree)?.alt).toBe('Clawd naps.')
+    }
+    await ui.unmount()
+  }
+})
+
+// The hearth's words are its readout and Clawd carries the mood, so a nap changes him and not line 3:
+// before any turn it still says "Ready when you are", which a prompt makes good at once.
+test('a nap before the first turn keeps "Ready when you are" on line 3 while his eyes close', async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  await clock.advance(5 * 60_000)
+
+  for (const surface of SURFACES) {
+    const { ui, read } = await band($, surface)
+    const { clawd, words, tree } = await read()
+    expect([surface, words[2]]).toEqual([surface, expect.stringMatching(/^Ready when you are *$/u)])
     if (surface === 'terminal') {
       expect(clawd[0]).toBe(HEAD.closed)
     } else {
@@ -2707,12 +2745,12 @@ test('/band still keeps Clawd to one pose per moment, and /band lively lets him 
     }
   }
 
-  expect((await run($, 'band', 'still')).text).toContain('Band: still')
+  expect((await run($, 'band', 'still')).text).toMatch(/^Still\. /u)
   await moves(false)
 
-  expect((await run($, 'band', 'hearth')).text).toContain('Band: hearth')
-  expect((await run($, 'band', 'sparkly')).text).toContain('Band: "sparkly" isn\'t a look or a motion.')
-  expect((await run($, 'band', 'lively')).text).toContain('Band: lively')
+  expect((await run($, 'band', 'hearth')).text).toMatch(/^Hearth\b/u)
+  expect((await run($, 'band', 'sparkly')).text).toContain('not "sparkly".')
+  expect((await run($, 'band', 'lively')).text).toMatch(/^Lively\. /u)
   await moves(true)
 })
 
@@ -2767,10 +2805,10 @@ test('a change to reduced motion takes hold with the next prompt, or with /band,
   expect(await isLively()).toBe(false)
 
   settings.prefersReducedMotion = false
-  expect((await run($, 'band', 'hearth')).text).toBe('Band: hearth, lively. Look: /band tide or /config. Motion: /band still.')
+  expect((await run($, 'band', 'hearth')).text).toBe('Hearth, lively. Try /band tide, /band still or /config.')
   expect(await isLively()).toBe(true)
   settings.prefersReducedMotion = true
-  expect((await run($, 'band', 'hearth')).text).toBe('Band: hearth, still for your reduced-motion setting. Look: /band tide or /config.')
+  expect((await run($, 'band', 'hearth')).text).toBe('Hearth, still for reduced motion. Try /band tide or /config.')
   expect(await isLively()).toBe(false)
 })
 

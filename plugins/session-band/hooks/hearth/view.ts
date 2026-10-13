@@ -1,4 +1,4 @@
-// The merged facts, seen exactly as Hearth's band was built and tested to see them.
+// The shared facts, seen exactly as the hearth's code reads them.
 
 import type { Activity as Fact, Info as Facts } from '../../types'
 import { shownTodos } from '../facts'
@@ -6,7 +6,10 @@ import type { Activity, Held, Info } from './types'
 
 export function hearthInfo(known: Facts): Info {
   return {
-    model: known.model,
+    // The model stands at line 1's right end, and on a narrow band it is the first thing the line
+    // gives up for the branch: it joins with git's first answer, so the branch never pushes it off
+    // (the project is up from the first frame).
+    model: known.isGitRead ? known.model : null,
     project: known.project,
     branch: known.branch,
     dirty: known.dirty,

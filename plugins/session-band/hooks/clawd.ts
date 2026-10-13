@@ -61,14 +61,19 @@ export const APPLE_FEET: Record<Feet, string> = { both: ' ▘▘   ▝▝', left
 
 // ── His marks, the same in both looks ─────────────────────────────────────────
 //
-// Raw colours, since no theme key covers them and an Svg cannot follow the page's theme: each reads
+// Raw colors, since no theme key covers them and an Svg cannot follow the page's theme: each reads
 // on a dark and a light terminal and on both claude.ai pages (#faf9f5 and #262624).
 
 /** His clay and his eye, as both desktops paint him. */
 export const CLAY = '#D77757'
 export const EYE_INK = '#1B1A19'
-/** The pet's heart, on both surfaces of both looks. */
+/** The pet's heart on both desktops. */
 export const HEART_PINK = '#E9789B'
+/**
+ * The pet's heart in both terminal looks: the same pink moved onto xterm's 256-color entry 175
+ * (#d787af), so a terminal that shows only 256 colors keeps its hue.
+ */
+export const TERMINAL_HEART = '#E37DA2'
 /** The nap's z's, on both desktops. */
 export const DOZE_SLATE = '#7E95B5'
 /** A pointer must rest on him this long before it counts as petting: one passing on its way to the composer does not. */

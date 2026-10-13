@@ -640,7 +640,7 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
     // Two little hops as his arms go up.
     `@keyframes ${P}hop{0%,16%,50%,64%,100%{transform:translate(0,0)}7%,56%{transform:translate(0,-1px)}}`,
     // One z at a time pops up beside him and drifts up and away, shrinking as it goes: at full
-    // colour throughout, as the tide's z's, since a half-faded slate is a muddy grey on the dark page.
+    // color throughout, as the tide's z's, since a half-faded slate is a muddy gray on the dark page.
     `@keyframes ${P}zz{0%{opacity:1;transform:translate(0,0) scale(0)}12%{opacity:1;transform:translate(.1px,-.3px) scale(1.1)}22%{opacity:1;transform:translate(.25px,-.7px) scale(1)}70%{opacity:1;transform:translate(1.1px,-3.3px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(1.5px,-4.5px) scale(0)}}`,
     // A bead of sweat forms, slides a little, and goes: from 2 s to 4.5 s of
     // his loop, which at work is the rest after the tap (the claw is down by
@@ -649,7 +649,7 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
     `@keyframes ${P}sw{0%,${pct(2)}%{opacity:0;transform:translate(0,0)}${pct(2.5)}%{opacity:1;transform:translate(0,0)}` +
       `${pct(4)}%{opacity:1;transform:translate(0,1px)}${pct(4.5)}%,100%{opacity:0;transform:translate(0,1px)}}`,
     // The heart pops up from a point beside his raised claw, rises, and shrinks back to a point near
-    // the top: at full colour throughout, as the sparkles do, since a half-faded pink is a muddy
+    // the top: at full color throughout, as the sparkles do, since a half-faded pink is a muddy
     // mauve on the dark page.
     `@keyframes ${P}ht{0%{opacity:1;transform:translate(0,1px) scale(0)}16%{opacity:1;transform:translate(0,0) scale(1.12)}30%{opacity:1;transform:translate(0,-.4px) scale(1)}72%{opacity:1;transform:translate(0,-2.4px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(0,-3.4px) scale(0)}}`,
     // Over a sleeping head there is less sky: the heart pops up in its place and only lifts a little.
@@ -709,7 +709,7 @@ function round(n: number): number {
   return Math.round(n * 1000) / 1000
 }
 
-// A four-point twinkle with tapered rays, centred on (x, y).
+// A four-point twinkle with tapered rays, centered on (x, y).
 function sparkle(x: number, y: number, r: number): string {
   const k = r * 0.16
   const p = (n: number) => round(n)
@@ -732,7 +732,7 @@ function heart(x: number, y: number): string {
   return pixelHeart(x, y, 0.5, 0.75)
 }
 
-/** Where the petted heart stands: beside his raised right claw, and over his head (right of centre, beside the z) as he naps. */
+/** Where the petted heart stands: beside his raised right claw, and over his head (right of center, beside the z) as he naps. */
 const PET_HEART: [number, number] = [18.75, 0.75]
 const NAP_HEART: [number, number] = [12.5, -3.5]
 

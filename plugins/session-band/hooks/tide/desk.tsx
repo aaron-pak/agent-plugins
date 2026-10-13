@@ -2,13 +2,13 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
 import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, HOVER_S, SPIN, pixelHeart } from '../clawd'
-import { BODY, EYE, SEA, SEA_DEEP, SHELL, curled, pose, spin } from './band'
+import { BODY, EYE, curled, pose, spin } from './band'
 import type { Feet } from '../clawd'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
 import { SPLASH_MS, SPLASH_RUSH_MS } from '../facts'
 
-// Tidepool on the desktop: a tiny SVG diorama (sand, a shell, slow waves and
+// The beach on the desktop: a tiny SVG diorama (sand, a shell, slow waves and
 // Clawd built from the very cells the terminal draws him with) beside the
 // band's three lines, laid out with Box and Text.
 //
@@ -44,13 +44,16 @@ const OPEN_SEA = 9
 const TIDE_STEP = 5
 const TIDE_HOLD = 15
 
-// Colours that read on claude.ai's light (#faf9f5) and dark (#262624) pages, soft and warm
+// Colors that read on claude.ai's light (#faf9f5) and dark (#262624) pages, soft and warm
 // enough to sit beside Claude's clay: kraft sand, a dusk-blue sea, a coral shell.
 const PAINT: Record<string, string> = { [BODY]: CLAY, [EYE]: EYE_INK }
 const SAND = '#E2C394'
 const SAND_EDGE = '#CFA86F'
 const WET = '#CDAE7E'
+const SEA = '#6C9DC2'
+const SEA_DEEP = '#5888AE'
 const FOAM = '#C6DCEC'
+const SHELL = '#E9A3A4'
 const SHELL_RIDGE = '#C9818A'
 const HEART = HEART_PINK
 const DOZE = DOZE_SLATE
@@ -1032,7 +1035,7 @@ function diorama(scene: Scene): string {
       `svg:hover .pet{visibility:visible;transition:visibility 0s ${HOVER_S}s}` +
       `svg:hover .poses,svg:hover .spark,svg:hover .spray{visibility:hidden;transition:visibility 0s ${HOVER_S}s}`,
   )
-  // The heart pops up from a point at full colour, a little past its size, and settles with a small
+  // The heart pops up from a point at full color, a little past its size, and settles with a small
   // rise: never faded in, since a half-faded pink is a muddy mauve on the dark page.
   base.push('.heart{transform-box:fill-box;transform-origin:center}')
   motion.push(`svg:hover .heart{animation:heart 1.4s ease-out ${HOVER_S}s 1 both}`)
@@ -1152,8 +1155,8 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     `@keyframes surge{0%{transform:translateX(${rushFrom === 0 ? 0 : `-${rushFrom}px`});${ease('cubic-bezier(.25,.8,.35,1)')}}24%{transform:translateX(-${run}px);${ease('ease-in-out')}}46%{transform:translateX(-${round(run * 0.9)}px);${ease('cubic-bezier(.45,0,.4,1)')}}100%{transform:translateX(0)}}`,
   )
   // Spray off the water just beside him, a unit of sky clear of his raised claw: each drop swells up
-  // out of the crest, leaps up and out to sea, hangs, and shrinks away as it falls, at full colour
-  // all the while (a fade, in or out, turns a drop into a slate-grey smudge on the dark page halfway
+  // out of the crest, leaps up and out to sea, hangs, and shrinks away as it falls, at full color
+  // all the while (a fade, in or out, turns a drop into a slate-gray smudge on the dark page halfway
   // through). They leave the air together, by DROPS_END_S, the later ones on a shorter hop, so no
   // lone speck is left hanging. The still frame holds the sea at his feet and the drops in the air
   // (where motion plays, the surge and the drops' own animations take over).
@@ -1253,7 +1256,7 @@ function nap(isMoving: boolean, from: number, isCurled: boolean, zsInto: number,
   // moment, then drift up and away together and the sky stays empty a while. Never sliding into
   // each other. The first comes only once he has curled up (0.2 s after), so it never lands on
   // his standing arm. Each pops up from a point and shrinks back to one as it drifts off, at full
-  // colour all the while, as the sparkles and the heart do: never a half-faded z, which reads as a
+  // color all the while, as the sparkles and the heart do: never a half-faded z, which reads as a
   // muddy slate on the dark page.
   base.push('.z{opacity:0;transform-box:fill-box;transform-origin:center}.z0{opacity:1}')
   const period = Z_PERIOD_S

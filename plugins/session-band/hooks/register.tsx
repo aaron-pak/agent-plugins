@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, SessionRepo, Timer } from 'claude-code'
 
 import type { Info, Look, LookPick, Motion } from '../types'
 import {
@@ -39,7 +39,7 @@ import {
 import { CHEER_FOR_MS, FLINCH_MS, desk } from './hearth/desk'
 import { bandProps as hearthProps, doing } from './hearth/props'
 import { hearthActivity, hearthInfo, slipAt } from './hearth/view'
-import { LOOK_KEY, configuredLook, isLook, isLookRow, isPickOn, lookNow, migrateMotion, newActivation, offReply, parseBand, replyFor, shownSince, toastFor, upgradeToast } from './look'
+import { LOOK_KEY, configuredLook, isLook, isLookRow, isPickOn, lookNow, migrateMotion, newActivation, offReply, parseBand, replyFor, shownSince, toastFor, troubleReply, upgradeToast } from './look'
 import { CHEER_MS, desktopBand } from './tide/desk'
 import { STRIDE_WAIT_MS, bandProps as tideProps, desktopScenes } from './tide/props'
 import type { ShownScene } from './tide/props'
@@ -92,6 +92,9 @@ export const register: Register = (on, options) => {
   const row: Row = { key: LOOK_KEY }
   // When this activation first drew, for state from an older build that kept no `greetedAt`.
   let firstDrawnAt: number | null = null
+  // The project as a band drawn before the start wrote one reads it: asked once, and every redraw
+  // until the start's write lands shares the answer.
+  let projectEarly: Promise<string | null> | null = null
   // The look each terminal band last drew, by its instance (the host keeps one band above the prompt
   // and its id): a look drawn where the other one stood is a module swapped under a band on screen,
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
@@ -120,58 +123,75 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
-    // Every step of the start stands on its own: a command the host will not register, a store or a
-    // state it cannot read, never costs the session its facts (line 3, the nap's timer, the hello).
-    await $.command
-      .register({
-        name: 'band',
-        description: "Pick the band's look (tide or hearth) and whether Clawd moves (still or lively)",
-        argumentHint: '[tide|hearth] [still|lively]',
+    // git is the slow lookup: asked first, and its answer joins the facts last (see below).
+    const asked = ++answers.asked
+    const git = gitState($).catch(() => ({}))
+    try {
+      // Every step of the start stands on its own: a command the host will not register, a store or a
+      // state it cannot read, never costs the session its facts (line 3, the nap's timer, the hello).
+      await $.command
+        .register({
+          name: 'band',
+          description: "Pick the band's look (tide or hearth) and whether Clawd moves (still or lively)",
+          argumentHint: '[tide|hearth] [still|lively]',
+        })
+        .catch(() => undefined)
+      // Still or lively: remembered across sessions. An older build's stored style becomes a motion once.
+      // A motion the store would not keep stays this session's through a reload, and is offered to the
+      // store again. A store that cannot be read gives the default, lively.
+      const [storedMotion, storedStyle, kept] = await Promise.all([orNothing($.store.get('motion')), orNothing($.store.get('style')), orNothing(read($, info))])
+      const unsaved = whole(kept ?? {}).unsavedMotion
+      const motion = unsaved ?? migrateMotion(storedMotion, storedStyle)
+      await update($, motionOf, () => motion).catch(() => undefined)
+      const isRemembered = storedMotion === motion || (await remember($, motion))
+
+      // Each fact on its own: a lookup that fails leaves its own field as it was (or as the folder
+      // names it), and every other fact still lands, so one slow or broken lookup never blanks line 3.
+      const [usage, model, repo, isCalm, isAppleTerminal, now] = await Promise.all([
+        orNothing($.session.usage()),
+        modelNow($),
+        orNothing($.session.repo()),
+        prefersReducedMotion($),
+        appleTerminal($),
+        $.clock.now(),
+      ])
+      // Idempotent: a reload that runs this again keeps a napping Clawd asleep and never waves twice.
+      let lastActiveAt = now
+      await patch($, before => {
+        lastActiveAt = before.lastActiveAt ?? now
+
+        return {
+          ...(usage === undefined ? {} : { ...figures(usage), startedAt: usage.startedAt }),
+          model: model ?? before.model,
+          project: repo === undefined ? (before.project ?? basename(e.cwd)) : projectOf(repo, e.cwd),
+          lastActiveAt,
+          greetedAt: before.greetedAt ?? now,
+          unsavedMotion: isRemembered ? null : motion,
+          isCalm,
+          isAppleTerminal,
+          // Written with the project, so both looks know to hold the model until git answers.
+          isGitRead: before.isGitRead,
+        }
       })
-      .catch(() => undefined)
-    // Still or lively: remembered across sessions. An older build's stored style becomes a motion once.
-    // A motion the store would not keep stays this session's through a reload, and is offered to the
-    // store again. A store that cannot be read gives the default, lively.
-    const [storedMotion, storedStyle, kept] = await Promise.all([orNothing($.store.get('motion')), orNothing($.store.get('style')), orNothing(read($, info))])
-    const unsaved = whole(kept ?? {}).unsavedMotion
-    const motion = unsaved ?? migrateMotion(storedMotion, storedStyle)
-    await update($, motionOf, () => motion).catch(() => undefined)
-    const isRemembered = storedMotion === motion || (await remember($, motion))
-
-    // Each fact on its own: a lookup that fails leaves its own field as it was (or as the folder
-    // names it), and every other fact still lands, so one slow or broken lookup never blanks line 3.
-    const [usage, model, repo, git, isCalm, isAppleTerminal, now] = await Promise.all([
-      orNothing($.session.usage()),
-      modelNow($),
-      orNothing($.session.repo()),
-      gitState($).catch(() => ({})),
-      prefersReducedMotion($),
-      appleTerminal($),
-      $.clock.now(),
-    ])
-    // Idempotent: a reload that runs this again keeps a napping Clawd asleep and never waves twice.
-    let lastActiveAt = now
-    await patch($, before => {
-      lastActiveAt = before.lastActiveAt ?? now
-
-      return {
-        ...(usage === undefined ? {} : { ...figures(usage), startedAt: usage.startedAt }),
-        model: model ?? before.model,
-        project: repo === undefined ? (before.project ?? basename(e.cwd)) : (repo?.name?.split('/').pop() ?? basename(repo?.root ?? e.cwd)),
-        lastActiveAt,
-        greetedAt: before.greetedAt ?? now,
-        unsavedMotion: isRemembered ? null : motion,
-        isCalm,
-        isAppleTerminal,
-        ...git,
+      napLater($, timers, Math.max(0, NAP_AFTER_MS - (now - lastActiveAt)) + 1000)
+      // Once the migrated motion is stored, the upgrade's one word (a store that keeps nothing would
+      // bring it back every session, so it says nothing). A pick that cannot be read leaves /config's
+      // look, and never holds up git's write below, which lets the model join the line.
+      const look = isRemembered ? await lookOf($, activation, configured).catch(() => configuredLook(configured)) : null
+      const upgraded = look === null ? null : upgradeToast(storedMotion, storedStyle, look)
+      if (upgraded !== null) {
+        $.ui.toast(upgraded, { timeoutMs: 8000 })
       }
-    })
-    napLater($, timers, Math.max(0, NAP_AFTER_MS - (now - lastActiveAt)) + 1000)
-    // Last, so nothing above waits on it: the upgrade's one word, once the migrated motion is
-    // stored (a store that keeps nothing would bring it back every session, so it says nothing).
-    const upgraded = isRemembered ? upgradeToast(storedMotion, storedStyle, await lookOf($, activation, configured)) : null
-    if (upgraded !== null) {
-      $.ui.toast(upgraded, { timeoutMs: 8000 })
+    } finally {
+      // The branch and the uncommitted count join the project already on screen, after it, so nothing
+      // that showed moves; an answer a turn's newer one overtook is dropped (see answers). Written
+      // even when a step above went wrong, so a start that failed partway still tells both looks
+      // that git has answered, and the model joins the line as soon as it is known.
+      const found = await git
+      if (asked > answers.landed) {
+        answers.landed = asked
+        await patch($, () => ({ ...found, isGitRead: true }))
+      }
     }
 
     return next(e)
@@ -387,7 +407,7 @@ export const register: Register = (on, options) => {
       .then(found => {
         if (asked > answers.landed) {
           answers.landed = asked
-          return patch($, () => found)
+          return patch($, () => ({ ...found, isGitRead: true }))
         }
         return undefined
       })
@@ -452,8 +472,15 @@ export const register: Register = (on, options) => {
       return { text: ask.error }
     }
     if (!('look' in ask)) {
-      // No such switch: the quietest ways there are, from the look on screen (a refused read: the tide's).
-      return { text: offReply(await lookOf($, activation, configured).catch((): Look => 'tide'), await prefersReducedMotion($)) }
+      // No such switch: the quietest ways there are, from the look and motion on screen (a refused
+      // read: the tide's, lively), so a band already still is never offered /band still.
+      const [look, motion, isCalm] = await Promise.all([
+        lookOf($, activation, configured).catch((): Look => 'tide'),
+        read($, motionOf).catch((): Motion => 'lively'),
+        prefersReducedMotion($),
+      ])
+
+      return { text: offReply(look, motion, isCalm) }
     }
     try {
       // Read the reduced-motion setting again, so /band is all it takes after changing it. Noting
@@ -505,6 +532,7 @@ export const register: Register = (on, options) => {
           isCalm,
           isSessionOnly,
           ...(denied === undefined ? {} : { denied }),
+          ...(ask.motion === null ? {} : { isMotionAsked: true }),
           ...(ask.off === true ? { isOff: true } : {}),
         }),
       }
@@ -513,7 +541,7 @@ export const register: Register = (on, options) => {
       // one that fits what was asked: /band alone switches nothing.
       const isStatus = ask.look === null && ask.motion === null
 
-      return { text: `Band: couldn't ${isStatus ? 'check' : 'switch'} just now. Try /band again in a moment.` }
+      return { text: troubleReply(isStatus) }
     }
   })
 
@@ -549,11 +577,15 @@ export const register: Register = (on, options) => {
       orNothing(read($, pickOf)).then(found => found ?? null),
       orNothing(read($, sceneKept)).then(found => found ?? null),
     ])
-    const known = whole(stored)
+    // A band drawn before the start has written down where you are (its lookups still under way)
+    // reads the project as the start does, so even the first frame says where you are. The model is
+    // not asked for: both looks hold it back until git answers (see the views).
+    const facts = whole(stored)
+    const known: Info = { ...facts, project: facts.project ?? (await (projectEarly ??= projectNow($))) }
     firstDrawnAt ??= now
     // The work goes on until the turn is written down (or a second and a half has gone by): see LANDING_MS.
     // The landing timer is let go two ways, each enough alone: when it fires, and when work resumes
-    // (cancelled). They back each other up, so a later quiet stretch always re-arms; keep both.
+    // (canceled). They back each other up, so a later quiet stretch always re-arms; keep both.
     let landed = e.props.isWorking
     if (landed) {
       landing.sawWork ||= known.isTurnOpen
@@ -791,7 +823,7 @@ async function settle($: EngineInterface, timers: Timers, time: number, change: 
   timers.desk = Number.isFinite(wakeIn) ? lookAgain($, timers, wakeIn + 10) : null
 }
 
-/** The desktop's look again, cancelled and let go, so a later hold arms its own. */
+/** The desktop's look again, canceled and let go, so a later hold arms its own. */
 function letGo(timers: Timers): void {
   timers.desk?.cancel()
   timers.desk = null
@@ -900,6 +932,29 @@ async function modelNow($: EngineInterface): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * The project the band names where it says where you are (line 3 on the beach, line 1 by the
+ * hearth): the repository's own name, else its root's folder, else the session's folder outside a
+ * repository.
+ */
+function projectOf(repo: SessionRepo | null, cwd: string): string {
+  return repo === null ? basename(cwd) : (repo.name?.split('/').pop() ?? basename(repo.root))
+}
+
+/**
+ * The project for a band drawn before the start has written one down, read as the start reads it,
+ * so the first frame already says where you are and the start's own word changes nothing. Null when
+ * neither the repository nor the folder can be read.
+ */
+async function projectNow($: EngineInterface): Promise<string | null> {
+  const [repo, cwd] = await Promise.all([orNothing($.session.repo()), orNothing($.session.cwd())])
+  if (cwd === undefined) {
+    return repo === undefined || repo === null ? null : projectOf(repo, repo.root)
+  }
+
+  return repo === undefined ? basename(cwd) : projectOf(repo, cwd)
 }
 
 /** What a lookup answered, or undefined when it failed. */

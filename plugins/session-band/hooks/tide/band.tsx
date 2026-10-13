@@ -1,6 +1,6 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
-import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, HEART_PINK, SPIN } from '../clawd'
+import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART } from '../clawd'
 import type { Arms, Eyes, Feet } from '../clawd'
 import { CELLS, fitLine } from './fit'
 import { SPLASH_MS } from '../facts'
@@ -8,7 +8,7 @@ import { hasRoom, isHeld, newPace, spend, switchedPace, tick } from '../pace'
 import type { Pace } from '../pace'
 import type { BandProps, Piece, Words } from './types'
 
-// Tidepool on the terminal: a little beach on the left of the band, three
+// The beach on the terminal: a little beach on the left of the band, three
 // lines of words on its right. The context window is the shoreline: as it
 // fills, the tide comes in from the right and Clawd's dry sand shrinks.
 //
@@ -117,22 +117,27 @@ type Drawn = ReturnType<typeof compose>
 const TICK_MS = 250
 const NEVER = -1_000_000
 
-// Clawd's colours are the theme's own; the beach's are accents no theme key
-// covers, picked to read on dark and light terminals alike, and kept soft and
-// warm so they sit beside Claude's clay: kraft sand, a dusk-blue sea, a coral shell.
+// Clawd's colors are the theme's own. The beach's are accents no theme key covers, picked to read
+// on dark and light terminals alike and kept soft and warm beside Claude's clay: kraft sand, a
+// dusk-blue sea, a coral shell. Each sits on or just beside an entry of xterm's 256-color cube
+// (the number after it), so a terminal that shows only 256 colors draws nearly the same beach.
+// Where a channel stops short of its entry, it is because chalk (which Claude Code rounds with)
+// shows the cube's 95 level only for a channel of 76 or less, and its 135 level only for 127 or less.
 export const BODY = 'clawd_body'
 export const EYE = 'clawd_background'
-export const SAND = '#D9B482'
-const SPECK = '#C29D68'
-export const WET = '#C2A074'
-export const SEA = '#6C9DC2'
-export const SEA_DEEP = '#5888AE'
+export const SAND = '#DAB27F' // 180
+// Damp sand, and the specks in the dry sand, share one darker tan.
+export const WET = '#B27F4C' // 137
+const SPECK = WET
+const SEA = '#4C7FAF' // 67
+// The ripples at the bottom of the sea, darker than the sea so they read as depth.
+const SEA_DEEP = '#004C7F' // 24
 // A touch deeper than white foam, so the wave's lip (which draws the wave) still shows on a light
-// terminal (#94BCDD is about 2:1 on white, where a paler foam all but vanished), without going cold on a dark one.
-const FOAM = '#94BCDD'
-export const SHELL = '#E9A3A4'
-const SHELL_RIDGE = '#D68A90'
-const HEART = HEART_PINK
+// terminal (about 2.3:1 on white, where a paler foam all but vanished), without going cold on a dark one.
+const FOAM = '#7FAFD7' // 110
+const SHELL = '#E4A5A6' // 181
+const SHELL_RIDGE = '#D97F7F' // 174
+const HEART = TERMINAL_HEART
 
 // The beach, left to right: a scallop shell (columns 0 to 3) and a cell of sand, Clawd's home
 // spot, a cell of sky, then the shore the tide runs up, then a strip of open sea. At 100% the
@@ -185,8 +190,8 @@ export function curled(): [Row, Row, Row] {
   return [blank(), head, body]
 }
 
-// Apple's Terminal draws block glyphs on coloured backgrounds badly, so Claude Code gives it a
-// simpler Clawd: his eyes drawn dark into a solid head, a body of plain colour, no arms, and no
+// Apple's Terminal draws block glyphs on colored backgrounds badly, so Claude Code gives it a
+// simpler Clawd: his eyes drawn dark into a solid head, a body of plain color, no arms, and no
 // spin. The beach draws him the same way there.
 function applePose({ eyes, feet }: Pose): [Row, Row, Row] {
   const head: Row = [
@@ -1407,22 +1412,25 @@ function splashEdge(live: Live, shore: number): number {
 }
 
 // The ground row is a full cell of sand, so Clawd's legs stand in front of it and nothing
-// above the sand line carries its colour: dry sand with a few darker grains (none under him or
+// above the sand line carries its color: dry sand with a few darker grains (none under him or
 // right beside him, where a grain would read as a third foot), damp sand near the water, foam sliding up the
 // sand, then the sea (lighter on top, deeper below). A grain stays put: it is hidden only while he
 // stands on it or a cell from it, so as he walks home for his nap, the grain he walks off is back
 // before the one he walks onto goes (a margin three cells wide would make one grain vanish well
 // ahead of him and another appear behind him a second later, which reads as a grain jumping).
-function groundAt(col: number, edge: number, damp: number, isUnder: boolean): Cell {
+// The sand beneath him stays dry (`isBeneath`): his clay feet on the damp tan all but vanish, so the
+// damp strip, and the damp ground under the foam at the water's edge, stop where he stands. The water
+// itself still runs under his feet.
+function groundAt(col: number, edge: number, damp: number, isUnder: boolean, isBeneath: boolean): Cell {
   if (col < edge) {
-    if (col >= damp) {
+    if (col >= damp && !isBeneath) {
       return { ch: ' ', bg: WET }
     }
 
     return col % 6 === 5 && !isUnder ? { ch: '▖', color: SPECK, bg: SAND } : { ch: ' ', bg: SAND }
   }
   if (col === edge) {
-    return { ch: '▟', color: FOAM, bg: WET }
+    return { ch: '▟', color: FOAM, bg: isBeneath ? SAND : WET }
   }
   // Now and then the deep water swells up into the light: ripples riding in behind the crest.
   const ripple = (col - edge) % 8
@@ -1482,7 +1490,7 @@ function scene(live: Live, beach: number): Row[] {
   const trail = isDamp ? live.splashFrom + 4 : beach
   const damp = Math.min(Math.min(edge, shore) - 2, trail)
   for (let col = 0; col < beach; col++) {
-    ground.push(groundAt(col, edge, damp, col >= live.x - 1 && col <= live.x + SPRITE))
+    ground.push(groundAt(col, edge, damp, col >= live.x - 1 && col <= live.x + SPRITE, col >= live.x && col < live.x + SPRITE))
   }
   if (hasShell(beach) && edge > SHELL_WIDTH) {
     for (const [r, c, cell] of SHELL_CELLS) {
@@ -1641,7 +1649,7 @@ function trimEnd(row: Row): Row {
   return row.slice(0, Math.max(1, end))
 }
 
-// Joins neighbours drawn alike, so a row is a handful of Text runs, not one per cell.
+// Joins neighbors drawn alike, so a row is a handful of Text runs, not one per cell.
 function merge(row: Row): Run[] {
   const out: Run[] = []
   for (const cell of row) {

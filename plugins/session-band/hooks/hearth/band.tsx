@@ -1,7 +1,7 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
 import type { BandProps, Doing } from './types'
-import { APPLE_EYES, ARMS, EYES, FEET, HEART_PINK, SPIN, cells, cut } from '../clawd'
+import { APPLE_EYES, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, cells, cut } from '../clawd'
 import { NAP_AFTER_MS } from '../facts'
 import type { Arms, Eyes, Feet } from '../clawd'
 import { ACCENT, DIM, SPACE, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
@@ -121,7 +121,7 @@ const BODY = 'clawd_body'
 const DARK = 'clawd_background'
 const TRACK = 'subtle'
 const SWEAT = 'ide'
-const HEART = HEART_PINK
+const HEART = TERMINAL_HEART
 
 /** Something beside Clawd: `lines` drawn from `row` down, starting `col` cells into the marks column. */
 type Mark = { row: number; col: number; lines: string[]; color: string }
@@ -881,7 +881,7 @@ function fill(props: BandProps, panel: number): Line {
     { ctx: null, lim: null, gap: 2, isLong: false, hasCost: false, hasLimit: false },
   ]
   const forms = shapes.map(({ ctx, lim, gap, isLong, hasCost, hasLimit }): Form => {
-    // Meters keep Clawd's clay (the limit a quiet grey); past the line the number
+    // Meters keep Clawd's clay (the limit a quiet gray); past the line the number
     // turns clay and bold, in the one warm voice line 3's "Getting full" speaks
     // in (amber beside clay read as two alarms), so a full band reads clearly
     // without shouting. Each number hugs its meter and pads after itself, so

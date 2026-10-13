@@ -120,6 +120,7 @@ export const EMPTY: Info = {
   oops: 0,
   isCalm: false,
   isAppleTerminal: false,
+  isGitRead: false,
   beat: 0,
   turnPercent: null,
   turnWorked: false,
@@ -149,8 +150,8 @@ export const EMPTY: Info = {
 type Stored = Partial<Info> & { isStill?: unknown; lastTurn?: (Partial<LastTurn> & { isError?: unknown }) | null }
 
 /**
- * The stored facts, with every field an older build did not keep filled in: the PR's band (Hearth)
- * and the Tidepool lab build each wrote a narrower `info`.
+ * The stored facts, with every field an older build did not keep filled in: older builds wrote a
+ * narrower `info`, one with no beach facts, one with no hearth facts.
  */
 export function whole(stored: Partial<Info>): Info {
   const old = stored as Stored
@@ -176,8 +177,10 @@ export function whole(stored: Partial<Info>): Info {
     // An older build splashed once a failure, from its own time, and counted no waves apart.
     splashAt: typeof old.splashAt === 'number' ? old.splashAt : (old.oopsAt ?? null),
     waves: typeof old.waves === 'number' ? old.waves : (old.oops ?? 0),
-    // Tidepool kept the reduced-motion setting as `isStill`.
+    // An older build kept the reduced-motion setting as `isStill`.
     isCalm: typeof old.isCalm === 'boolean' ? old.isCalm : old.isStill === true,
+    // An older build wrote the project only once git had answered.
+    isGitRead: typeof old.isGitRead === 'boolean' ? old.isGitRead : typeof old.project === 'string',
   }
 }
 
@@ -190,7 +193,7 @@ function complete(activity: Activity | null | undefined): Activity | null {
   return typeof activity.what === 'string' ? activity : { ...activity, what: activity.target || activity.verb }
 }
 
-// Tidepool's last turn knew only whether it ended on an error.
+// An older build's last turn knew only whether it ended on an error.
 function endingOf(turn: Stored['lastTurn']): LastTurn | null {
   if (turn === null || turn === undefined) {
     return null

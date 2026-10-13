@@ -2,8 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
-import { SPIN, cells, textPx } from '../hooks/clawd'
-import { layoutOf, resumeSplash } from '../hooks/tide/band'
+import { SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
+import { SAND, WET, layoutOf, resumeSplash } from '../hooks/tide/band'
 import { STRIDE_WAIT_MS } from '../hooks/tide/props'
 import { poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
 import type { Scene } from '../hooks/tide/desk'
@@ -33,11 +33,11 @@ const HEART = '▟▙▟▙'
 // What a terminal row may hold: block elements, box drawing, ASCII, and the glyphs Claude Code uses
 // (its spinner's sparkles, its tool-result corner, and the ellipsis it ends a cut line with).
 const SAFE = /^[ -~─-▟·✢✳✶✻✽⎿…]*$/u
-// The sand's colours (dry and damp): nothing above the sand line wears them.
-const SAND_COLOURS = ['#D9B482', '#C2A074', '#C29D68']
-// The sea's colour on the terminal, and the foam on the wave's lip.
-const SEA = '#6C9DC2'
-const FOAM = '#94BCDD'
+// The sand's colors (dry, and damp with its specks): nothing above the sand line wears them.
+const SAND_COLORS = ['#DAB27F', '#B27F4C']
+// The sea's color on the terminal, and the foam on the wave's lip.
+const SEA = '#4C7FAF'
+const FOAM = '#7FAFD7'
 // The scallop by his home: a dome with two ribs running down it, half buried in the sand.
 const SHELL = '▟▌▐▙'
 // The ground row under it: the shell's buried half narrowing toward its hinge, then a cell of sand.
@@ -326,7 +326,7 @@ for (const surface of SURFACES) {
     await $.session.measure(measured(87, 1.96))
     const { ui, look } = await band($, surface)
 
-    expect(toasts).toEqual(['The tide is coming in: context is 86% full. Try /compact soon.'])
+    expect(toasts).toEqual(["High tide: context is 86% full. Try /compact soon."])
     expect((await look()).words[1]).toContain('87% context · try /compact · $1.96')
     if (surface === 'desktop') {
       // The alt text says how close the tide is once. A fresh session: he waves hello first.
@@ -390,7 +390,7 @@ for (const surface of SURFACES) {
 
     const done = await look()
     expect(done.words[0]).toBe('✻ Done in 41s · 2 tools · 1 file changed')
-    // One of his sparkles in his clay, then "Done" in the success colour while the moment lasts, on both surfaces.
+    // One of his sparkles in his clay, then "Done" in the success color while the moment lasts, on both surfaces.
     expect(runs(done.rows.at(-3))[0]).toMatchObject({ text: '✻', color: 'claude' })
     expect(runs(done.rows.at(-3))[2]).toMatchObject({ text: 'Done', color: 'success', bold: true })
     if (surface === 'terminal') {
@@ -498,7 +498,7 @@ for (const surface of SURFACES) {
     world(on)
     await start($)
 
-    expect((await run($, 'band', 'still')).text).toContain('Band: still')
+    expect((await run($, 'band', 'still')).text).toMatch(/^Still\. /u)
     const { ui, look, wait } = await band($, surface)
     const first = await look()
     await wait(20_000)
@@ -509,12 +509,12 @@ for (const surface of SURFACES) {
     }
     await ui.unmount()
 
-    expect((await run($, 'band', 'sparkly')).text).toContain('Band: "sparkly" isn\'t a look or a motion.')
+    expect((await run($, 'band', 'sparkly')).text).toContain('not "sparkly".')
     // A new session remembers it.
     await start($)
-    expect((await run($, 'band')).text).toContain('Band: tide, still')
-    expect((await run($, 'band', 'lively')).text).toContain('Band: lively')
-    expect((await run($, 'band')).text).toContain('Band: tide, lively')
+    expect((await run($, 'band')).text).toMatch(/^Tide, still\. /u)
+    expect((await run($, 'band', 'lively')).text).toMatch(/^Lively\. /u)
+    expect((await run($, 'band')).text).toMatch(/^Tide, lively\. /u)
   })
 }
 
@@ -531,7 +531,7 @@ test('terminal: clicking Clawd shows a heart', async ($, on) => {
   expect((await look()).scene.join('')).not.toContain(HEART)
 })
 
-test('terminal: his legs stand in front of a whole row of sand, and nothing above it wears its colour', { timeoutMs: 30_000 }, async ($, on) => {
+test('terminal: his legs stand in front of a whole row of sand, and nothing above it wears its color', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($, 97, 12.5)
   await turn($, clock)
@@ -548,7 +548,7 @@ test('terminal: his legs stand in front of a whole row of sand, and nothing abov
         const { rows } = await look()
         for (const row of rows.slice(0, 2)) {
           for (const cell of runs(row)) {
-            expect(SAND_COLOURS).not.toContain(cell.backgroundColor)
+            expect(SAND_COLORS).not.toContain(cell.backgroundColor)
           }
         }
         // The ground row is whole: every cell has its sand, water or Clawd behind it, no holes.
@@ -560,6 +560,55 @@ test('terminal: his legs stand in front of a whole row of sand, and nothing abov
       await ui.unmount()
     }
   }
+})
+
+// His feet are Claude Code's clay, which sits on the damp tan at about 1.1:1, so the damp strip stops
+// where he stands: through a splash and its ebb (lively, and still, which holds the splash at its
+// peak) and high tide's laps, at every width, his feet stand on dry sand or in the water itself.
+test('terminal: Clawd\'s feet never stand on damp sand, where his clay all but vanishes: through a splash, lively or still, and high tide, at every width', { timeoutMs: 120_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  const beneath = new Map<unknown, string[]>()
+  const feet = (view: View, at: string) => {
+    for (const cell of cellsOf(view.rows[2])) {
+      if (cell.color === 'clawd_body' && cell.ch !== ' ') beneath.set(cell.bg, [...(beneath.get(cell.bg) ?? []), at])
+    }
+  }
+  const WIDTHS = [34, 40, 46, 52, 58, 64, 88, 100, 122, 140, 160]
+  let n = 0
+  for (const motion of ['lively', 'still'] as const) {
+    await run($, 'band', motion)
+    for (const columns of WIDTHS) {
+      const props = { ...BAND, bodyColumns: columns, isWorking: true }
+      const { ui, look, wait } = await band($, 'terminal', props)
+      await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
+      await $.tool.call({ tool: 'Bash', command: 'npm run fail', description: 'Run the tests' })
+      // The splash, its ebb and the damp sand it leaves, to the end.
+      for (let t = 0; t < 36; t++) {
+        feet(await look(), `${motion} splash at ${columns}, tick ${t}`)
+        await wait(250)
+        await clock.advance(250)
+      }
+      n += 1
+      await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: `t${n}`, reason: 'answer' })
+      await clock.advance(10_000)
+      await ui.unmount()
+    }
+  }
+  // High tide: he backs up to the water's edge, and the water runs under his feet now and then.
+  await run($, 'band', 'lively')
+  await $.session.measure(measured(97, 0.31))
+  for (const columns of [46, 64, 100, 140]) {
+    const { ui, look, wait } = await band($, 'terminal', { ...BAND, bodyColumns: columns })
+    for (let t = 0; t < 160; t++) {
+      feet(await look(), `high tide at ${columns}, tick ${t}`)
+      await wait(250)
+      await clock.advance(250)
+    }
+    await ui.unmount()
+  }
+  expect((beneath.get(WET) ?? []).slice(0, 5)).toEqual([])
+  expect([beneath.has(SAND), beneath.has(SEA)]).toEqual([true, true])
 })
 
 test('terminal: three rows at every width and in every mood, never padded, only safe glyphs', { timeoutMs: 30_000 }, async ($, on) => {
@@ -659,7 +708,7 @@ test('terminal: at high tide a narrow band keeps the /compact nudge before the c
     const view = await look()
     expect([columns, view.words[1]]).toEqual([columns, line])
     // The nudge is in Claude's clay, as the hearth's "Getting full" is; so is the number before it:
-    // one colour for the one warning. Its separator is dim like every other dot on the line, even
+    // one color for the one warning. Its separator is dim like every other dot on the line, even
     // right after the bold number (a plain space parts the two, so the bold never bleeds into it).
     const row = runs(view.rows.at(-2))
     if (line.includes('/compact')) expect(row.find(run => run.text.includes('/compact'))?.color).toBe('claude')
@@ -688,7 +737,7 @@ function longestLook(source: string): number {
   return (longest / 100) * period
 }
 
-// Where the sea starts in the ground row: the first cell drawn on the sea's colour.
+// Where the sea starts in the ground row: the first cell drawn on the sea's color.
 function seaStart(view: View): number {
   let col = 0
   for (const run of runs(view.rows[2])) {
@@ -1184,7 +1233,7 @@ test('terminal, lively: stepped out for a cheer, he pads home when the tide come
 test('terminal, lively: at high tide on a narrow beach, his step home after the cheer never lands while a wave washes up to his feet', { timeoutMs: 300_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($)
-  const isWater = (cell: { color: unknown; bg: unknown } | undefined) => cell !== undefined && [cell.color, cell.bg].some(colour => colour === SEA || colour === FOAM)
+  const isWater = (cell: { color: unknown; bg: unknown } | undefined) => cell !== undefined && [cell.color, cell.bg].some(color => color === SEA || color === FOAM)
   let steps = 0
   let n = 0
   for (const percent of [86, 100]) {
@@ -1240,7 +1289,7 @@ function poseOf(view: View): string {
 
 // Where the pet's heart is drawn (its first cell on the top row), or -1.
 function heartAt(view: View): number {
-  return cellsOf(view.rows[0]).findIndex(cell => cell.color === '#E9789B')
+  return cellsOf(view.rows[0]).findIndex(cell => cell.color === TERMINAL_HEART)
 }
 
 // Still (or in Apple's Terminal, still too), stepped a cell out by the band's edge to cheer: a pet at
@@ -1482,7 +1531,7 @@ test('terminal: the heart and the z never cover the wave, even with the water at
   }
 })
 
-// Each cell of a row, left to right, with its colours.
+// Each cell of a row, left to right, with its colors.
 function cellsOf(row: unknown): Array<{ ch: string; color: unknown; bg: unknown }> {
   return runs(row).flatMap(run => [...run.text].map(ch => ({ ch, color: run.color, bg: run.backgroundColor })))
 }
@@ -1894,7 +1943,7 @@ test('desktop: a redraw during the nap hands the frame the same source, so the z
   await ui.unmount()
 })
 
-test('desktop: the z\'s pop up one after another and drift off together, at full colour all the while', async ($, on) => {
+test('desktop: the z\'s pop up one after another and drift off together, at full color all the while', async ($, on) => {
   const { clock } = world(on)
   await start($)
   await turn($, clock)
@@ -2210,13 +2259,13 @@ test('the reduced-motion setting is read again on /band, and the toast rounds th
   await moving.ui.unmount()
 
   prefersReducedMotion = true
-  expect((await run($, 'band', 'tide')).text).toBe('Band: tide, still for your reduced-motion setting. Look: /band hearth or /config.')
+  expect((await run($, 'band', 'tide')).text).toBe('Tide, still for reduced motion. Try /band hearth or /config.')
   const still = await band($, 'desktop')
   expect((await still.look()).svg?.source).not.toContain('@keyframes')
   await still.ui.unmount()
 
   await $.session.measure(measured(86.4, 1.9))
-  expect(toasts).toEqual(['The tide is coming in: context is 86% full. Try /compact soon.'])
+  expect(toasts).toEqual(["High tide: context is 86% full. Try /compact soon."])
 })
 
 // Which way his eyes look, from the head in the top row: open, right, left, shut, or ? (curled, spinning).
@@ -3011,7 +3060,7 @@ test('a still beach, or one switched to after the session began, has no hello', 
   }
 })
 
-// The columns of the scene his cells take (his colour as ink, or as a cell's ground), every row.
+// The columns of the scene his cells take (his color as ink, or as a cell's ground), every row.
 function clawdAt(view: View): number[] {
   return view.rows.slice(0, 3).flatMap(row => {
     let col = 0
@@ -3601,7 +3650,7 @@ for (const how of ['/band still', 'reduced motion'] as const) {
       const calm = await look()
       const x = feetAt(calm)
       // At 12% the sea is far out: dry sand under him and beside him.
-      for (let col = x + 2; col <= x + 8; col++) expect([how, columns, 'calm', col, ground(calm)[col]?.bg]).toEqual([how, columns, 'calm', col, SAND_COLOURS[0]])
+      for (let col = x + 2; col <= x + 8; col++) expect([how, columns, 'calm', col, ground(calm)[col]?.bg]).toEqual([how, columns, 'calm', col, SAND_COLORS[0]])
       await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
       const held = await look()
       expect(held.words[0]).toBe('Splash! "Run the tests" failed')
@@ -3612,11 +3661,15 @@ for (const how of ['/band still', 'reduced motion'] as const) {
         await wait(250)
       }
       expect(feetAt(held)).toBe(x)
-      // The water runs right up to his feet: his right pair stands in the sea, and from his left
-      // pair's inner foot on there is no dry sand, only damp sand, foam and sea.
+      // The water runs right up to his feet: its foamy edge comes in between his two pairs, and from
+      // there on his right pair stands in the sea. The sand under his left pair stays dry, so his clay
+      // feet still show against it.
       const under = ground(held)
+      const edge = under.findIndex(cell => cell.ch === '▟' && cell.color === FOAM)
+      expect([how, columns, edge > x + 2 && edge < x + 6]).toEqual([how, columns, true])
       for (const col of [x + 6, x + 7]) expect([how, columns, col, under[col]?.bg]).toEqual([how, columns, col, SEA])
-      for (let col = x + 2; col <= x + 8; col++) expect([how, columns, col, under[col]?.bg === SAND_COLOURS[0]]).toEqual([how, columns, col, false])
+      for (let col = edge + 1; col <= x + 8; col++) expect([how, columns, col, under[col]?.bg]).toEqual([how, columns, col, SEA])
+      for (let col = x + 1; col < edge; col++) expect([how, columns, col, under[col]?.bg]).toEqual([how, columns, col, SAND_COLORS[0]])
       // The spray hangs just off the wave's lip, never out over dry sand.
       const lip = cellsOf(held.rows[1]).findIndex(cell => cell.ch === '▀' && cell.color === FOAM)
       const spray = cellsOf(held.rows[0]).flatMap((cell, col) => (cell.color === SEA ? [col] : []))
@@ -3627,7 +3680,7 @@ for (const how of ['/band still', 'reduced motion'] as const) {
       await wait(1000)
       await clock.advance(4000)
       const after = await look()
-      for (let col = x + 2; col <= x + 8; col++) expect([how, columns, 'after', col, ground(after)[col]?.bg]).toEqual([how, columns, 'after', col, SAND_COLOURS[0]])
+      for (let col = x + 2; col <= x + 8; col++) expect([how, columns, 'after', col, ground(after)[col]?.bg]).toEqual([how, columns, 'after', col, SAND_COLORS[0]])
       expect(cellsOf(after.rows[0]).some(cell => cell.color === SEA)).toBe(false)
       await ui.unmount()
     })
@@ -4165,14 +4218,14 @@ test('desktop: the spray leaps from the water just right of Clawd, drawn over hi
   }
 })
 
-test('desktop: the splash\'s drops swell up out of the crest and shrink away at full colour, never fading, and are all back in the sea by 2.2 s', async ($, on) => {
+test('desktop: the splash\'s drops swell up out of the crest and shrink away at full color, never fading, and are all back in the sea by 2.2 s', async ($, on) => {
   world(on)
   await start($)
   const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
   await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
   await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
   const source = (await look()).svg?.source ?? ''
-  // A fade (in or out) passes a drop through a slate grey on the dark page.
+  // A fade (in or out) passes a drop through a slate gray on the dark page.
   const flights = [...source.matchAll(/@keyframes drop\d\{(?:[^{}]*\{[^}]*\})*\}/gu)].map(match => match[0])
   expect(flights.length).toBe(4)
   for (const flight of flights) expect([flight, flight.includes('opacity')]).toEqual([flight, false])

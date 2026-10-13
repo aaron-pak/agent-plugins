@@ -63,44 +63,79 @@ rule on purpose, change its test and this page with it.
   `calm`, `quiet`, `stop` and `pause` mean `still`; `beach`, `tidepool` and `pool` mean `tide`; two
   words for one setting (`still calm`) ask for it once. Unknown or clashing words (`calm lively`)
   change nothing and say what `/band` takes, quoting the unknown word without its marks (`"cozy"`
-  for `<cozy>`), or whole with no letter or digit in it (`/band ...` answers `"..."`).
+  for `<cozy>`), or whole with no letter or digit in it (`/band ...` answers `"..."`), and cut with
+  an ellipsis past 18 cells, so the reply stays on one line.
 - **Where `/config` cannot help.** A `--plugin-dir` folder keys the row `session-band@inline.look`,
   which `/band` finds through `$.config.list()`. When `/config` refuses, the look stays and the reply
   quotes the reason; when it cannot be reached, the look switches for this session only.
 - **A look outside the options** (a hand-edited `cozy`) reads as unset, which is the beach.
 - **Older builds** stored a `style` (only `still` meant still), made a motion once (`migrateMotion`).
-  Someone whose style was `hearth` lands on the beach and hears it once, in a toast: "Band: the beach
-  is the new look. /band hearth brings the hearth back." `whole()` fills in older `$.state` facts.
-- **The toast** comes once per crossing of `warnAt`, rounded, in the look's own voice: "The tide is
-  coming in: context is 86% full. Try /compact soon." or "Context is 86% full. Run /compact when
-  you're ready."
+  Someone whose style was `hearth` lands on the beach and hears it once, in a toast: "The beach is
+  the new look. /band hearth to switch back." `whole()` fills in older `$.state` facts.
+- **The toast** comes once per crossing of `warnAt`, rounded, in the look's own voice: "High tide:
+  context is 86% full. Try /compact soon." or "Context is 86% full. Run /compact when you're
+  ready." Toasts keep to the replies' 60 cells too, since the host shows them under the plugin's
+  name as well.
 
 ### What `/band` says
 
-Every reply is one plain line of at most 100 characters (a quoted `/config` reason may run longer),
-in the voice of the look on screen: what is on, then the one thing most worth knowing next (after a
-switch, the way back; after a motion, the way to the other), written once, in `hooks/look.ts`.
+Claude Code prints a command's reply after a prefix of its own, `  ⎿  session-band: `, which takes
+19 cells. So every reply is one plain line of at most 60 cells (`REPLY_MOST` in `hooks/look.ts`): it
+fits an 80-column terminal on one line with a cell to spare, should the host keep the last column
+back, and no word is left alone on a second line at any width from 80 up. The prefix already names
+the plugin, so a reply opens on what is on, never on "Band:". A word `/band` does not know is the
+person's own, so the reply quotes it, cut with an ellipsis past 18 cells (the ellipsis counted as two,
+since terminals differ on its width). The one exception is a refusal that quotes `/config`'s reason,
+which may run longer. Its plain part comes first and always fits the line: what is on, the off note
+if the words asked for it, and "/config kept the look:". What is on gives way to a shorter form
+("Tide." for "Tide, lively.") when that lets the whole reply fit, unless the words asked for a
+motion, which is news. When no form lets the whole reply fit, the shortest goes, so the reason wraps
+as little as it can. The refusal is the news, so a look `/config` could not save before is not marked
+"(session only)" there. So a wrap only ever moves the reason. A reason with no words in it ("",
+"...") leaves the reply on "/config kept the look." with no colon dangling.
+
+Every reply is in the voice of the look on screen: what is on, then the one thing most worth knowing
+next, written once, in `hooks/look.ts`. After a switch that is the way back, or, when `/config`
+could not save the look, why it lasts this session only (`/band` alone then gives the way back);
+after a motion, the way to the other. `/band` alone lists the ways to change what is on, and short
+of room drops them from the last, so the way to the other look stays longest; under reduced motion,
+"still" gives up "for reduced motion" before that last way goes. With `off` beside a setting, the
+reply keeps all it would say if that fits before "/plugin turns the band off.", else what is on as
+the status says it ("Tide, lively.", or "Hearth, still." where reduced motion leaves no room for its
+reason), else the look's name. `/band off` alone offers the quietest ways there are from what is on:
+the hearth, and still. A band that is still already, by its motion or by reduced motion, is never
+offered `/band still`, and a still hearth is as quiet as the band gets.
 
 | Command | Reply |
 |---|---|
-| `/band` | `Band: tide, lively. Look: /band hearth or /config. Motion: /band still.` |
-| `/band`, reduced motion on | `Band: hearth, still for your reduced-motion setting. Look: /band tide or /config.` |
-| `/band hearth` (a switch) | `Band: hearth. Clawd blinks, reads along and cheers. /band tide to switch back.` |
-| `/band tide` (a switch) | `Band: tide. Waves lap the shore and Clawd potters about. /band hearth to switch back.` |
-| `/band still` on the beach | `Band: still. The waves rest, and the tide shows your context. /band lively brings them back.` |
-| `/band lively` by the hearth | `Band: lively. Clawd blinks, reads along and cheers. /band still calms him.` |
-| `/band lively`, reduced motion on | `Band: lively once reduced motion is off; until then the beach stays calm.` |
-| a look `/config` could not save | `Band: hearth (this session only); /config could not save it. /band tide to switch back.` |
-| `/config` refused | `Band: tide, lively. /config kept the look: <its reason>.` |
-| `/band off` (also `none`, `hide`, `disable`) | `Band: /plugin turns the band off. /band still stops the motion; /band hearth is the plainer look.` |
-| `off` beside a look | `Band: hearth. /band tide to switch back. /plugin turns the band off.` |
-| bad words | `Band: "cozy" isn't a look or a motion. Try tide, hearth, still or lively.` |
-| the state cannot be written | `Band: couldn't switch just now. Try /band again in a moment.` |
+| `/band` | `Tide, lively. Try /band hearth, /band still or /config.` |
+| `/band`, reduced motion on | `Hearth, still for reduced motion. Try /band tide or /config.` |
+| `/band hearth` (a switch) | `Hearth. Clawd blinks and cheers. /band tide to switch back.` |
+| `/band hearth still` (a switch) | `Hearth, still. Clawd rests. /band tide to switch back.` |
+| `/band tide` (a switch) | `Tide. Waves lap the shore. /band hearth to switch back.` |
+| `/band still` on the beach | `Still. The waves rest. /band lively brings them back.` |
+| `/band lively` by the hearth | `Lively. Clawd blinks and cheers. /band still calms him.` |
+| `/band lively`, reduced motion on | `Lively once reduced motion is off; the waves rest till then.` |
+| a look `/config` could not save | `Hearth (session only), still. /config couldn't save it.` |
+| `/band` after that | `Hearth (session only), still. Try /band tide.` |
+| `/config` refused | `Tide, lively. /config kept the look: locked.` |
+| `/config` refused, a longer reason | `Tide. /config kept the look: locked by your organization.` |
+| `/band hearth still`, `/config` refused | `Tide, still. /config kept the look: <its reason>.` |
+| `/band hearth off`, `/config` refused | `Tide. /plugin turns the band off. /config kept the look: <its reason>.` |
+| `/band off` (also `none`, `hide`, `disable`) | `/plugin turns the band off. Try /band still or /band hearth.` |
+| `/band off` on a still beach | `/plugin turns the band off. Try /band hearth.` |
+| `/band off` on a still hearth | `/plugin turns the band off. It's as quiet as it gets.` |
+| `/band off` by the hearth, reduced motion on | `/plugin turns the band off. Reduced motion keeps it still.` |
+| `off` beside a look | `Hearth, lively. /plugin turns the band off.` |
+| `/band still off` | `Tide, still. /plugin turns the band off.` |
+| bad words | `Try tide, hearth, still or lively, not "cozy".` |
+| a long bad word | `Try tide, hearth, still or lively, not "incomprehensibil…".` |
+| the state cannot be written | `Couldn't switch just now. Try /band again in a moment.` |
 
-Under reduced motion no reply points at a `/band lively` that would change nothing. When an off
-note drops the look's own sentence, the way back names who moves (`ALONE`: "/band lively lets Clawd
-move"), since a bare "him" would refer to nothing. `/band` is the one hook that answers the person
-directly, so its body is guarded: a refused state write gives the last row, never silence.
+Under reduced motion no reply points at a `/band lively` that would change nothing, and no reply
+offers a `/band still` to a band that is still already. "Him" and "them" come only after the words
+that say who they are ("Clawd", "Waves"). `/band` is the one hook that answers the person directly,
+so its body is guarded: a refused state write gives the last row, never silence.
 
 ## Manual live checks
 
@@ -110,9 +145,10 @@ changing the look, the motion or the reload path.
 - **Terminal:** `/band` gives one status line. `/band hearth` replies and switches, and nothing
   jumps. `/band` again says hearth (the command survived `/config`'s reload). "Band look" in
   `/config` switches back to tide, with no reply. After `/band still`, quit and restart: still is
-  remembered, and the look comes from `/config`.
-- **Desktop Code tab:** the same five checks. Both looks' frames are 64 px tall, so the composer
-  should not move on a switch.
+  remembered, and the look comes from `/config`. In an 80-column window, the longest replies (`/band
+  lively` under reduced motion, `/band off` on the beach) each print on one line.
+- **Desktop Code tab:** the first five checks again. Both looks' frames are 64 px tall, so the
+  composer should not move on a switch.
 - **A switch right after a turn lands:** `/band hearth` while the beach cheers. The hearth should
   come on at rest with "Done in …", with no cheer replayed and no pop when the old cheer would end.
 - **A reload that keeps the look (desktop):** with the beach on and Clawd walking, change `warnAt`
@@ -132,7 +168,7 @@ facts through a view that hands it exactly what its code was built to read (`tid
 
 | Hook | What it does |
 |---|---|
-| `session.start` | Registers `/band`; reads the motion, usage, model, repo, git, reduced motion and `TERM_PROGRAM`, each on its own so one failed lookup never blanks the rest; arms the nap; shows the upgrade toast. Idempotent. |
+| `session.start` | Registers `/band`; reads the motion, usage, model, repo, reduced motion and `TERM_PROGRAM`, each on its own so one failed lookup never blanks the rest, and writes them before git answers; arms the nap; shows the upgrade toast; then writes git's branch and count, even if a step before it went wrong. Idempotent. |
 | `session.measure` | Context, cost and limits; the `warnAt` toast. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
 | `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
@@ -168,6 +204,16 @@ Rules the facts keep:
   `turn.complete` with `aborted` takes back a failure from the last second of this turn (`ESC_MS`).
 - **`/clear` ends the moments**: a band on screen drops its cheer or splash and says "Ready when you
   are" within a tick.
+- **The first frame already says where you are.** `session.start` writes the project (from the
+  session's repo, or its folder) before it waits on git, and `ui.render` asks the repo and folder
+  itself, once, if the band draws before even that. On both looks the line opens as the project
+  alone. The branch and count from git join when it answers, at most 3 s later (its timeout), and the
+  model joins with them (`isGitRead`, which a turn's git answer sets too, in case it lands first).
+  On the beach the model stands after the branch, which would push it along. By the hearth it is
+  pinned at line 1's right, but on a narrow band it is the first thing the line gives up for the
+  branch, so a model drawn first would go when the branch came. So the line is never empty, and
+  nothing on it moves or goes: it only grows. Waiting to draw until git answered would hold back
+  Clawd's hello, and a placeholder would be one more thing to change.
 - **A wait on you is not work.** A question (`AskUserQuestion`) or a plan ready for you
   (`ExitPlanMode`) is the kind `ask`: Clawd rests, the words are dim, and one that ends in an error
   is the person declining, never a failure.
@@ -263,10 +309,17 @@ that is always there. The water covers the shore in proportion to the context us
 wave rolls in at the far edge; at 100% the water comes up to a cell of sky from his side at home.
 
 - **Palette:** kraft sand, a dusk-blue sea and a coral shell, muted to sit beside Claude's clay.
-  Terminal sand `#D9B482`, sea `#6C9DC2` over `#5888AE`, foam `#94BCDD`, shell `#E9A3A4`, heart
-  `#E9789B`; the desktop's sand (`#E2C394`) and foam (`#C6DCEC`) are a touch lighter.
+  Terminal sand `#DAB27F`, damp sand and its specks `#B27F4C`, sea `#4C7FAF` with ripples
+  `#004C7F`, foam `#7FAFD7`, shell `#E4A5A6` with ridges `#D97F7F`, heart `#E37DA2`. Each sits on or
+  beside an entry of xterm's 256-color cube (180, 137, 67, 24, 110, 181, 174 and 175), so a terminal
+  without truecolor shows the same beach (see "Key decisions"). The desktop keeps its own lighter
+  colors: sand `#E2C394`, sea `#6C9DC2` over `#5888AE`, foam `#C6DCEC`, shell `#E9A3A4`, heart
+  `#E9789B`.
 - **Ground:** a whole row of sand, so his legs stand in front of it. A darker grain every six cells
-  hides only while he stands on or beside it. The two cells before the water are damp.
+  hides only while he stands on or beside it. The two cells before the water are damp, and so is the
+  sand a splash ran over while it dries, but never the sand beneath him: his clay feet all but vanish
+  on the damp tan (about 1.1 to 1), so the damp strip stops where he stands. The water itself still
+  runs under his feet.
 - **The wave** curls toward the beach, `▀▛█▄▄▖`, smaller with less room (`▀▛█▄▖`, `▀▛▖`), never cut
   mid-crest. The open sea (4 to 9 cells) is water the tide never needs, so a whole crest always
   shows. The shell (`▟▌▐▙` over `▝▀▀▘`) appears on beaches of 25 cells and up (56 columns).
@@ -461,8 +514,11 @@ branch, a file name, a command or a todo may be cut, at its end, while 7 charact
   the model goes; then the count goes, whole (never a bare `· 3`); then the branch is cut, then it
   goes, and last the project is cut.
 - **Line 2:** the meters step down through four sizes, then `5h limit` becomes `5h`, then they go,
-  then the cost, then the 5h figure. The context figure always stays. Before any reading it reads
-  `context –`, never "0%".
+  then the cost, then the 5h figure. The context figure always stays. Before any reading the meter
+  is its empty track and the figure an en dash, `context ━━━━━━━━━━━━━━━━ –` (or `context –` once
+  the meters have gone), never "0%". The track keeps the line's shape, so the first reading fills
+  the meter in place and nothing after it moves; the desktop draws the same empty pill, read out as
+  "No context reading yet".
 - **Line 3:** the tally (`3/7 done` when short) shows only beside the words whole and goes before
   they lose anything, so a todo beside it is never cut (`uncut`). "Next up: Write the tests" is cut
   after two words at least ("Next up: Write the tests…"), never to one word and an ellipsis. Each
@@ -493,6 +549,12 @@ along as Claude works.", or when still "Clawd sits quietly while Claude works."
 | Near a limit | | | Near the 5h limit · resets 4:57am ("At", "Over" past it) |
 | Idle 3 minutes | eyes closed, a dim z drifts up | eyes close 3 minutes after the Svg appears, a slate z | unchanged |
 | Petted | turns all the way around, winks with arms up and a pixel heart | a hover of 150 ms: a wink, a hop, the pixel heart; asleep, he sleeps on | unchanged |
+
+A nap changes Clawd and not line 3, which keeps the last turn's line, the next todo, or before the
+first turn "Ready when you are". The hearth's words are its readout and Clawd carries the mood, so
+what the last turn did is still there when you come back, and a prompt makes good on "Ready when you
+are" at once, opening his eyes on the frame that says "Thinking it over". The beach says "Napping"
+because its words tell the scene.
 
 A hiccup too narrow for its words never cuts a set phrase: it says what kind of step it was
 (`hiccupNouns`): "Hiccup · A command" (or a task, a subagent, a skill, a web search), or, for a tool
@@ -527,6 +589,17 @@ naps, without blinks, taps or hops.
   stands for ("42% context"); on the hearth "context" labels a meter ("context 42%").
 - **A moment's source is not kept past its end**, except the hello's, whose key is the idle loop's:
   a remount within the keep would play the moment again.
+- **Terminal colors sit on or beside xterm's 256-color cube.** Without truecolor (tmux without its
+  RGB flag, Apple's Terminal, many SSH sessions) Claude Code sends 256-color codes, rounding each
+  channel evenly across the cube's six levels (chalk's way), and tmux rounds to the nearest level, so
+  a color between levels can come out a different hue: a sand of `#D9B482` shows as a greenish khaki,
+  and ripples of `#5888AE` as a gray teal lighter than the sea. So each terminal color rounds to the
+  same entry both ways, within 0.06 in OKLab (the ripples set that bound; the rest sit within 0.035)
+  and 12 degrees of hue, and no two of the looks' own colors share an entry; a test films every
+  color both looks draw, through a pet, a splash, a cheer and high tide, and holds them to that. The
+  cube has no tan between the sand's 180 and 137, nor a blue between the sea's 67 and 24, so the damp
+  strip and the ripples are darker than a free choice would make them, in truecolor too. Clawd and
+  the words use theme keys, which are the host's to round (see "Known gaps").
 - **The hearth's Svg classes start with `hh-`** in case a host ever draws it inline. The tide's
   Svg draws only in its sandboxed frame, and a prefix would change every tide source for no gain.
 
@@ -573,8 +646,19 @@ naps, without blinks, taps or hops.
 - **The water's glide is kept to a twentieth of a unit**, so a second failure in a splash's rush can
   open up to 0.2 px from where the last frame stood.
 - **A wait on you:** whether the band shows beside Claude Code's own question is up to the host.
-- **Ambiguous-width glyphs on the hearth:** its meters (`━`) and the dash of `context –` would shift
-  line 2 on a terminal that draws them wide.
+- **Ambiguous-width glyphs on the hearth:** its meters (`━`) and the en dash before the first
+  reading would shift line 2 on a terminal that draws them wide.
+- **Theme colors are rounded by the host.** Clawd, the words and the hearth's meters use Claude
+  Code's theme keys, which a 256-color terminal shows as the host rounds them, as it does its own
+  Clawd. Under chalk's rounding Clawd's clay shows as pink `#d78787`, entry 174, which the shell's
+  two thin ridges share a cell or more from him, and under tmux's the light theme's green for "Done"
+  comes out gray.
+- **Claude Code's reload note.** A look switch through `/band` reloads the plugin's options, and the
+  host prints its own two-line "options changed" note, naming the hooks it reloaded, above the
+  reply (seen with a `--plugin-dir` plugin). It is the host's line, and the band cannot quiet it.
+- **Claude Code's `[-]` at the right of row 1.** The host draws a dim `[-]` control at the right end
+  of the band's first row, in both looks and at every width. It sits outside `bodyColumns`, and both
+  looks lay out within `bodyColumns` alone, so the band never needs those cells.
 - **A glob's last part is one extension**, so `**/*.failing-fixture.ts` gives way to "Splash! A
   search failed" and "Hiccup · A search" rather than being cut inside it.
 - **Two short rungs of the beach's failure ladder:** Glob and Grep say "Splash! A tool failed" at 47
@@ -601,8 +685,10 @@ naps, without blinks, taps or hops.
 - `hooks/facts.ts`: the facts' pure rules: `whole()`, `describe()`, `runningAfter`, the holds and
   the todos held beside them (`tallied`, `shownTodos`), `TODO_TOOLS`, `isNewWave`, and the failure
   nouns (`nounOf`, `NAME_NOUNS`, `nounsFor`).
-- `hooks/look.ts`: the look and `/band`: `parseBand`, `lookNow`, `migrateMotion`, `replyFor`.
-- `hooks/clawd.ts`: Clawd's terminal cells, the shared palette, `cells()`, `textPx()`, the cuts.
+- `hooks/look.ts`: the look and `/band`: `parseBand`, `lookNow`, `migrateMotion`, `replyFor`,
+  `offReply`, `troubleReply`, the toasts, and `REPLY_MOST`, the most a reply may hold.
+- `hooks/clawd.ts`: Clawd's terminal cells, the shared palette (with `TERMINAL_HEART`, the heart
+  both terminal looks draw), `cells()`, `textPx()`, the cuts.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
 - `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text.
@@ -623,13 +709,16 @@ naps, without blinks, taps or hops.
   `$.state`), older state, the shared facts and holds, `describe()` and the cuts, git, `/clear`,
   Esc, the terminal pace filmed to the 10 ms while a pet, a prompt or a switch lands, each failing
   tool's words on both ladders, the todos' hold by each way a line can be on its way, the tools a
-  turn ran, "Next:" never cut to one word, and a switch back to the beach or `/band lively` at any
-  point of a splash or a still cheer.
+  turn ran, "Next:" never cut to one word, a switch back to the beach or `/band lively` at any
+  point of a splash or a still cheer, the first frame while git is slow at every width (and git's
+  answer after a start that failed partway, or one a turn's answer overtook), `/band off` by what is
+  on, and every terminal color against its 256-color rounding, with every other color a theme key.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
   the Svg's CSS; films of a pet at every 250 ms of a cheer, the sparkles at every width from 34 to
-  60 at six tides, the one heart, the step home, and a turn landing mid-splash.
+  60 at six tides, the one heart, the step home, a turn landing mid-splash, and his feet never on
+  damp sand.
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
   line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
   moment, the bead, calm, petting and the `hh-` classes.

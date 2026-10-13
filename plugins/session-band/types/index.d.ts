@@ -114,6 +114,12 @@ export type Info = {
   isCalm: boolean
   /** Apple's Terminal, where Claude Code draws a simpler Clawd. */
   isAppleTerminal: boolean
+  /**
+   * git has answered this session (or given up). Until it has, both looks hold back the model, so the
+   * branch joins the where line without moving or taking anything from it: on the beach the model
+   * stands after the branch, and by the hearth it is the first thing a narrow line gives up for it.
+   */
+  isGitRead: boolean
   /** Bumped when a moment ends with nothing else to say so (a cheer, a flinch, a splash, a nap coming on), so the desktop redraws. */
   beat: number
 

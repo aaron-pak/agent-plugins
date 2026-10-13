@@ -1,5 +1,5 @@
 // The tide's own view of the session: exactly the facts and props its beach was built and tested on.
-// The merged facts (types/index.d.ts) are turned into this `Info` by tideInfo() in ./view.ts.
+// The shared facts (types/index.d.ts) are turned into this `Info` by tideInfo() in ./view.ts.
 
 /** One todo, from TodoWrite or the Task tools. */
 export type Todo = { id: string; subject: string; activeForm: string | null; status: 'pending' | 'in_progress' | 'completed' }
@@ -13,7 +13,7 @@ export type ActivityKind = 'look' | 'work' | 'wait'
 /** What a running tool is doing, in a few words: `Editing` `register.tsx`; `what` names the call if it fails: `Edit register.tsx`. */
 export type Activity = { id: string; verb: string; target: string; kind: ActivityKind; what: string }
 
-/** How the last turn went; `ending`: answered (Done, and a cheer), stopped (Esc, or the model declined) or an API error. The merged facts' own (types/index.d.ts). */
+/** How the last turn went; `ending`: answered (Done, and a cheer), stopped (Esc, or the model declined) or an API error. The shared facts' own (types/index.d.ts). */
 export type { LastTurn, Limit } from '../../types'
 import type { LastTurn, Limit } from '../../types'
 
@@ -80,7 +80,7 @@ export type Info = {
   beat: number
 }
 
-/** How a run of text is coloured; each surface maps it to theme keys (`clay` is Claude's own, `claude`). */
+/** How a run of text is colored; each surface maps it to theme keys (`clay` is Claude's own, `claude`). */
 type Tone = 'plain' | 'dim' | 'good' | 'warn' | 'bad' | 'clay'
 
 /**

@@ -5,7 +5,7 @@ import type { ConfigRow, ConfigSetInput, On, RenderElement, RenderPropsOf, Sessi
 import { EMPTY, GAP_MS, HOLD_MS, NO_DESK, NOTHING_HELD, RUNNING_MAX, TALLY_MOST_MS, TALLY_WAIT_MS, TODOS_MAX, describe, durationForms, heldId, isInterrupted, limitLabel, limitShown, nextTodos, pendingWakes, phraseForms, prettyModel, runningAfter, stepDesk, stepHeld, todosAfterTurn, usingForms, whole } from '../hooks/facts'
 import { bandProps as hearthProps } from '../hooks/hearth/props'
 import { hearthInfo, slipAt } from '../hooks/hearth/view'
-import { lookNow, migrateMotion, offReply, parseBand, replyFor, upgradeToast } from '../hooks/look'
+import { REPLY_MOST, lookNow, migrateMotion, offReply, parseBand, replyFor, toastFor, troubleReply, upgradeToast } from '../hooks/look'
 import { bandProps as tideProps, desktopScenes, sceneMemory } from '../hooks/tide/props'
 import { SPLASH_MS, positionAt } from '../hooks/tide/desk'
 import { EYES, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
@@ -50,10 +50,11 @@ type WorldOptions = {
   /** /config's rows, for `$.config.list()`; `missing`: nothing answers. */
   rows?: ConfigRow[] | 'missing'
   /**
-   * git as a test steers it: while `held`, every git call waits on it; `status` is what `git status`
-   * says (as it stands when the call is made); `fails` names a call that cannot run (a timeout, say).
+   * git as a test steers it: while `held`, every git call waits on it; `branch` is the branch it
+   * names (main by default); `status` is what `git status` says (as it stands when the call is made);
+   * `fails` names a call that cannot run (a timeout, say).
    */
-  git?: { held: Promise<void> | null; status?: string; fails?: 'status' | 'rev-parse' | null; isNoRepo?: boolean }
+  git?: { held: Promise<void> | null; branch?: string; status?: string; fails?: 'status' | 'rev-parse' | null; isNoRepo?: boolean }
   /** The main loop's model, read each time the band asks, so a test can /model mid-session; `fails`: the lookup throws. */
   model?: { id: string; fails?: boolean }
   /** Lookups that throw at the start. */
@@ -135,7 +136,7 @@ function world(on: On, options: WorldOptions = {}) {
     return {
       value: {
         exitCode: 0,
-        stdout: e.argv.includes('rev-parse') ? 'main\n' : status,
+        stdout: e.argv.includes('rev-parse') ? `${options.git?.branch ?? 'main'}\n` : status,
         stderr: '',
         isStdoutTruncated: false,
         isStderrTruncated: false,
@@ -340,12 +341,12 @@ for (const surface of SURFACES) {
     const { look } = await mount($, surface)
     expect((await look()).look).toBe('tide')
 
-    expect(await run($, 'hearth')).toBe('Band: hearth. Clawd blinks, reads along and cheers. /band tide to switch back.')
+    expect(await run($, 'hearth')).toBe('Hearth. Clawd blinks and cheers. /band tide to switch back.')
     expect(sets).toEqual([{ key: KEY, value: 'hearth' }])
     expect((await look()).look).toBe('hearth')
 
     // And back: the beach returns, through /config again.
-    expect(await run($, 'tide')).toBe('Band: tide. Waves lap the shore and Clawd potters about. /band hearth to switch back.')
+    expect(await run($, 'tide')).toBe('Tide. Waves lap the shore. /band hearth to switch back.')
     expect(sets).toEqual([
       { key: KEY, value: 'hearth' },
       { key: KEY, value: 'tide' },
@@ -371,11 +372,11 @@ for (const surface of SURFACES) {
     }
 
     expect(await isMoving()).toBe(true)
-    expect(await run($, 'still')).toBe('Band: still. The waves rest, and the tide shows your context. /band lively brings them back.')
+    expect(await run($, 'still')).toBe('Still. The waves rest. /band lively brings them back.')
     expect(await isMoving()).toBe(false)
-    expect(await run($, 'hearth')).toBe('Band: hearth, still. Clawd sits quietly, and the lines keep you posted. /band tide to switch back.')
+    expect(await run($, 'hearth')).toBe('Hearth, still. Clawd rests. /band tide to switch back.')
     expect(await isMoving()).toBe(false)
-    expect(await run($, 'lively')).toBe('Band: lively. Clawd blinks, reads along and cheers. /band still calms him.')
+    expect(await run($, 'lively')).toBe('Lively. Clawd blinks and cheers. /band still calms him.')
     expect(await isMoving()).toBe(true)
     // Only the look went through /config.
     expect(sets).toEqual([{ key: KEY, value: 'hearth' }])
@@ -394,8 +395,8 @@ for (const surface of SURFACES) {
       // The tide is already on, so only the motion was asked for; the hearth is a switch.
       expect(said).toBe(
         which === 'tide'
-          ? 'Band: lively once reduced motion is off; until then the beach stays calm.'
-          : 'Band: hearth, still for your reduced-motion setting. /band tide to switch back.',
+          ? 'Lively once reduced motion is off; the waves rest till then.'
+          : 'Hearth, still for reduced motion. /band tide to switch back.',
       )
       const first = await look()
       expect(first.look).toBe(which)
@@ -443,7 +444,7 @@ test('a look outside the options draws the beach', { options: { look: 'cozy' } }
     expect((await look()).look).toBe('tide')
     await ui.unmount()
   }
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
 })
 
 test('/band alone says what is on and how to change it, in one short line, and asks /config nothing', async ($, on) => {
@@ -458,21 +459,21 @@ test('/band alone says what is on and how to change it, in one short line, and a
     return line
   }
 
-  expect(await status()).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await status()).toBe('Tide, lively. Try /band hearth, /band still or /config.')
   await run($, 'still')
-  expect(await status()).toBe('Band: tide, still. Look: /band hearth or /config. Motion: /band lively.')
+  expect(await status()).toBe('Tide, still. Try /band hearth, /band lively or /config.')
   await run($, 'hearth')
-  expect(await status()).toBe('Band: hearth, still. Look: /band tide or /config. Motion: /band lively.')
+  expect(await status()).toBe('Hearth, still. Try /band tide, /band lively or /config.')
   await run($, 'lively')
-  expect(await status()).toBe('Band: hearth, lively. Look: /band tide or /config. Motion: /band still.')
+  expect(await status()).toBe('Hearth, lively. Try /band tide, /band still or /config.')
   settings.prefersReducedMotion = true
-  expect(await status()).toBe('Band: hearth, still for your reduced-motion setting. Look: /band tide or /config.')
+  expect(await status()).toBe('Hearth, still for reduced motion. Try /band tide or /config.')
   await run($, 'tide')
-  expect(await status()).toBe('Band: tide, still for your reduced-motion setting. Look: /band hearth or /config.')
+  expect(await status()).toBe('Tide, still for reduced motion. Try /band hearth or /config.')
 
   for (const line of lines) {
     expect(line).not.toContain('\n')
-    expect(line.length).toBeLessThan(100)
+    expect(line.length).toBeLessThanOrEqual(REPLY_MOST)
   }
   // The status lines asked /config for nothing: the two calls are /band hearth and /band tide.
   expect(sets.map(set => set.value)).toEqual(['hearth', 'tide'])
@@ -507,8 +508,8 @@ test('reduced motion turned off at a prompt makes the band lively from that mome
 test('a look already on asks /config for nothing, and the reply never offers to "switch back"', { options: { look: 'hearth' } }, async ($, on) => {
   const { sets } = world(on)
   await start($)
-  expect(await run($, 'hearth')).toBe('Band: hearth, lively. Look: /band tide or /config. Motion: /band still.')
-  expect(await run($, 'hearth still')).toBe('Band: still. Clawd sits quietly, and the lines keep you posted. /band lively lets him move.')
+  expect(await run($, 'hearth')).toBe('Hearth, lively. Try /band tide, /band still or /config.')
+  expect(await run($, 'hearth still')).toBe('Still. Clawd rests. /band lively lets him move.')
   expect(sets).toEqual([])
 })
 
@@ -541,9 +542,10 @@ test('a /config change after /band wins at once, even back to the value /config 
   const desk = await mount($, 'desktop')
 
   // /config cannot be reached: the pick holds for the session alone.
-  expect(await run($, 'hearth')).toBe('Band: hearth (this session only); /config could not save it. /band tide to switch back.')
+  expect(await run($, 'hearth')).toBe('Hearth (session only). /config couldn\'t save it.')
   expect((await desk.look()).look).toBe('hearth')
-  expect(await run($)).toBe('Band: hearth (this session only), lively. Look: /band tide. Motion: /band still.')
+  // Short of room, the status keeps the way to the other look, the one the person most needs.
+  expect(await run($)).toBe('Hearth (session only), lively. Try /band tide.')
 
   // The person picks tide in /config, which already held it: the band follows them, not the old pick.
   isReachable = true
@@ -556,7 +558,7 @@ test('a /config change after /band wins at once, even back to the value /config 
   })
   expect(written.value).toBe('tide')
   expect((await desk.look()).look).toBe('tide')
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
 })
 
 test('with /config out of reach, /band tide is simply the default again, never "this session only"', async ($, on) => {
@@ -568,12 +570,12 @@ test('with /config out of reach, /band tide is simply the default again, never "
   })
   await start($)
   const desk = await mount($, 'desktop')
-  expect(await run($, 'hearth')).toBe('Band: hearth (this session only); /config could not save it. /band tide to switch back.')
+  expect(await run($, 'hearth')).toBe('Hearth (session only). /config couldn\'t save it.')
   expect((await desk.look()).look).toBe('hearth')
   // Back to the look /config already gives: nothing is left for this session alone.
-  expect(await run($, 'tide')).toBe('Band: tide. Waves lap the shore and Clawd potters about. /band hearth to switch back.')
+  expect(await run($, 'tide')).toBe('Tide. Waves lap the shore. /band hearth to switch back.')
   expect((await desk.look()).look).toBe('tide')
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
   expect(sets.map(set => set.value)).toEqual(['hearth', 'tide'])
 })
 
@@ -582,28 +584,39 @@ test('when /config refuses, the look stays and the line says why', async ($, on)
   await start($)
   const desk = await mount($, 'desktop')
 
-  expect(await run($, 'hearth')).toBe('Band: tide, lively. /config kept the look: locked by your organization.')
+  // What is on comes first, as short as it needs to be for the whole reply to fit the line.
+  expect(await run($, 'hearth')).toBe('Tide. /config kept the look: locked by your organization.')
   expect(sets).toEqual([{ key: KEY, value: 'hearth' }])
   expect((await desk.look()).look).toBe('tide')
-  // The motion asked for alongside still lands.
-  expect(await run($, 'hearth still')).toBe('Band: tide, still. /config kept the look: locked by your organization.')
-  expect(await run($)).toBe('Band: tide, still. Look: /band hearth or /config. Motion: /band lively.')
+  // The motion asked for alongside still lands, and the reply keeps it, since it is news: here the
+  // reason wraps instead.
+  expect(await run($, 'hearth still')).toBe('Tide, still. /config kept the look: locked by your organization.')
+  expect(await run($)).toBe('Tide, still. Try /band hearth, /band lively or /config.')
+  // With off asked for too, the off note comes before the reason, and what is on gives way to the
+  // look's name so the plain part keeps to the first line: a wrap only ever moves the reason.
+  const off = await run($, 'hearth off')
+  expect(off).toBe('Tide. /plugin turns the band off. /config kept the look: locked by your organization.')
+  expect(off.slice(0, off.indexOf(': ') + 1).length).toBeLessThanOrEqual(REPLY_MOST)
 })
 
 test("/config's reason reads as the rest of the reply's sentence: its opening capital comes down, an acronym or a command keeps its case", async () => {
-  const refused = (denied: string) => replyFor({ kind: 'look', look: 'tide', motion: 'lively', isCalm: false, denied })
-  expect(refused('Locked by your organization.')).toBe('Band: tide, lively. /config kept the look: locked by your organization.')
-  expect(refused('  Managed settings win here . ')).toBe('Band: tide, lively. /config kept the look: managed settings win here.')
-  expect(refused('ID 42 is locked')).toBe('Band: tide, lively. /config kept the look: ID 42 is locked.')
-  expect(refused('I cannot change this')).toBe('Band: tide, lively. /config kept the look: I cannot change this.')
-  expect(refused('/config is read-only here.')).toBe('Band: tide, lively. /config kept the look: /config is read-only here.')
-  expect(refused('Écrit par votre organisation')).toBe('Band: tide, lively. /config kept the look: écrit par votre organisation.')
+  // The reason as the reply quotes it, after "/config kept the look: ".
+  const refused = (denied: string) => {
+    const line = replyFor({ kind: 'look', look: 'tide', motion: 'lively', isCalm: false, denied })
+    return line.slice(line.indexOf('/config kept the look: ') + '/config kept the look: '.length)
+  }
+  expect(refused('Locked by your organization.')).toBe('locked by your organization.')
+  expect(refused('  Managed settings win here . ')).toBe('managed settings win here.')
+  expect(refused('ID 42 is locked')).toBe('ID 42 is locked.')
+  expect(refused('I cannot change this')).toBe('I cannot change this.')
+  expect(refused('/config is read-only here.')).toBe('/config is read-only here.')
+  expect(refused('Écrit par votre organisation')).toBe('écrit par votre organisation.')
   // The reason's own closing mark goes, whatever it is (the reply adds its stop), and a name keeps its capital.
-  expect(refused('Locked by policy!')).toBe('Band: tide, lively. /config kept the look: locked by policy.')
-  expect(refused('Is this locked?')).toBe('Band: tide, lively. /config kept the look: is this locked.')
-  expect(refused('Claude Code manages this setting…')).toBe('Band: tide, lively. /config kept the look: Claude Code manages this setting.')
-  expect(refused('Anthropic sets this')).toBe('Band: tide, lively. /config kept the look: Anthropic sets this.')
-  expect(refused('Locked')).toBe('Band: tide, lively. /config kept the look: locked.')
+  expect(refused('Locked by policy!')).toBe('locked by policy.')
+  expect(refused('Is this locked?')).toBe('is this locked.')
+  expect(refused('Claude Code manages this setting…')).toBe('Claude Code manages this setting.')
+  expect(refused('Anthropic sets this')).toBe('Anthropic sets this.')
+  expect(refused('Locked')).toBe('locked.')
 })
 
 test('where the row is keyed differently, /band finds it through /config', async ($, on) => {
@@ -632,7 +645,7 @@ test('where the row is keyed differently, /band finds it through /config', async
   await start($)
 
   const said = await run($, 'hearth')
-  expect(said).toBe('Band: hearth. Clawd blinks, reads along and cheers. /band tide to switch back.')
+  expect(said).toBe('Hearth. Clawd blinks and cheers. /band tide to switch back.')
   expect(asked.filter(key => key === inline).length).toBe(1)
   expect(await run($)).not.toContain('this session only')
   // The row it found is the one it writes from then on.
@@ -643,9 +656,9 @@ test('where the row is keyed differently, /band finds it through /config', async
 test('/band hearth still and /band still hearth: one /config call and one motion, in either order', async ($, on) => {
   const { sets } = world(on)
   await start($)
-  expect(await run($, 'hearth still')).toBe('Band: hearth, still. Clawd sits quietly, and the lines keep you posted. /band tide to switch back.')
-  expect(await run($, 'lively tide')).toBe('Band: tide. Waves lap the shore and Clawd potters about. /band hearth to switch back.')
-  expect(await run($, '  STILL   hearth ')).toBe('Band: hearth, still. Clawd sits quietly, and the lines keep you posted. /band tide to switch back.')
+  expect(await run($, 'hearth still')).toBe('Hearth, still. Clawd rests. /band tide to switch back.')
+  expect(await run($, 'lively tide')).toBe('Tide. Waves lap the shore. /band hearth to switch back.')
+  expect(await run($, '  STILL   hearth ')).toBe('Hearth, still. Clawd rests. /band tide to switch back.')
   expect(sets.map(set => set.value)).toEqual(['hearth', 'tide', 'hearth'])
 })
 
@@ -653,51 +666,75 @@ test('unknown, doubled or clashing words change nothing and say what /band takes
   const calm: Record<string, unknown> = { prefersReducedMotion: false }
   const { sets } = world(on, { settings: calm })
   await start($)
-  expect(await run($, 'sparkly')).toBe('Band: "sparkly" isn\'t a look or a motion. Try tide, hearth, still or lively.')
-  expect(await run($, 'tide sparkly')).toBe('Band: "sparkly" isn\'t a look or a motion. Try tide, hearth, still or lively.')
-  expect(await run($, 'tide hearth')).toBe('Band: one look at a time. /band tide or /band hearth.')
-  expect(await run($, 'still lively')).toBe('Band: one motion at a time. /band still or /band lively.')
+  expect(await run($, 'sparkly')).toBe('Try tide, hearth, still or lively, not "sparkly".')
+  expect(await run($, 'tide sparkly')).toBe('Try tide, hearth, still or lively, not "sparkly".')
+  expect(await run($, 'tide hearth')).toBe('One look at a time: /band tide or /band hearth.')
+  expect(await run($, 'still lively')).toBe('One motion at a time: /band still or /band lively.')
   // The most natural guess for an opt-out finds what turns the band off (the plugin manager), then
   // the quietest ways the band has.
   for (const off of ['off', 'OFF', 'none', 'hide', 'disable']) {
-    expect([off, await run($, off)]).toEqual([off, 'Band: /plugin turns the band off. /band still stops the motion; /band hearth is the plainer look.'])
+    expect([off, await run($, off)]).toEqual([off, '/plugin turns the band off. Try /band still or /band hearth.'])
   }
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
   expect(sets).toEqual([])
-  // On the hearth, the plainer look is the one on screen: the reply says so rather than offer it.
+  // On the hearth, the plainer look is the one on screen: the reply offers only the stiller motion.
   await run($, 'hearth')
   const onHearth = await run($, 'off')
-  expect(onHearth).toBe('Band: /plugin turns the band off. The hearth is the plainer look, and /band still stops the motion.')
-  expect(onHearth.length).toBeLessThanOrEqual(100)
+  expect(onHearth).toBe('/plugin turns the band off. Try /band still.')
+  expect(onHearth.length).toBeLessThanOrEqual(REPLY_MOST)
   await run($, 'tide')
   sets.length = 0
   // Reduced motion already keeps the band still, so the reply never offers /band still, which would change nothing.
   calm.prefersReducedMotion = true
   const onCalm = await run($, 'off')
-  expect(onCalm).toBe('Band: /plugin turns the band off. Reduced motion keeps it still; /band hearth is the plainer look.')
+  expect(onCalm).toBe('/plugin turns the band off. Try /band hearth.')
   await run($, 'hearth')
   const onCalmHearth = await run($, 'off')
-  expect(onCalmHearth).toBe('Band: /plugin turns the band off. The hearth is the plainer look, and reduced motion keeps it still.')
-  for (const line of [onCalm, onCalmHearth]) expect(line.length).toBeLessThanOrEqual(100)
+  expect(onCalmHearth).toBe('/plugin turns the band off. Reduced motion keeps it still.')
+  for (const line of [onCalm, onCalmHearth]) expect(line.length).toBeLessThanOrEqual(REPLY_MOST)
   calm.prefersReducedMotion = false
   await run($, 'tide')
   sets.length = 0
-  // A look (or a motion) beside the off word is a switch all the same, and the reply ends on how to
-  // turn the band off: "/band hearth off" is the plainer look, then the way out of the band.
+  // A look (or a motion) beside the off word is a switch all the same, and the reply says what is on,
+  // then how to turn the band off: "/band hearth off" is the plainer look, then the way out of the band.
   const plainer = await run($, 'hearth off')
-  expect(plainer).toBe('Band: hearth. /band tide to switch back. /plugin turns the band off.')
+  expect(plainer).toBe('Hearth, lively. /plugin turns the band off.')
   expect(sets.map(set => set.value)).toEqual(['hearth'])
-  // With the sentence about him dropped for the off note, the way back names him rather than say "him".
-  expect(await run($, 'off still')).toBe('Band: still. /band lively lets Clawd move. /plugin turns the band off.')
+  expect(await run($, 'off still')).toBe('Hearth, still. /plugin turns the band off.')
   await run($, 'tide lively')
   sets.length = 0
   // The same word twice is still one word.
-  expect(await run($, 'still still')).toContain('Band: still.')
+  expect(await run($, 'still still')).toMatch(/^Still\. /u)
   // Asking what /band takes is asking what is on.
   for (const ask of ['help', '?', 'status', ' HELP ']) {
-    expect(await run($, ask)).toBe('Band: tide, still. Look: /band hearth or /config. Motion: /band lively.')
+    expect(await run($, ask)).toBe('Tide, still. Try /band hearth, /band lively or /config.')
   }
   expect(sets).toEqual([])
+})
+
+// Someone who chose still and still wants less is who types /band off: the reply never offers a
+// /band still the band is already in, whether the motion or reduced motion keeps it still, and a
+// still hearth is as quiet as the band gets.
+test('/band off never offers /band still to a band that is still already, by its motion or by reduced motion', async ($, on) => {
+  const calm: Record<string, unknown> = { prefersReducedMotion: false }
+  world(on, { settings: calm })
+  await start($)
+  expect(await run($, 'off')).toBe('/plugin turns the band off. Try /band still or /band hearth.')
+  await run($, 'still')
+  expect(await run($, 'off')).toBe('/plugin turns the band off. Try /band hearth.')
+  await run($, 'hearth')
+  expect(await run($, 'off')).toBe("/plugin turns the band off. It's as quiet as it gets.")
+  await run($, 'lively')
+  expect(await run($, 'off')).toBe('/plugin turns the band off. Try /band still.')
+  // Reduced motion keeps the band still whatever its motion, and the reply says so.
+  calm.prefersReducedMotion = true
+  expect(await run($, 'off')).toBe('/plugin turns the band off. Reduced motion keeps it still.')
+  await run($, 'still')
+  expect(await run($, 'off')).toBe('/plugin turns the band off. Reduced motion keeps it still.')
+  calm.prefersReducedMotion = false
+  // The motion a new session reads back is the one the reply goes by.
+  await $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+  expect(await run($, 'off')).toBe("/plugin turns the band off. It's as quiet as it gets.")
 })
 
 test("an older band's stored style becomes a motion, once, and never picks the look", async ($, on) => {
@@ -718,12 +755,12 @@ test("an older band's stored style becomes a motion, once, and never picks the l
 
   const { sets } = world(on, { store: { style: 'still' } })
   await start($)
-  expect(await run($)).toBe('Band: tide, still. Look: /band hearth or /config. Motion: /band lively.')
+  expect(await run($)).toBe('Tide, still. Try /band hearth, /band lively or /config.')
   expect(sets).toEqual([])
 })
 
-test("a Hearth-era user whose stored look was the hearth hears once, on the first session after the upgrade, that the beach is the new look and how to go back", async ($, on) => {
-  const UPGRADED = 'Band: the beach is the new look. /band hearth brings the hearth back.'
+test("a user whose older build stored the hearth's look hears once, on the first session after the upgrade, that the beach is the new look and how to go back", async ($, on) => {
+  const UPGRADED = 'The beach is the new look. /band hearth to switch back.'
   const { toasts, sets } = world(on, { store: { style: 'hearth' } })
   await start($)
   expect(toasts).toEqual([UPGRADED])
@@ -731,7 +768,7 @@ test("a Hearth-era user whose stored look was the hearth hears once, on the firs
   await start($)
   await start($)
   expect(toasts).toEqual([UPGRADED])
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
   expect(sets).toEqual([])
 
   // Only the hearth's own stored look, never landing on the hearth already, never once migrated,
@@ -761,7 +798,7 @@ test('the toast comes once per crossing, rounded, in the voice of the look on sc
   await start($)
   await $.session.measure(measured(86.4))
   await $.session.measure(measured(87))
-  expect(toasts).toEqual(['The tide is coming in: context is 86% full. Try /compact soon.'])
+  expect(toasts).toEqual(["High tide: context is 86% full. Try /compact soon."])
   // A second session.start above the line does not say it again.
   await start($, 88)
   expect(toasts.length).toBe(1)
@@ -769,7 +806,7 @@ test('the toast comes once per crossing, rounded, in the voice of the look on sc
   await $.session.measure(measured(40))
   await run($, 'hearth')
   await $.session.measure(measured(81.6))
-  expect(toasts).toEqual(['The tide is coming in: context is 86% full. Try /compact soon.', "Context is 82% full. Run /compact when you're ready."])
+  expect(toasts).toEqual(["High tide: context is 86% full. Try /compact soon.", "Context is 82% full. Run /compact when you're ready."])
 })
 
 test('both looks read the same facts', async ($, on) => {
@@ -884,12 +921,12 @@ test('a reload keeps the session: a napping Clawd stays asleep, and the counts c
   expect((await desk.look()).text).toContain('Done in 41s')
 })
 
-test('older state fills in: a PR-era and a Tidepool-era info each draw on both looks', () => {
+test('older state fills in: an info with no beach facts and one with no hearth facts each draw on both looks', () => {
   const read: Activity = { id: 'r', kind: 'read', verb: 'Reading', target: 'band.tsx', what: 'Read band.tsx' }
   const { what: _what, ...noWhat } = read
   void _what
-  // The PR's band (Hearth) kept no tide facts and no `what`.
-  const prEra = {
+  // One older build kept no beach facts and no `what`.
+  const noBeach = {
     model: 'Opus 5.5',
     project: 'agent-plugins',
     branch: 'main',
@@ -905,8 +942,8 @@ test('older state fills in: a PR-era and a Tidepool-era info each draw on both l
     isCalm: false,
     beat: 3,
   } as unknown as Partial<Info>
-  // The Tidepool lab build kept no hearth facts, `isStill` for the setting and `isError` for how a turn ended.
-  const tideEra = {
+  // Another kept no hearth facts, `isStill` for the setting and `isError` for how a turn ended.
+  const noHearth = {
     model: 'Opus 5.5',
     project: 'agent-plugins',
     percent: 86,
@@ -926,7 +963,7 @@ test('older state fills in: a PR-era and a Tidepool-era info each draw on both l
     beat: 0,
   } as unknown as Partial<Info>
   const now = T0
-  for (const stored of [prEra, tideEra]) {
+  for (const stored of [noBeach, noHearth]) {
     const known = whole(stored)
     expect(Array.isArray(known.turnFiles)).toBe(true)
     expect(known.desk).toEqual(NO_DESK)
@@ -937,13 +974,13 @@ test('older state fills in: a PR-era and a Tidepool-era info each draw on both l
       const tide = tideProps(tideInfo(known), 'lively', false, 80, 100, now)
       expect(plain(tide.words.now[0] ?? []).length).toBeGreaterThan(0)
       const hearth = hearthProps(hearthInfo(known), slipAt(known), 'lively', false, 80, 100, now, null)
-      expect(hearth.lastTurn?.seconds).toBe(stored === prEra ? 41 : 12)
+      expect(hearth.lastTurn?.seconds).toBe(stored === noBeach ? 41 : 12)
     }
   }
-  expect(whole(tideEra).isCalm).toBe(true)
-  expect(whole(tideEra).lastTurn?.ending).toBe('error')
-  expect(whole(prEra).held.activity?.what).toBe('band.tsx')
-  expect(whole(prEra).activity?.what).toBe('band.tsx')
+  expect(whole(noHearth).isCalm).toBe(true)
+  expect(whole(noHearth).lastTurn?.ending).toBe('error')
+  expect(whole(noBeach).held.activity?.what).toBe('band.tsx')
+  expect(whole(noBeach).activity?.what).toBe('band.tsx')
 })
 
 // The beach reads its wave's start only beside a failure that stands: one Esc or /clear took back
@@ -1389,7 +1426,7 @@ function clipped(tree: unknown): string[] {
   return out
 }
 
-// Each run of text on the band, and whether it is dim (the terminal's dim, or the theme's inactive grey).
+// Each run of text on the band, and whether it is dim (the terminal's dim, or the theme's inactive gray).
 function runsOf(node: unknown, isDim = false): Array<{ text: string; isDim: boolean }> {
   if (typeof node === 'string') {
     return [{ text: node, isDim }]
@@ -1644,7 +1681,22 @@ test('pendingWakes says what a fresh activation must arm', () => {
   expect(pendingWakes(splashing, T0 + 1_000, spans).hold).toBe(SPLASH_MS - 1_000)
 })
 
-test('every reply is one plain line of at most 100 characters, in the look on screen', () => {
+// Claude Code prints a command's reply after a prefix that names the plugin ("  ⎿  session-band: ",
+// 19 cells), so a reply of REPLY_MOST cells is one line at 80 columns, with a cell to spare, and at
+// any wider width, never a word or two left alone below it. The ellipsis counts two cells, since
+// terminals differ on its width.
+const PRINTED = '  \u23bf  session-band: '
+const replyCells = (line: string) => cells(line) + (line.match(/\u2026/gu)?.length ?? 0)
+
+test('every reply fits on one line after Claude Code\'s prefix at 80 columns, in the look on screen', () => {
+  expect([PRINTED.length, PRINTED.length + REPLY_MOST]).toEqual([19, 79])
+  const fits = (line: string) => {
+    expect([line, replyCells(line) <= REPLY_MOST]).toEqual([line, true])
+    expect(line).not.toContain('\n')
+    // The prefix already names the plugin, so a reply never names it again ("session-band: Band: ...").
+    expect([line, /^band\b/iu.test(line)]).toEqual([line, false])
+    expect([line, /^[\p{Lu}/]/u.test(line), /[.]$/u.test(line)]).toEqual([line, true, true])
+  }
   const looks: Look[] = ['tide', 'hearth']
   for (const look of looks) {
     for (const kind of ['status', 'look', 'motion'] as const) {
@@ -1653,23 +1705,104 @@ test('every reply is one plain line of at most 100 characters, in the look on sc
           for (const isSessionOnly of [false, true]) {
             for (const isOff of [false, true]) {
               const line = replyFor({ kind, look, motion, isCalm, isSessionOnly, isOff })
-              expect(line.startsWith('Band: ')).toBe(true)
-              expect(line).not.toContain('\n')
-              expect([line, line.length <= 100]).toEqual([line, true])
-              expect(/[.]$/.test(line)).toBe(true)
+              fits(line)
               expect([line, line.endsWith('/plugin turns the band off.')]).toEqual([line, isOff])
               // "Them" and "him" only after the words that say who they are ("Waves lap…", "Clawd…").
               expect([line, /^[^]*\bthem\b/u.test(line) && !/[Ww]aves\b[^]*\bthem\b/u.test(line)]).toEqual([line, false])
               expect([line, /\bhim\b/u.test(line) && !/Clawd\b[^]*\bhim\b/u.test(line)]).toEqual([line, false])
+              // Each look in its own voice: the beach speaks of its waves, the hearth of Clawd.
+              expect([line, /Clawd/u.test(line) && look === 'tide', /waves|[Bb]each/u.test(line) && look === 'hearth']).toEqual([line, false, false])
+              // What is on comes first: the look's name, or the motion's after a motion word alone (with
+              // off beside it, the reply says what is on as the status does, "Tide, still.").
+              const first = kind === 'motion' && !isOff ? (motion === 'still' ? 'Still' : 'Lively') : look === 'tide' ? 'Tide' : 'Hearth'
+              expect([line, line.startsWith(first)]).toEqual([line, true])
+            }
+          }
+        }
+      }
+    }
+    // /band off: never a /band still to a band already still, by its motion or by reduced motion.
+    for (const motion of ['lively', 'still'] as const) {
+      for (const isCalm of [false, true]) {
+        const line = offReply(look, motion, isCalm)
+        fits(line)
+        expect([line, line.startsWith('/plugin turns the band off. '), line.includes('/band still')]).toEqual([line, true, motion === 'lively' && !isCalm])
+      }
+    }
+  }
+  expect(offReply('hearth', 'still', false)).toBe("/plugin turns the band off. It's as quiet as it gets.")
+  expect(offReply('tide', 'still', false)).toBe('/plugin turns the band off. Try /band hearth.')
+  expect(offReply('hearth', 'lively', true)).toBe('/plugin turns the band off. Reduced motion keeps it still.')
+  for (const isStatus of [false, true]) fits(troubleReply(isStatus))
+  // The toasts print under the plugin's name too: the upgrade note, and the context nudge up to 100%.
+  fits(upgradeToast(undefined, 'hearth', 'tide') ?? '')
+  for (const look of looks) for (const percent of [1, 86, 100]) fits(toastFor(look, percent))
+  // A word /band does not know is the person's own: the reply says what /band takes, then quotes a
+  // word of up to 18 cells whole, and cuts a longer one with an ellipsis, so it stays on one line
+  // however long the word (a long pasted token, a word in a wide script).
+  const longest = 'abcdefghijklmnopqr'
+  const wide = '\u65e5\u672c\u8a9e\u306e\u30c6\u30b9\u30c8\u3067\u3059'
+  for (const args of ['cozy', 'sparkly', longest, `${longest}s`, 'configurations', 'averylongpastedwordthatsomeonepastedin', wide, `${wide}\u306d`, 'tide hearth', 'still lively', 'calm, lively']) {
+    const asked = parseBand(args)
+    fits('error' in asked ? asked.error : '')
+  }
+  const said = (word: string) => `Try tide, hearth, still or lively, not "${word}".`
+  expect(parseBand(longest)).toEqual({ error: said(longest) })
+  expect(replyCells(said(longest))).toBe(REPLY_MOST)
+  expect(parseBand(`${longest}s`)).toEqual({ error: said('abcdefghijklmnop\u2026') })
+  expect(parseBand('Configurations')).toEqual({ error: said('configurations') })
+  expect(parseBand('Incomprehensibilities')).toEqual({ error: said('incomprehensibil\u2026') })
+  expect(parseBand(wide)).toEqual({ error: said(wide) })
+  expect(parseBand(`${wide}\u306d`)).toEqual({ error: said('\u65e5\u672c\u8a9e\u306e\u30c6\u30b9\u30c8\u3067\u2026') })
+  // A refusal quotes /config's own reason, which may run long, after the plain part: what is on,
+  // and the off note when asked for, all of it within the first line. The refusal is the news, so a
+  // look /config could not save before goes unmarked there.
+  const refused = replyFor({ kind: 'look', look: 'tide', motion: 'still', isCalm: false, denied: 'Managed settings decide this look for everyone in your organization' })
+  expect(refused.startsWith('Tide. /config kept the look: managed settings')).toBe(true)
+  for (const denied of ['Locked', 'Locked by your organization.', 'Managed settings decide this look for everyone in your organization']) {
+    for (const look of looks) {
+      for (const motion of ['lively', 'still'] as const) {
+        for (const isCalm of [false, true]) {
+          for (const isOff of [false, true]) {
+            for (const isSessionOnly of [false, true]) {
+              for (const isMotionAsked of [false, true]) {
+                const line = replyFor({ kind: 'look', look, motion, isCalm, isOff, isSessionOnly, isMotionAsked, denied })
+                const plain = line.slice(0, line.indexOf('/config kept the look:') + '/config kept the look:'.length)
+                expect([line, plain.length <= REPLY_MOST, plain.startsWith(look === 'tide' ? 'Tide' : 'Hearth'), plain.includes('/plugin turns the band off.'), line.includes('session only')]).toEqual([line, true, true, isOff, false])
+                // The whole reply on one line whenever a shorter plain part allows it, short of leaving
+                // out a motion the words asked for.
+                const name = look === 'tide' ? 'Tide' : 'Hearth'
+                const shortest = `${isMotionAsked ? `${name}, ${isCalm ? 'still' : motion}` : name}.${isOff ? ' /plugin turns the band off.' : ''} /config kept the look:`
+                const couldFit = replyCells(`${shortest}${line.slice(plain.length)}`) <= REPLY_MOST
+                expect([line, replyCells(line) <= REPLY_MOST || !couldFit]).toEqual([line, true])
+              }
             }
           }
         }
       }
     }
   }
-  // /band still off: the way on names who moves once the look's own words make room.
-  expect(replyFor({ kind: 'motion', look: 'tide', motion: 'still', isCalm: false, isOff: true })).toBe('Band: still. /band lively brings the waves back. /plugin turns the band off.')
-  expect(replyFor({ kind: 'motion', look: 'hearth', motion: 'lively', isCalm: false, isOff: true })).toBe('Band: lively. /band still calms Clawd. /plugin turns the band off.')
+  expect(replyFor({ kind: 'look', look: 'tide', motion: 'lively', isCalm: false, denied: 'Locked' })).toBe('Tide, lively. /config kept the look: locked.')
+  expect(replyFor({ kind: 'look', look: 'tide', motion: 'lively', isCalm: false, denied: 'Locked by your organization.' })).toBe('Tide. /config kept the look: locked by your organization.')
+  expect(replyFor({ kind: 'look', look: 'tide', motion: 'still', isCalm: false, isMotionAsked: true, denied: 'Locked by your organization.' })).toBe('Tide, still. /config kept the look: locked by your organization.')
+  expect(replyFor({ kind: 'look', look: 'hearth', motion: 'still', isCalm: true, isMotionAsked: true, denied: 'Locked' })).toBe('Hearth, still. /config kept the look: locked.')
+  expect(replyFor({ kind: 'look', look: 'hearth', motion: 'lively', isCalm: false, isSessionOnly: true, isOff: true, denied: 'Locked' })).toBe('Hearth. /plugin turns the band off. /config kept the look: locked.')
+  // When no form lets the whole reply fit, the shortest goes first, so the reason wraps as little as it can.
+  expect(replyFor({ kind: 'look', look: 'hearth', motion: 'still', isCalm: true, isMotionAsked: true, denied: 'Locked by your organization' })).toBe('Hearth, still. /config kept the look: locked by your organization.')
+  expect(replyFor({ kind: 'look', look: 'tide', motion: 'lively', isCalm: false, denied: 'Managed settings decide this look for everyone in your organization' })).toBe('Tide. /config kept the look: managed settings decide this look for everyone in your organization.')
+  // A reason with no words in it leaves no colon dangling.
+  for (const denied of ['', '  ', '...', '!']) {
+    expect(replyFor({ kind: 'look', look: 'tide', motion: 'lively', isCalm: false, denied })).toBe('Tide, lively. /config kept the look.')
+  }
+  // /band still off: what is on, as the status says it, then the off note.
+  expect(replyFor({ kind: 'motion', look: 'tide', motion: 'still', isCalm: false, isOff: true })).toBe('Tide, still. /plugin turns the band off.')
+  expect(replyFor({ kind: 'motion', look: 'hearth', motion: 'lively', isCalm: false, isOff: true })).toBe('Hearth, lively. /plugin turns the band off.')
+  expect(replyFor({ kind: 'look', look: 'hearth', motion: 'lively', isCalm: false, isOff: true })).toBe('Hearth, lively. /plugin turns the band off.')
+  expect(replyFor({ kind: 'status', look: 'tide', motion: 'lively', isCalm: false, isOff: true })).toBe('Tide, lively. /plugin turns the band off.')
+  // Under reduced motion, "still" gives up its reason before what is on gives up the motion.
+  expect(replyFor({ kind: 'motion', look: 'hearth', motion: 'still', isCalm: true, isOff: true })).toBe('Hearth, still. /plugin turns the band off.')
+  // A look /config could not save keeps the way back under reduced motion too.
+  expect(replyFor({ kind: 'status', look: 'hearth', motion: 'lively', isCalm: true, isSessionOnly: true })).toBe('Hearth (session only), still. Try /band tide.')
   expect(parseBand('')).toEqual({ look: null, motion: null })
   expect(parseBand(' Hearth  STILL ')).toEqual({ look: 'hearth', motion: 'still' })
   // Lenient with what fingers add: a stray comma or full stop, a dash or two before a word.
@@ -1683,11 +1816,12 @@ test('every reply is one plain line of at most 100 characters, in the look on sc
   expect(parseBand('calm')).toEqual({ look: null, motion: 'still' })
   expect(parseBand('Quiet')).toEqual({ look: null, motion: 'still' })
   expect(parseBand('beach calm')).toEqual({ look: 'tide', motion: 'still' })
-  expect(parseBand('calm lively')).toEqual({ error: 'Band: one motion at a time. /band still or /band lively.' })
+  expect(parseBand('calm lively')).toEqual({ error: 'One motion at a time: /band still or /band lively.' })
   // Two words for one setting ask for it once ("still calm", "tide beach"), and so does a word said
   // twice; a look and a motion joined as the looks are named elsewhere read as meant ("hearth-still",
-  // "hearth/still", "tide—still"); "stop" and "pause" mean still; a setting's own name alone asks which
-  // is on, and before a setting says nothing more ("/band look hearth").
+  // "hearth/still", or "tide" and "still" joined by a long dash); "stop" and "pause" mean still; a
+  // setting's own name alone asks which is on, and before a setting says nothing more ("/band look
+  // hearth").
   expect(parseBand('still calm')).toEqual({ look: null, motion: 'still' })
   expect(parseBand('tide beach')).toEqual({ look: 'tide', motion: null })
   expect(parseBand('hearth hearth')).toEqual({ look: 'hearth', motion: null })
@@ -1700,32 +1834,32 @@ test('every reply is one plain line of at most 100 characters, in the look on sc
   expect(parseBand('Motion?')).toEqual({ look: null, motion: null })
   expect(parseBand('look hearth')).toEqual({ look: 'hearth', motion: null })
   expect(parseBand('motion: still')).toEqual({ look: null, motion: 'still' })
-  expect(parseBand('calm, lively')).toEqual({ error: 'Band: one motion at a time. /band still or /band lively.' })
-  expect(parseBand('Cozy-still')).toEqual({ error: 'Band: "cozy" isn\'t a look or a motion. Try tide, hearth, still or lively.' })
-  expect(parseBand('cozy')).toEqual({ error: 'Band: "cozy" isn\'t a look or a motion. Try tide, hearth, still or lively.' })
+  expect(parseBand('calm, lively')).toEqual({ error: 'One motion at a time: /band still or /band lively.' })
+  expect(parseBand('Cozy-still')).toEqual({ error: 'Try tide, hearth, still or lively, not "cozy".' })
+  expect(parseBand('cozy')).toEqual({ error: 'Try tide, hearth, still or lively, not "cozy".' })
   // A word set in quotes, backticks or brackets is the word ('/band "hearth"' is never answered with
   // '""hearth""', quoted twice); the tide's old name is the tide (the tidepool); "-h" asks.
   expect(parseBand('"hearth"')).toEqual({ look: 'hearth', motion: null })
   expect(parseBand('`tide` \u201cstill\u201d')).toEqual({ look: 'tide', motion: 'still' })
   expect(parseBand("(hearth) 'lively'.")).toEqual({ look: 'hearth', motion: 'lively' })
-  expect(parseBand('"cozy"')).toEqual({ error: 'Band: "cozy" isn\'t a look or a motion. Try tide, hearth, still or lively.' })
-  expect(parseBand('[sparkly]')).toEqual({ error: 'Band: "sparkly" isn\'t a look or a motion. Try tide, hearth, still or lively.' })
+  expect(parseBand('"cozy"')).toEqual({ error: 'Try tide, hearth, still or lively, not "cozy".' })
+  expect(parseBand('[sparkly]')).toEqual({ error: 'Try tide, hearth, still or lively, not "sparkly".' })
   expect(parseBand('"?"')).toEqual({ look: null, motion: null })
   expect(parseBand('tidepool')).toEqual({ look: 'tide', motion: null })
   expect(parseBand('Tidepool, still')).toEqual({ look: 'tide', motion: 'still' })
   expect(parseBand('tide-pool')).toEqual({ look: 'tide', motion: null })
   expect(parseBand('-h')).toEqual({ look: null, motion: null })
-  // Every error is a reply like the others: "Band:", one line, at most 100 characters, a full stop.
+  // Every error is a reply like the others: one line that fits after the prefix, a full stop.
   expect(parseBand('off')).toEqual({ off: true })
   expect(parseBand('hide.')).toEqual({ off: true })
   expect(parseBand('hearth off')).toEqual({ look: 'hearth', motion: null, off: true })
   expect(parseBand('off, still')).toEqual({ look: null, motion: 'still', off: true })
-  expect(parseBand('off sparkly')).toEqual({ error: 'Band: "sparkly" isn\'t a look or a motion. Try tide, hearth, still or lively.' })
+  expect(parseBand('off sparkly')).toEqual({ error: 'Try tide, hearth, still or lively, not "sparkly".' })
   for (const args of ['cozy', 'tide hearth', 'still lively', 'off tide', 'off hearth', 'a-very-long-word-that-someone-pasted-in']) {
     const asked = parseBand(args)
-    const line = 'error' in asked ? asked.error : 'off' in asked ? offReply(args.endsWith('hearth') ? 'hearth' : 'tide') : ''
+    const line = 'error' in asked ? asked.error : 'off' in asked ? offReply(args.endsWith('hearth') ? 'hearth' : 'tide', 'lively', false) : ''
     expect([args, 'off' in asked && 'look' in asked]).toEqual([args, args.startsWith('off ')])
-    expect([args, line.startsWith('Band: '), /[.]$/u.test(line), line.length <= 100 || args.length > 30]).toEqual([args, true, true, true])
+    expect([args, /[.]$/u.test(line), replyCells(line) <= REPLY_MOST]).toEqual([args, true, true])
   }
 })
 
@@ -1733,7 +1867,7 @@ test('every reply is one plain line of at most 100 characters, in the look on sc
 // texts write a placeholder, and the command typed twice all read as meant; something with no word in
 // it is quoted back as it was typed, never cut down to a single dot.
 test('/band reads "look=hearth", "<hearth>" and "/band /band hearth" as meant, and quotes "..." back whole', () => {
-  const nothing = (typed: string) => `Band: "${typed}" isn't a look or a motion. Try tide, hearth, still or lively.`
+  const nothing = (typed: string) => `Try tide, hearth, still or lively, not "${typed}".`
   expect(parseBand('look=hearth')).toEqual({ look: 'hearth', motion: null })
   expect(parseBand('motion=lively')).toEqual({ look: null, motion: 'lively' })
   expect(parseBand('look = tide, motion = still')).toEqual({ look: 'tide', motion: 'still' })
@@ -1856,7 +1990,7 @@ test('under reduced motion no reply points at /band lively, which would change n
         const line = replyFor({ kind, look, motion, isCalm: true })
         // It names the setting that holds the band still ("lively once reduced motion is off" for a
         // lively that is stored but not yet on screen).
-        expect([line, line.includes('/band lively'), /reduced[ -]motion/u.test(line)]).toEqual([line, false, true])
+        expect([line, line.includes('/band lively'), /[Rr]educed[ -]motion/u.test(line)]).toEqual([line, false, true])
       }
     }
   }
@@ -1914,7 +2048,7 @@ test('a long turn reads "12m 14s" on both looks and both surfaces; a narrow band
   }
 })
 
-test('as the tide’s cheer hands over to the settled line, no word changes at any width: only the colours calm', () => {
+test('as the tide’s cheer hands over to the settled line, no word changes at any width: only the colors calm', () => {
   for (const seconds of [41, 734]) {
     const known = whole({ lastTurn: { seconds, tools: 7, files: 2, ending: 'answer' }, cheers: 1, cheeredAt: T0 - 1000 } as Partial<Info>)
     for (const surface of SURFACES) {
@@ -2228,13 +2362,13 @@ test('/band always answers, even when the band cannot write its state', async ($
   await start($)
   isBroken = true
   // Asked only what is on, it says so as usual: nothing it must keep stands in the way.
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
   const said = await run($, 'hearth')
   expect(refused).toBeGreaterThan(0)
-  expect(said).toBe("Band: couldn't switch just now. Try /band again in a moment.")
-  expect(await run($, 'still')).toBe("Band: couldn't switch just now. Try /band again in a moment.")
+  expect(said).toBe("Couldn't switch just now. Try /band again in a moment.")
+  expect(await run($, 'still')).toBe("Couldn't switch just now. Try /band again in a moment.")
   isBroken = false
-  expect(await run($, 'hearth')).toBe('Band: hearth. Clawd blinks, reads along and cheers. /band tide to switch back.')
+  expect(await run($, 'hearth')).toBe('Hearth. Clawd blinks and cheers. /band tide to switch back.')
 })
 
 test('a motion the store will not keep stays for the session, through a reload', async ($, on) => {
@@ -2242,17 +2376,17 @@ test('a motion the store will not keep stays for the session, through a reload',
   world(on, { flaky })
   await start($)
   flaky.isBroken = true
-  expect(await run($, 'still')).toBe('Band: still. The waves rest, and the tide shows your context. /band lively brings them back.')
+  expect(await run($, 'still')).toBe('Still. The waves rest. /band lively brings them back.')
   // /config changes something and the plugin reloads: session.start runs again, and he stays still.
   await start($)
-  expect(await run($)).toBe('Band: tide, still. Look: /band hearth or /config. Motion: /band lively.')
+  expect(await run($)).toBe('Tide, still. Try /band hearth, /band lively or /config.')
   // The store takes writes again: the next reload hands it the motion, and all is as usual.
   flaky.isBroken = false
   await start($)
-  expect(await run($)).toBe('Band: tide, still. Look: /band hearth or /config. Motion: /band lively.')
-  expect(await run($, 'lively')).toBe('Band: lively. Waves lap the shore and Clawd potters about. /band still calms them.')
+  expect(await run($)).toBe('Tide, still. Try /band hearth, /band lively or /config.')
+  expect(await run($, 'lively')).toBe('Lively. Waves lap the shore. /band still calms them.')
   await start($)
-  expect(await run($)).toBe('Band: tide, lively. Look: /band hearth or /config. Motion: /band still.')
+  expect(await run($)).toBe('Tide, lively. Try /band hearth, /band still or /config.')
 })
 
 test('the limit shown is the 5h one, unless another is nearer its end and past 80%; each has its short name', () => {
@@ -2394,6 +2528,196 @@ test('git that cannot answer keeps the branch and count the band last knew, and 
   expect(await after()).toMatch(/main.*3 uncommitted/su)
   await desk.ui.unmount()
 })
+
+// A fresh session's first frame already says where you are, however slow git is: the project from
+// the first frame, then git's answer joins the line. Nothing that showed moves or goes, so both looks
+// hold the model back until git answers: on the beach it stands after the branch, and by the hearth,
+// pinned at line 1's right, it is the first thing a narrow line gives up for the branch. Drawn before
+// the start has written anything, or while it waits on git, at every width from the narrowest band
+// with words to a wide one, with a long branch under a prefix and a count.
+const WHERE_WIDTHS = [34, 36, 40, 46, 52, 58, 64, 70, 75, 88, 100, 120] as const
+for (const which of ['tide', 'hearth'] as const) {
+  for (const order of ['drawn before the start', 'drawn while the start waits on git'] as const) {
+    test(`${which}, ${order}: the first frame says where you are, and git's late answer only joins the line, at every width`, { options: { look: which }, timeoutMs: 120_000 }, async ($, on) => {
+      let release: () => void = () => undefined
+      const git: { held: Promise<void> | null; branch: string } = {
+        held: new Promise<void>(resolve => {
+          release = resolve
+        }),
+        branch: 'claude/first-mod-polish',
+      }
+      const { clock } = world(on, { git })
+      const facts = factsOf(on)
+      const starting = async () => {
+        const started = $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+        await clock.advance(10)
+        return { started }
+      }
+      const early = order === 'drawn while the start waits on git' ? await starting() : null
+      const bands = []
+      for (const columns of WHERE_WIDTHS) {
+        const props = { ...BAND, bodyColumns: columns }
+        for (const surface of SURFACES) bands.push({ columns, surface, props, band: await mount($, surface, props) })
+      }
+      // The where line (the beach's line 3, the hearth's line 1) from the project on, and what stands
+      // at its right end apart from it (the hearth's model, pinned to the panel's edge).
+      const where = async (band: Awaited<ReturnType<typeof mount>>) => {
+        const drawn = (await band.look()).rows
+        const at = drawn.findIndex(row => row.startsWith('agent'))
+        if (at < 0) return { left: `(none) ${drawn.join(' | ')}`, right: '' }
+        const end = drawn.findIndex((row, i) => i > at && (row === 'Opus 5.5' || /^(context|No context)/u.test(row)))
+        return { left: drawn.slice(at, end < 0 ? undefined : end).join(''), right: end >= 0 && drawn[end] === 'Opus 5.5' ? 'Opus 5.5' : '' }
+      }
+      const first = []
+      for (const { columns, surface, band } of bands) first.push({ band, seen: { columns, surface, ...(await where(band)) } })
+      // The project alone at every width (whole, or cut at its end on the narrowest beach): no model
+      // yet, on either look.
+      for (const { seen } of first) {
+        expect({ ...seen, isProject: /^agent(-plugins|\u2026)$/u.test(seen.left) }).toEqual({ ...seen, right: '', isProject: true })
+      }
+      // The start goes on (or begins) while git is still out. It has already written the project down
+      // (so the render's own lookup is only for a band drawn before that), and the line stays as it was.
+      const { started } = early ?? (await starting())
+      expect([facts().project, facts().isGitRead, facts().branch]).toEqual(['agent-plugins', false, null])
+      for (let t = 0; t < 4; t++) {
+        await clock.advance(250)
+        for (const { band, props } of bands) await band.ui.redraw(props)
+        for (const { band, surface } of bands) if (surface === 'terminal') await band.wait(250)
+        for (const { band, seen: was } of first) {
+          expect({ t, ...was, ...(await where(band)) }).toEqual({ t, ...was })
+        }
+      }
+      // git answers: the branch, the count and the model join, and every piece the first frame showed
+      // is still there, where it was.
+      release()
+      git.held = null
+      await started
+      await clock.advance(10)
+      for (const { band, props } of bands) await band.ui.redraw(props)
+      for (const { band, surface } of bands) if (surface === 'terminal') await band.wait(1_000)
+      const joined = []
+      for (const { band, seen: was } of first) {
+        const now = await where(band)
+        joined.push({ ...now, columns: was.columns, surface: was.surface })
+        expect({ ...was, kept: now.left.startsWith(was.left) && (was.right === '' || now.right === was.right) }).toEqual({ ...was, kept: true })
+      }
+      // At a wide band all of it shows: the branch (on the hearth's desktop panel, which stops at 64
+      // cells, without its prefix), the count, and the model at its place.
+      const wide = joined.filter(seen => seen.columns === 120)
+      for (const seen of wide) {
+        expect(seen).toEqual({
+          columns: 120,
+          surface: seen.surface,
+          ...(which === 'tide'
+            ? { left: 'agent-plugins · claude/first-mod-polish · 2 uncommitted · Opus 5.5', right: '' }
+            : { left: `agent-plugins on ${seen.surface === 'terminal' ? 'claude/' : ''}first-mod-polish · 2 uncommitted`, right: 'Opus 5.5' }),
+        })
+      }
+      for (const { band } of bands) await band.ui.unmount()
+    })
+  }
+}
+
+// The upgrade note reads the pick to find the look on screen. A pick that cannot be read leaves
+// /config's look, and never stops the start before git's answer lands, so the branch, the count and
+// the model still join the line.
+test('a pick the start cannot read never holds up git: the branch, the count and the model still join the line', async ($, on) => {
+  world(on)
+  const facts = factsOf(on)
+  const broken = { isOn: true }
+  on('state.get', ($, e, next) => {
+    if (broken.isOn && e.plugin === 'session-band' && e.key === 'pick') return { deny: 'unreadable' } as unknown as ReturnType<typeof next>
+
+    return next(e)
+  })
+  await $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+  expect([facts().project, facts().branch, facts().dirty, facts().isGitRead, facts().model]).toEqual(['agent-plugins', 'main', 2, true, 'Opus 5.5'])
+  broken.isOn = false
+  for (const surface of SURFACES) {
+    const { ui, look } = await mount($, surface, { ...BAND, bodyColumns: 120 })
+    expect([surface, (await look()).rows.join('')]).toEqual([surface, expect.stringMatching(/agent-plugins · main · 2 uncommitted · Opus 5\.5/u)])
+    await ui.unmount()
+  }
+})
+
+// A start that goes wrong partway (here its first write of the facts is refused) still writes git's
+// answer: the branch and the count land, and both looks know git has answered, so the model joins
+// the line as soon as it is known (the next prompt reads it), never only at a turn's end.
+test('a start whose first write of the facts is refused still writes git\'s answer, so the model is not held back after it', async ($, on) => {
+  let release: () => void = () => undefined
+  const git: { held: Promise<void> | null } = {
+    held: new Promise<void>(resolve => {
+      release = resolve
+    }),
+  }
+  const { clock } = world(on, { git })
+  let facts: Info = EMPTY
+  // The facts cannot be written while git is still out; then they can.
+  let refused = 0
+  let isRefusing = true
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'session-band' && e.key === 'info') {
+      if (isRefusing) {
+        refused += 1
+        return { deny: 'state is busy' } as unknown as ReturnType<typeof next>
+      }
+      facts = JSON.parse(JSON.stringify(e.value ?? null)) as Info
+    }
+
+    return next(e)
+  })
+  const started = $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+  await clock.advance(10)
+  isRefusing = false
+  release()
+  git.held = null
+  await started
+  expect([refused > 0, facts.branch, facts.dirty, facts.isGitRead]).toEqual([true, 'main', 2, true])
+  await $.prompt.submit({ text: 'tidy up', wait: false, origin: { kind: 'composer' } })
+  for (const surface of SURFACES) {
+    const { ui, look } = await mount($, surface, { ...BAND, bodyColumns: 120 })
+    expect([surface, (await look()).rows.join('')]).toEqual([surface, expect.stringMatching(/agent-plugins · main · 2 uncommitted · Opus 5\.5/u)])
+    await ui.unmount()
+  }
+})
+
+// git answers for the start and for a turn's end, each stamped, and an older answer that lands after
+// a newer one is dropped. So the turn's answer must say git has answered as well, or a start whose
+// git was overtaken would leave the model held back for good.
+for (const which of ['tide', 'hearth'] as const) {
+  test(`${which}: a turn's git answer that lands before the start's slow one lets the model join the line`, { options: { look: which } }, async ($, on) => {
+    const git: { held: Promise<void> | null } = { held: null }
+    const { clock } = world(on, { git })
+    const facts = factsOf(on)
+    let releaseStart: () => void = () => undefined
+    git.held = new Promise<void>(resolve => {
+      releaseStart = resolve
+    })
+    const started = $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+    await clock.advance(10)
+    // A quick first turn, whose git is held too, and answers first.
+    let releaseTurn: () => void = () => undefined
+    git.held = new Promise<void>(resolve => {
+      releaseTurn = resolve
+    })
+    await turn($)
+    expect([facts().isGitRead, facts().branch]).toEqual([false, null])
+    releaseTurn()
+    await clock.advance(10)
+    expect([facts().isGitRead, facts().branch]).toEqual([true, 'main'])
+    // The start's answer lands last, and is dropped as the older one: the model stays on the line.
+    releaseStart()
+    git.held = null
+    await started
+    await clock.advance(10)
+    expect(facts().isGitRead).toBe(true)
+    for (const surface of SURFACES) {
+      const { ui, look } = await mount($, surface, { ...BAND, bodyColumns: 120 })
+      expect([which, surface, (await look()).rows.join('').includes('Opus 5.5')]).toEqual([which, surface, true])
+      await ui.unmount()
+    }
+  })
+}
 
 test('a folder that stops being a repository mid-session drops its branch and count, rather than keep the old ones', async ($, on) => {
   const git: { held: Promise<void> | null; isNoRepo?: boolean } = { held: null }
@@ -2831,7 +3155,7 @@ test('another /config row changing (a built-in, or the band\'s own warnAt) never
   await $.config.set({ key: 'session-band.warnAt', value: 85, previous: 80, provider: { plugin: 'session-band', tier: 'user' }, origin: { kind: 'composer' } })
   await desk.ui.redraw(BAND)
   expect((await desk.look()).look).toBe('hearth')
-  expect(await run($)).toContain('Band: hearth')
+  expect(await run($)).toMatch(/^Hearth, /u)
 })
 
 test('a store that cannot be read as the band draws still leaves Clawd and a line of words on screen, on both looks and surfaces', async ($, on) => {
@@ -3618,8 +3942,8 @@ for (const motion of ['lively', 'still'] as const) {
 
       return null
     }
-    // No band on screen through the switch (the rig's way): the beach put up after it has no second
-    // to keep pace with, and the pet shows on the spot.
+    // No band on screen through the switch (a band mounted afresh after it): the beach put up then has
+    // no second to keep pace with, and the pet shows on the spot.
     await run($, `hearth ${motion}`)
     await run($, `tide ${motion}`)
     const fresh = await mount($, 'terminal')
@@ -4801,4 +5125,145 @@ test("desktop: a switch to the hearth while the beach waits out a stride leaves 
   await clock.advance(2_000)
   expect(writes).toBe(0)
   await desk.ui.unmount()
+})
+
+// ── 256-color terminals ───────────────────────────────────────────────────────
+//
+// A terminal without truecolor (Apple's Terminal, tmux without its RGB flag, many SSH sessions) shows
+// each color as one of xterm's 256. Two roundings are common: chalk's, which Claude Code uses, splits
+// each channel evenly across the cube's six levels; tmux's goes to the nearest level, or to the gray
+// ramp when that is nearer.
+
+const LEVELS = [0, 95, 135, 175, 215, 255]
+
+function chalk256([r = 0, g = 0, b = 0]: number[]): number {
+  if (r === g && g === b) return r < 8 ? 16 : r > 248 ? 231 : Math.round(((r - 8) / 247) * 24) + 232
+  const level = (v: number) => Math.round((v / 255) * 5)
+
+  return 16 + 36 * level(r) + 6 * level(g) + level(b)
+}
+
+function tmux256([r = 0, g = 0, b = 0]: number[]): number {
+  const level = (v: number) => (v < 48 ? 0 : v < 114 ? 1 : Math.floor((v - 35) / 40))
+  const cube = 16 + 36 * level(r) + 6 * level(g) + level(b)
+  const [cr = 0, cg = 0, cb = 0] = [LEVELS[level(r)], LEVELS[level(g)], LEVELS[level(b)]]
+  if (cr === r && cg === g && cb === b) return cube
+  const average = Math.floor((r + g + b) / 3)
+  const step = average > 238 ? 23 : Math.floor((average - 3) / 10)
+  const gray = 8 + 10 * step
+  const far = (x: number, y: number, z: number) => (x - r) ** 2 + (y - g) ** 2 + (z - b) ** 2
+
+  return far(gray, gray, gray) < far(cr, cg, cb) ? 232 + step : cube
+}
+
+function entryRgb(entry: number): number[] {
+  if (entry >= 232) return [0, 0, 0].map(() => 8 + 10 * (entry - 232))
+  const i = entry - 16
+
+  return [Math.floor(i / 36), Math.floor(i / 6) % 6, i % 6].map(level => LEVELS[level] ?? 0)
+}
+
+function rgbOf(hex: string): number[] {
+  return [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16))
+}
+
+// OKLab (Björn Ottosson's), where a distance of 0.02 is about the smallest difference a person sees.
+function okLab(rgb: number[]): number[] {
+  const [r = 0, g = 0, b = 0] = rgb.map(v => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4))
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s]
+}
+
+// Every color a tree paints: a six-digit hex color into `hex`, anything else (a theme key, or a
+// color written some other way) into `other`.
+function paintedColors(node: unknown, hex: Set<string>, other: Set<string>): void {
+  if (node === null || typeof node !== 'object') return
+  const el = node as Node
+  for (const key of ['color', 'backgroundColor']) {
+    const value = el.props?.[key]
+    if (typeof value === 'string') {
+      if (/^#[0-9a-f]{6}$/iu.test(value)) hex.add(value.toUpperCase())
+      else other.add(value)
+    }
+  }
+  for (const child of el.children ?? []) paintedColors(child, hex, other)
+}
+
+// The theme keys a terminal look may paint with: Claude Code's named keys and Clawd's own two. Any
+// other color must be a six-digit hex color, so the rounding checks below see every literal.
+const THEME_KEYS = new Set(['text', 'inverseText', 'inactive', 'subtle', 'suggestion', 'remember', 'success', 'error', 'warning', 'merged', 'claude', 'permission', 'planMode', 'autoAccept', 'promptBorder', 'bashBorder', 'ide', 'diffAdded', 'diffRemoved', 'diffAddedDimmed', 'diffRemovedDimmed', 'diffAddedWord', 'diffRemovedWord', 'clawd_body', 'clawd_background'])
+
+// The bound is 0.06: chalk shows a channel at the cube's 95 level only when it is 76 or less, and at
+// 135 only when it is 127 or less, so a color with such a channel can come no nearer than that. The
+// ripples set both bounds: 0.058 from their entry, 24, and a turn of 11 degrees. Every other color
+// is within 0.035. A hue may turn by 12 degrees at most, so sand stays sand and the sea stays blue.
+// The colors are the looks' own; Clawd and the words use theme keys, which the host rounds (under
+// chalk the shell's ridges and Clawd's clay both show as 174, two half cells of shell a cell or more
+// from him, which reads as a coral shell beside a coral crab).
+test('every color either look draws on the terminal reads as itself on a 256-color terminal: both roundings agree, within 0.06 in OKLab and 12 degrees of hue, and no two colors become one', { timeoutMs: 60_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  await clock.advance(10_000)
+  const drawn = new Map<Look, Set<string>>()
+  const themed = new Set<string>()
+  for (const which of ['tide', 'hearth'] as const) {
+    await run($, `${which} lively`)
+    const { ui, look } = await mount($, 'terminal')
+    const key = (await look()).key ?? ''
+    const colors = new Set<string>()
+    const said = new Set<string>()
+    const watch = async (ms: number) => {
+      for (let left = ms; left > 0; left -= 250) {
+        const seen = await look()
+        paintedColors(seen.tree, colors, themed)
+        said.add(seen.text)
+        await ui.advance(250)
+      }
+    }
+    await watch(1_000)
+    // A pet brings the heart; a failure brings the beach's splash and its spray.
+    await ui.pointer({ type: 'down', x: which === 'tide' ? 3 : 4, y: 1, button: 'left', in: key })
+    await watch(6_000)
+    await $.prompt.submit({ text: 'test it', wait: false, origin: { kind: 'composer' } })
+    await $.tool.call({ tool: 'Bash', command: 'npm run fail', description: 'Run the tests' })
+    await watch(3_000)
+    // The cheer, its sparkles and its clay words; then high tide, with the nudge and the bead of sweat.
+    await $.turn.complete({ answer: 'Done.', durationMs: 41_000, turnId: 't1', reason: 'answer', isAborted: false } as TurnCompleteInput)
+    await watch(5_000)
+    await $.session.measure(measured(90))
+    await watch(17_000)
+    const saw = (pattern: RegExp) => [...said].some(text => pattern.test(text))
+    // (The hearth's hiccup shows while the host says Claude is working, which this film never says;
+    // it draws no color of its own.)
+    expect([which, which === 'hearth' || saw(/Splash!/u), saw(/Done in/u), saw(/\/compact/u)]).toEqual([which, true, true, true])
+    drawn.set(which, colors)
+    await ui.unmount()
+  }
+  // Every color that is not a hex literal is a theme key, which the host rounds as it rounds its own.
+  expect([...themed].filter(color => !THEME_KEYS.has(color))).toEqual([])
+  expect([themed.has('clawd_body'), themed.has('clawd_background')]).toEqual([true, true])
+  // The beach paints its sand, damp sand, sea, ripples, foam, shell, the shell's ridges and the heart;
+  // the hearth paints only the heart, the rest (the sparkles and the bead among them) being theme colors.
+  const tide = drawn.get('tide') ?? new Set<string>()
+  const hearth = [...(drawn.get('hearth') ?? [])]
+  expect([tide.size >= 8, tide.size]).toEqual([true, tide.size])
+  expect([hearth.length, hearth.every(color => tide.has(color))]).toEqual([1, true])
+  const all = tide
+  const entries = new Set<number>()
+  for (const color of all) {
+    const rgb = rgbOf(color)
+    const entry = chalk256(rgb)
+    entries.add(entry)
+    const [l1 = 0, a1 = 0, b1 = 0] = okLab(rgb)
+    const [l2 = 0, a2 = 0, b2 = 0] = okLab(entryRgb(entry))
+    const distance = Math.hypot(l1 - l2, a1 - a2, b1 - b2)
+    const turn = Math.abs(((((Math.atan2(b2, a2) - Math.atan2(b1, a1)) * 180) / Math.PI + 540) % 360) - 180)
+    expect([color, tmux256(rgb)]).toEqual([color, entry])
+    expect([color, distance <= 0.06]).toEqual([color, true])
+    expect([color, Math.hypot(a1, b1) < 0.03 || turn <= 12]).toEqual([color, true])
+  }
+  expect(entries.size).toBe(all.size)
 })
