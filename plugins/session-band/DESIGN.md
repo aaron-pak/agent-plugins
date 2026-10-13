@@ -11,20 +11,19 @@ rule on purpose, change its test and this page with it.
 ## Using it
 
 - **What you see.** Clawd above your prompt, beside three short lines: what is happening, how full
-  your context is (with the cost and whichever usage limit is nearest its end), and where you are.
-- **`/band`** (also `/band help`, `/band ?`, `/band status`) says what is on and how to change it.
+  your context is (with the cost and the usage limit closest to running out), and where you are.
+- **`/band`** (also `/band help`, `/band ?`, `/band -h`, `/band status`, and a setting's own name
+  alone, `/band look` or `/band motion`) says what is on and how to change it.
 - **The look.** **tide** is the default: Clawd on a little beach, where the tide comes in from the
-  right as your context fills, so how full it is reads as how much sand he has left. It should feel
-  like a calm corner of a summer afternoon: mostly still, with something small happening now and
-  then. **hearth** is the opt-out: Claude Code's own Clawd beside three calm lines that keep their
-  places and change only when the session does. `/band hearth` and `/band tide` switch, and so does
-  the "Band look" row of `/config`.
-- **The motion.** `/band still` (or `calm`, or `quiet`) stops the motion in either look while the
-  words keep changing; `/band lively` lets it move again.
+  right as your context fills, so how full it is reads as how much sand he has left; a calm corner
+  of a summer afternoon, mostly still. **hearth** is the opt-out: Claude Code's own Clawd beside
+  three calm lines that change only when the session does. `/band hearth`, `/band tide` (or `/band
+  tidepool`) and the "Band look" row of `/config` switch.
+- **The motion.** `/band still` (or `calm`, `quiet`, `stop` or `pause`) stops the motion in either
+  look while the words keep changing; `/band lively` lets it move again.
 - **Reduced motion wins.** With Claude Code's reduced-motion setting on, both looks stay still.
-- **`warnAt`** (default 80) is the context fill, in percent, where the band nudges toward
-  `/compact`: high tide on the beach, a clay percent and a sweating Clawd by the hearth, and a toast
-  each time the context crosses it.
+- **`warnAt`** (default 80): the context percent where the band nudges toward `/compact` (high tide
+  on the beach, a clay percent and a sweating Clawd by the hearth, and a toast at each crossing).
 
 ## Looks and motion
 
@@ -35,47 +34,52 @@ rule on purpose, change its test and this page with it.
 
 - **One home for the look.** `/band` writes the `/config` row through `$.config.set`, and nothing
   else stores a look. That write reloads the plugin, so `/band` also records a pick (`LookPick` in
-  `$.state`) that the band draws at once, until the reload lands with the same look. A saved pick
-  counts only in the activation that made it, so after any reload `/config` is the only voice. A
-  pick `/config` could not save lasts the session, through reloads, while `/config` still holds the
-  look it was picked over.
+  `$.state`) that the band draws at once. A saved pick counts only in the activation that made it,
+  so after any reload `/config` is the only voice; a pick `/config` could not save lasts the
+  session, while `/config` still holds the look it was picked over.
 - **A switch never replays a moment.** The pick remembers when the look came on screen, and a
   moment that began before then (a cheer, a splash, a flinch, a wake, the hello) is not played by
   the look that comes on. The desktop opens at rest in one new frame; the terminal modules carry a
-  moment on only while enough is left to read (6 ticks of a cheer, 4 of a splash). Going lively is
-  the same: `/band lively`, or reduced motion turned off, notes `livelyAt`, and a lively desktop
-  frame opens at rest rather than replaying a cheer the still frame was holding.
+  moment on only while enough is left to read (6 ticks of a cheer, 4 of a splash).
+- **A moment belongs to the look and motion that saw it begin.** A beach switched to mid-splash
+  opens at rest on the dim failed line on both surfaces (`isWaveSeen`), while the same look mounted
+  afresh (a `/config` reload, a dialog closing) keeps "Splash!" to the wave's end. A cheer spins
+  only on the look and motion it began on (`isCheerSpun`): back on the beach mid-cheer, or after
+  `/band lively` in a still cheer, his arms stay up to its end (or he is at rest). Going lively
+  (`/band lively`, or reduced motion turned off) notes `livelyAt`, so a lively desktop frame opens
+  at rest, and on the terminal a still splash ends at once on the dim line of what failed.
 - **A look already on is no switch**: `/band tide` on the beach asks `/config` nothing.
 - **Someone else changes the look** (the `/config` menu, or another plugin): the `config.set`
   observer shows the written value at once. The band's own `$.config.set` never reaches it.
-- **Motion is written before the look**, since the look write reloads the plugin. A motion the
-  store refuses is kept in `$.state` (`unsavedMotion`) and preferred by `session.start`, so a reload
-  never undoes a `/band still` the reply promised.
+- **Motion is written before the look**, since the look write reloads the plugin. A motion the store
+  refuses is kept in `$.state` (`unsavedMotion`), so a reload never undoes a promised `/band still`.
 - **Reduced motion** is read at session start, on each prompt and on `/band`, so changing it needs
   no restart. The desktop also honors the page's own `prefers-reduced-motion`.
-- **Lenient words.** `/band hearth still` and `/band still hearth` both make one `/config` call and
-  one motion change. Words split on spaces, commas and semicolons, and leading dashes and trailing
-  punctuation fall away (`/band hearth,`, `/band --help`). `calm` and `quiet` mean `still`, and
-  `beach` means `tide`. Unknown, doubled or clashing words change nothing and say what `/band` takes.
-- **Where `/config` cannot help.** A folder loaded with `--plugin-dir` keys the row
-  `session-band@inline.look`, which `/band` finds through `$.config.list()`. When `/config` refuses,
-  the look stays and the reply quotes the reason. When it cannot be reached, the look switches for
-  this session only, and the reply and the status line say so.
+- **Lenient words** (`parseBand`). `/band hearth still` and `/band still hearth` both make one
+  `/config` call and one motion change. Words split on spaces and on `, ; : = / -`, so
+  `hearth-still`, `look=hearth` and `motion: still` read as meant. Quotes, backticks and brackets
+  fall away (`/band "hearth"`, `/band <hearth>`), as do a leading `--`, a trailing full stop, a
+  setting's name before a setting (`/band look hearth`) and a second `band` (`/band /band hearth`).
+  `calm`, `quiet`, `stop` and `pause` mean `still`; `beach`, `tidepool` and `pool` mean `tide`; two
+  words for one setting (`still calm`) ask for it once. Unknown or clashing words (`calm lively`)
+  change nothing and say what `/band` takes, quoting the unknown word without its marks (`"cozy"`
+  for `<cozy>`), or whole with no letter or digit in it (`/band ...` answers `"..."`).
+- **Where `/config` cannot help.** A `--plugin-dir` folder keys the row `session-band@inline.look`,
+  which `/band` finds through `$.config.list()`. When `/config` refuses, the look stays and the reply
+  quotes the reason; when it cannot be reached, the look switches for this session only.
 - **A look outside the options** (a hand-edited `cozy`) reads as unset, which is the beach.
-- **Older builds** stored a `style`, where only `still` meant still. It becomes a motion once
-  (`migrateMotion`), and the look is never read from it. Someone whose style was `hearth` lands on
-  the beach and hears it once, in a toast: "Band: the beach is the new look. /band hearth brings the
-  hearth back." Older `$.state` facts are filled in by `whole()`.
+- **Older builds** stored a `style` (only `still` meant still), made a motion once (`migrateMotion`).
+  Someone whose style was `hearth` lands on the beach and hears it once, in a toast: "Band: the beach
+  is the new look. /band hearth brings the hearth back." `whole()` fills in older `$.state` facts.
 - **The toast** comes once per crossing of `warnAt`, rounded, in the look's own voice: "The tide is
-  coming in: context is 86% full. Try /compact soon." or "Context is 86% full. Run /compact when you
-  are ready."
+  coming in: context is 86% full. Try /compact soon." or "Context is 86% full. Run /compact when
+  you're ready."
 
 ### What `/band` says
 
-Every reply is one plain line of at most 100 characters (a refusal quotes `/config`'s reason, which
-may run longer), in the voice of the look on screen: what is on, then the one thing most worth
-knowing next. After a switch that is the way back; after a motion, the way to the other. Each look's
-sentences are written once, in `hooks/look.ts`.
+Every reply is one plain line of at most 100 characters (a quoted `/config` reason may run longer),
+in the voice of the look on screen: what is on, then the one thing most worth knowing next (after a
+switch, the way back; after a motion, the way to the other), written once, in `hooks/look.ts`.
 
 | Command | Reply |
 |---|---|
@@ -103,21 +107,18 @@ directly, so its body is guarded: a refused state write gives the last row, neve
 The test kit cannot drive the host's own reload of a plugin's options, so check these by hand after
 changing the look, the motion or the reload path.
 
-- **Terminal:**
-  1. `/band`: one status line.
-  2. `/band hearth`: the reply arrives, the band switches to the hearth, and nothing jumps.
-  3. `/band` again: it says hearth (the command survived `/config`'s reload).
-  4. `/config`, then "Band look", then tide: it switches back, with no reply.
-  5. `/band still`, then quit and restart: still is remembered, and the look comes from `/config`.
-- **Desktop Code tab:** the same five. Both looks' frames are 64 px tall, so the composer should not
-  move on a switch.
+- **Terminal:** `/band` gives one status line. `/band hearth` replies and switches, and nothing
+  jumps. `/band` again says hearth (the command survived `/config`'s reload). "Band look" in
+  `/config` switches back to tide, with no reply. After `/band still`, quit and restart: still is
+  remembered, and the look comes from `/config`.
+- **Desktop Code tab:** the same five checks. Both looks' frames are 64 px tall, so the composer
+  should not move on a switch.
 - **A switch right after a turn lands:** `/band hearth` while the beach cheers. The hearth should
   come on at rest with "Done in …", with no cheer replayed and no pop when the old cheer would end.
 - **A reload that keeps the look (desktop):** with the beach on and Clawd walking, change `warnAt`
   in `/config`. The diorama should carry straight on, with no jump of Clawd or the water.
-- **Esc mid-command:** start a slow command (`sleep 20`) and press Esc while it runs. Both looks
-  should say "Stopped after …" with no "Splash!" or "Hiccup". A splash that flashes first means the
-  host gave no interrupt word at the call's end (see "Known gaps").
+- **Esc mid-command:** Esc during `sleep 20` should read "Stopped after …" in both looks, with no
+  "Splash!" or "Hiccup"; a splash first means the host gave no interrupt word (see "Known gaps").
 - **If the `/band hearth` reply ever goes missing**, the reload is killing the hook mid-reply. The
   fallback is to answer first and call `$.config.set` from `$.clock.after(0, …)`, reporting a refusal
   or failure by toast.
@@ -134,8 +135,8 @@ facts through a view that hands it exactly what its code was built to read (`tid
 | `session.start` | Registers `/band`; reads the motion, usage, model, repo, git, reduced motion and `TERM_PROGRAM`, each on its own so one failed lookup never blanks the rest; arms the nap; shows the upgrade toast. Idempotent. |
 | `session.measure` | Context, cost and limits; the `warnAt` toast. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
-| `tool.call` | Running tools, both held steps, todos, files changed, failures. Subagents' calls are left alone. |
-| `turn.complete` | The last turn and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
+| `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
+| `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over. |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
 | `ui.render` (`AbovePrompt`) | Draws the look; steps aside while Claude Code shows a survey there. |
@@ -144,13 +145,15 @@ facts through a view that hands it exactly what its code was built to read (`tid
 percent, tokens and window; the cost and the limit shown; when the session started and was last
 active; the tools running (`running`, in start order, at most 32) and the one the band names
 (`activity`, the latest still running); the todos (at most 256); the last turn and how it ended
-(`answer`, `stopped` for Esc or a refusal, `error`); the cheer and failure counts; `isCalm`,
-`isAppleTerminal`, `isTurnOpen`, `greetedAt`, `isWarned`, `unsavedMotion`; and `beat`, bumped when a
-moment ends with nothing else to say so, which makes the desktop redraw. The hearth adds its
-failure (`slip`, `lastSlip`, `slipDue`), its flinch and its held line (`held`). The tide adds the
-turn's start (`turnAt`, `turnPercent`), whether the turn changed something (`turnWorked`,
-`workedAt`), `woke`, its shown tool (`desk`), the cheer's time and tide, and the failure's words and
-tide (`oopsWhat`, `oopsName`, `oopsNoun`, `oopsPercent`, `splashAt`, `waves`).
+(`answer`, `stopped` for Esc or a refusal, `error`); the turn's tools and files (`turnTools`,
+`turnTodoTools`, `turnFiles`); the cheer and failure counts; `isCalm`, `isAppleTerminal`,
+`isTurnOpen`, `greetedAt`, `isWarned`, `unsavedMotion`; and `beat`, bumped when a moment ends with
+nothing else to say so, which makes the desktop redraw. The hearth adds its failure (`slip`,
+`lastSlip`, `slipDue`), its flinch and its held line (`held`). The tide adds the turn's start
+(`turnAt`, `turnPercent`), whether the turn changed something (`turnWorked`, `workedAt`), `woke`,
+its shown tool (`desk`), the cheer's time and tide, and the failure's words and tide (`oopsWhat`,
+`oopsName`, `oopsNoun`, `oopsPercent`, `splashAt`, `waves`). Both held lines, `held` and `desk`,
+also carry the todos they show beside their step (`todos`, `todosAt`).
 
 Rules the facts keep:
 
@@ -169,17 +172,20 @@ Rules the facts keep:
   (`ExitPlanMode`) is the kind `ask`: Clawd rests, the words are dim, and one that ends in an error
   is the person declining, never a failure.
 - **Todos.** A turn that finishes every todo leaves none, so the next plan counts from "0 of 2 done".
+  Keeping them (TodoWrite and the Task list tools, `TODO_TOOLS`) is bookkeeping, not a step, so
+  "Done in 41s · 3 tools" counts the turn's other tools only.
+- **A failure in a new turn has its own wave.** One in a wave's first rush (1.25 s,
+  `SPLASH_RUSH_MS`) rides along with it only in the same turn (`isNewWave`).
 
 ### Naming tools and cutting words
 
 `describe()` names every tool once, for both looks: "Reading clawd.tsx", "Editing band.tsx",
 "Searching for band", "Reading docs.example.com" (a WebFetch), "Listing hooks", a described command
-as its description ("Run the tests"), and a subagent as "Delegating: Explore the hooks folder".
-Another server's tool is "Using Linear: create issue" (`mcpName`, with a few brands spelled their
-way). Claude Code's own tools have words of their own ("Asking you: Auth method", "Plan ready for
-you", "Using the plugin-authoring skill", "Finding tools"), and any other is its name in words
-("Using LSP"), never a code name. A set phrase is read whole, or gives way to a short form of 12
-cells at most ("Searching", "Plan ready", "Using a tool": `phraseForms`).
+as its description ("Run the tests"), a subagent as "Delegating: Explore the hooks folder", and
+another server's tool as "Using Linear: create issue" (`mcpName`, a few brands spelled their way).
+Claude Code's own tools have words of their own ("Asking you: Auth method", "Plan ready for you",
+"Finding tools"), and any other is its name in words ("Using LSP"), never a code name. A set phrase
+is read whole, or gives way to a short form of 12 cells at most (`phraseForms`).
 
 The cutting rules are shared (`hooks/clawd.ts`):
 
@@ -200,13 +206,23 @@ surfaces what the band shows stays at least a second (`HOLD_MS`), and a pause un
 (`GAP_MS`) is no pause, so the words never blink to "Thinking it over" between tools.
 
 - The hooks module holds the step: `stepDesk` for the beach and `stepHeld` for the hearth. Each tool
-  start and end steps both in the same state write (`settle()`), and one `$.clock.after` looks again
-  at the sooner deadline. Both surfaces draw what the hold settled on, so they name the same tools,
-  within a tick, however quick.
+  start and end steps both in one state write (`settle()`), and one `$.clock.after` looks again at
+  the sooner deadline, so both surfaces name the same tools, within a tick, however quick.
 - A tool that starts and ends under another's second keeps a claim (`next`) and gets its second
   once the hold is over, if nothing else is at work and it says something new.
 - A failure never waits behind the line. The beach drops a failed step's words at once for the
   splash; the hearth's hiccup takes over at once and keeps line 3 a second, whatever starts next.
+- The step a splash hands the line on to counts its second from when the terminal can take it up:
+  a tick past the wave's end, or for one that starts just after it, a tick after its start, at most
+  two ticks past the end. With nothing to hand on, the quiet line of what failed goes up on a tick
+  and stays one (`isQuietEnding`, `quietAt`); a step that starts sooner takes over from the splash.
+- **A todo ticked off is no step of its own.** Each held line keeps the todos as they were when its
+  step went up (`tallied`, in `stepDesk` and `stepHeld`; the views read them through `shownTodos`).
+  A TodoWrite while the line is on its way to another step (`isMoving`) waits for that step, which
+  brings the tally and the todo at work, so line 1 changes once ("Searching for band · 0 of 3 done",
+  then "Reading clawd.tsx · 1 of 3 done"). With nothing on its way it shows after half a second
+  (`TALLY_WAIT_MS`), and a new todo at work on a line with no tool has its second (`isTodoStep`). It
+  never waits past two seconds (`TALLY_MOST_MS`). Out of a turn the list is as it is.
 
 ### The terminal's pace
 
@@ -223,22 +239,20 @@ tests hold the idle beach to 0.3 changes a second and the nap to 0.15.
 
 The desktop has no frame clock, so every change it shows comes from a redraw the hooks module asks
 for (`nudge`). Moments end with one redraw each: a cheer at 4.01 s (the hearth's) and 4.6 s (the
-tide's), a splash at 3.1 s, a flinch at 3.01 s. The nap's comes a second after three quiet minutes.
-While Claude works, the tide's stride of the water and the hearth's bead of sweat wait 400 ms
-(`STRIDE_WAIT_MS`) before reloading the picture, so a reading just before the answer gives one new
-frame, the cheer. A reload drops every timer, so each activation's first draw arms again what the
-facts say is still to come (`pendingWakes`).
+tide's), a splash at 3.1 s, a flinch at 3.01 s, and the nap a second after three quiet minutes.
+While Claude works, the tide's stride and the hearth's bead wait 400 ms (`STRIDE_WAIT_MS`), so a
+reading just before the answer gives one new frame, the cheer. A reload drops every timer, so each
+activation's first draw arms again what the facts say is still to come (`pendingWakes`).
 
 - **The landing.** Claude Code may say the work is over a moment before the turn is written down.
-  Until it is, for 1.5 s at most (`LANDING_MS`), both looks go on showing the work, so neither
-  flashes the last turn's words. The landing timer is let go both when it fires and when work
-  resumes; each covers for the other, and a comment in `register.tsx` says to keep both.
+  Until it is, for 1.5 s at most (`LANDING_MS`), both looks go on showing the work. The landing
+  timer is let go both when it fires and when work resumes; each covers for the other, so keep both.
 - **The start.** Both looks start the turn as the prompt is written, for 1.5 s at most without the
   host's word, so a prompt that wakes a napping Clawd is one desktop reload, not two.
-- **Robustness.** `session.start` and the gating hooks (`prompt.submit`, `tool.call`, `config.set`)
-  end in `.catch(($, e, next) => next(e))`: a state write that throws leaves the event untouched,
-  and a tool never runs twice. `ui.render` reads each record through `orNothing`, so a store that
-  cannot be read still draws Clawd and his words.
+- **Robustness.** `session.start`, `prompt.submit`, `turn.complete` and `config.set` end in
+  `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that went wrong off the
+  running list: a state write that throws leaves the event untouched, and a tool never runs twice.
+  `ui.render` reads each record through `orNothing`, so an unreadable store still draws Clawd.
 
 ## The tide (default)
 
@@ -248,10 +262,9 @@ From left to right: a coral scallop shell, Clawd's home spot, the shore, and a s
 that is always there. The water covers the shore in proportion to the context used: at 0% a whole
 wave rolls in at the far edge; at 100% the water comes up to a cell of sky from his side at home.
 
-- **Palette:** kraft sand, a dusk-blue sea and a coral shell, muted so they sit beside Claude's clay
-  on dark and light backgrounds. Terminal sand `#D9B482`, sea `#6C9DC2` over `#5888AE`, foam
-  `#94BCDD`, shell `#E9A3A4`, heart `#E9789B`; the desktop's sand (`#E2C394`) and foam (`#C6DCEC`)
-  are a touch lighter.
+- **Palette:** kraft sand, a dusk-blue sea and a coral shell, muted to sit beside Claude's clay.
+  Terminal sand `#D9B482`, sea `#6C9DC2` over `#5888AE`, foam `#94BCDD`, shell `#E9A3A4`, heart
+  `#E9789B`; the desktop's sand (`#E2C394`) and foam (`#C6DCEC`) are a touch lighter.
 - **Ground:** a whole row of sand, so his legs stand in front of it. A darker grain every six cells
   hides only while he stands on or beside it. The two cells before the water are damp.
 - **The wave** curls toward the beach, `▀▛█▄▄▖`, smaller with less room (`▀▛█▄▖`, `▀▛▖`), never cut
@@ -268,10 +281,25 @@ up to his feet only the ground row moves.
 
 **Marks never cover the scene.** The heart, the cheer's sparkles, the nap's z and the splash's spray
 each have places, best first, and take the first that is clear sky, a cell from the wave and the
-shell; with none clear, the mark is left out. The heart is Claude Code's block heart (`▟▙▟▙` over
-`▝▜▛▘`), or a three-cell `█▄█` over `▝█▘` on the narrowest beach with the tide in. With the tide in,
-the crest stands back while the heart or the cheer's ✻ shows. Cheering from home, the lively spin
-carries him a cell out (`stepOut`) so the ✶ has sky all round, and he pads home after.
+shell; with none clear, the mark is left out. With the tide in, the crest stands back while the
+heart or the cheer's ✻ shows.
+
+- **One heart**, Claude Code's block heart (`▟▙▟▙` over `▝▜▛▘`); a three-cell one reads as a pink
+  "Y". Where it has no room a cell from him (the 18-cell beach, tide well in), he holds it flush
+  against his raised claw, the wave standing back, and keeps the claw up while it shows, so its
+  point never meets his lowered arm. With no room even for that, the wink and raised claw say it.
+- **The cheer's sparkles** stand a breath of sky off his claws, never flush (`✶▗▟▛███▛█▄ ✻`): the ✻
+  a cell out from his right claw, which fills its cell, and the ✶ beside his left, whose quadrant
+  leaves half a cell. With no room on his left, both go on his right a cell apart, else the ✻ alone.
+  Apple's Clawd ends in quadrants, so his stand a cell out each side, or at his claws if no room.
+- **The cheer's step out** (`stepOut`). Cheering from home, he steps a cell out so the ✶ has sky
+  all around. By the band's edge (no shell) every cheer does, still and in Apple's Terminal too, the
+  step riding on the pose change as his arms go up, and `reach` lets him stand there with the tide
+  in. By the shell only the lively spin carries him out, where the ✻ keeps its cell of air. Lively,
+  once settled, he pads home with one step (in idle, or when the tide has come up to his cell) on a
+  tick no wave washes up to his feet (`isLapAtFeet`). Still, he goes home in the frame his arms come
+  down or a pet takes over, and out again if the finale comes back after the pet, so he never moves
+  a cell on a tick where nothing else about him changes.
 
 **Eyes open is home.** Claude Code's glancing eyes (`█▟███▟`) put each pupil in the head's top
 quadrant, which a dark terminal swallows, so held, Clawd looks eyeless. He rests with his eyes open
@@ -285,15 +313,15 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | Moment | Terminal | Desktop |
 |---|---|---|
 | A new session | Half a second in, Claude Code's one-claw wave, twice. Never on a switch, a reload, still, or in Apple's Terminal. "Ready when you are". | The first frame waves by the shell, then idles; the wave is forgotten after a minute. |
-| Idle | A blink every 19 to 31 s, a lap every 25 to 36 s, a 3 s look out to sea every 45 to 75 s, a short scuttle every 60 to 100 s. | A loop of about 27 s. |
+| Idle | A blink every 19 to 31 s, a lap every 25 to 36 s, a 3 s look out to sea every 45 to 75 s, a short scuttle every 60 to 100 s. | A loop of about 27 s; the alt says "Clawd strolls on the sand". |
 | At work | He potters every 10 to 18 s. "Editing register.tsx · 3 of 7 done". | A reading loop until the turn changes something, then a work loop. |
-| Turn finished | The 13-frame spin, then arms up with ✻ and ✶, 5 s in all. "✻ Done in 41s · 7 tools · 2 files changed", clay and green while he cheers. | The same in pixels; the sparkles pop and shrink, never fading. |
+| Turn finished | The 13-frame spin, then arms up with ✻ and ✶, 5 s in all. "✻ Done in 41s · 7 tools · 2 files changed" (the tools leave out todo bookkeeping), clay and green while he cheers. A turn that lands mid-splash has its cheer within a tick, his pose and "Done", while the sea ebbs on from where the wave had it (`isSplashShown`). | The same in pixels; the sparkles pop and shrink, never fading. A turn that lands mid-splash replaces the splash's frame with the cheer's. |
 | Stopped, or an error | No spin. "Stopped after 12s" (dim), or "Stopped on an error after 12s". | No cheer; the same words. |
-| A tool failed | Eyes shut, arms up, the water rushing to his feet with spray, then sliding back. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s. Each failure is a new frame (`data-wave`); one in the first 1.25 s rides along. |
+| A tool failed | Eyes shut, arms up, the water rushing to his feet with spray, then sliding back. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s. Four drops swell out of the crest, leap and shrink away at full color, never fading, all back in the sea by 2.2 s (`DROPS_END_S`). Each failure is a new frame (`data-wave`); one in the first 1.25 s of the same turn rides along. |
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
 | Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". | He walks home, curls up, then "z Z Z". One source for the whole nap. |
-| Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. | A hover that rests 0.15 s: a wink and a pixel heart. |
-| Still | Nothing moves on its own: a cheer is one held pose, a nap is curled at once, a splash is its peak frame. | No keyframes; reduced motion puts every animation under `prefers-reduced-motion: no-preference`. |
+| Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A hover that rests 0.15 s: a wink and a pixel heart. |
+| Still | Nothing moves on its own: a cheer is one held pose, a nap is curled at once, a splash is its peak frame. By the band's edge a pet during the cheer takes him home on the pet's own pose change. | No keyframes; reduced motion puts every animation under `prefers-reduced-motion: no-preference`. The frame holds him where the last one had him (`stillDx`). The alts say "Clawd stands on the sand" idle and "A wave splashes over Clawd's feet" for the held splash. |
 
 ### Narrow terminals
 
@@ -314,20 +342,22 @@ grows (`layoutOf` in `hooks/tide/band.tsx`).
 
 Below 56 columns the shell goes and he stands a cell in from the edge; below 27 the words step
 aside. At 34 columns every line still has whole words ("Ready", "Done in 41s", "Editing",
-"Splash!", "86%"). A resize is taken up on the very frame that first shows it (`place()`): he keeps
-his place relative to home, never stands over the shell, and a sleeper stays curled. In Apple's
-Terminal the beach draws Claude Code's simpler Clawd, with no arms and no spin.
+"Splash!", "86%"). A resize is taken up on the very frame that shows it (`place()`): he keeps his
+place relative to home (a cheer steps out from the new one), never stands over the shell, and a
+sleeper stays curled. In Apple's Terminal the beach draws Claude Code's simpler Clawd, with no arms
+and no spin.
 
 ### What shows where
 
 - **Line 1, what is happening:** the running tool or current todo, with the tally; after a turn, its
   time, tools and changed files, or "Stopped after 12s"; a failed tool, verdict first; "Next up:
-  Write the tests"; the nap. No spinner, since Claude Code's own sits right above. The words are the
-  hearth's for the same facts, so a switch changes the picture, not the vocabulary.
+  Write the tests", then "Next: Write the tests…", never cut to one word (without room for two, the
+  turn's own line stays); the nap. No spinner, since Claude Code's own sits right above. The words
+  are the hearth's for the same facts, so a switch changes the picture, not the vocabulary.
 - **Line 2, the tide:** the percent, the `/compact` nudge when high, the cost (none until a cent is
-  spent), and the limit (`limitShown`: the 5-hour one, unless another is at 80% or more and nearer
-  its end), named "5h", "7d" or "spend". Past half, its reset as a time of day ("resets 4:57am"),
-  which never goes stale. Before any reading: "No context reading yet".
+  spent), and the limit (`limitShown`: the 5-hour one, unless another is at 80% or more and closer
+  to running out), named "5h", "7d" or "spend". Past half, its reset as a time of day ("resets
+  4:57am"), which never goes stale. Before any reading: "No context reading yet".
 - **Line 3, where:** the project, the branch, "N uncommitted" (git's count), the model.
 
 Each line is a chain of forms, longest first, each taking something away (`hooks/tide/words.ts`);
@@ -349,16 +379,23 @@ down one rung at a time (`nounsFor`). At 86% context with the 5-hour limit at 81
 After the splash, line 1 says '"Run the tests" failed' in dim, then 'A command failed', 'A tool
 failed', and a bare 'Failed' only at 34 columns.
 
+What failed is named as the hearth names it: a quote in its working line's verb ('"Read
+docs.example.com" failed'), then a word for the kind of step (`nounOf`): "A command", "A subagent",
+"A skill", "A web search", "A task", a set phrase ("Finding tools failed"), or for a tool at a name
+what it did to what (`NAME_NOUNS`: "A search", "A file read", "A file edit", "A file write", "A
+page", "A listing"); then "A tool", left out under a word as short ("A task", "A page"). Another
+server's tool is quoted with its server whole, then named in words, never as an order nobody gave
+("A GitHub tool failed", "An Asana tool failed": `article`).
+
 ### Terminal and desktop
 
 On the terminal, `hooks/tide/band.tsx` is the beach's `Client` module: exactly three rows, none
 padded, built from block elements, ASCII `z`, ✻ ✶ · and the ellipsis. Clawd uses the theme keys
 `clawd_body` and `clawd_background`; the beach colors are accents no theme key covers.
 
-On the desktop, `hooks/tide/desk.tsx` draws an `Svg` diorama beside Box and Text words. Clawd is
-converted quadrant by quadrant from the terminal's cell sprites, so both surfaces draw one Clawd
-from one table. The frame is 64 px tall at every width, its 54 px scene 5 px from the top, in a
-whole-pixel view (`viewBox="0 -5 192 64"`) drawn at `scale(3)`, so every edge lands on a pixel.
+On the desktop, `hooks/tide/desk.tsx` draws an `Svg` diorama beside Box and Text words, with Clawd
+converted quadrant by quadrant from the terminal's sprites. The frame is 64 px tall at every width,
+its 54 px scene 5 px from the top, in a whole-pixel view (`viewBox="0 -5 192 64"`) at `scale(3)`.
 Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 px, between 120 and
 192 px. The words use the terminal's chains measured in pixels (`PIXELS`), with the room from
 `bodyColumns` less the diorama and three cells of slack (`deskRoom`).
@@ -366,32 +403,31 @@ Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 
 The `Svg` reloads its frame, restarting every animation, whenever its source changes, so the source
 is built only from slow state, a `Scene`: the mood, the tide in 5% steps, still or not, a moment
 while it plays, where he stands as it opens (`from`), the width, and for a splash which failure it
-is (`wave`). The alt text comes from the Scene too and says the tide in words, never a number.
+is (`wave`). The alt text comes from the Scene too: what is drawn ("Clawd strolls on the sand",
+"Clawd stands on the sand" when still), then the tide in words, never a number.
 
 - A turn changes loop at most once, from reading to work. The tide holds through a turn at
-  `turnPercent`, moving only in 15-point strides, and while a moment plays it holds where the
-  moment began. No times go into the source.
+  `turnPercent`, moving in 15-point strides, and holds still while a moment plays. No times go in.
 - **Every new frame starts him where the last had him.** The hooks module remembers the last scene
   (`sceneMemory()`); `positionAt` reads his place in it, and the new frame opens with a lead
   (`leadOf`): the moment plays where he stands, then he scuttles to where the loop begins. A stride
-  while he potters carries the loop's phase instead (`carriedPhase`).
-- **The sea carries on.** Each Scene carries its sea, kept out of the source's key; `seaAfter`
-  writes it as negative animation delays, so the water never snaps back. A rising tide waits for
-  his walk back (`glideWait`).
+  while he potters carries the loop's phase (`carriedPhase`). A still frame draws its one pose where
+  he stood, inside the sand the tide leaves (`stillDx`), except up from a nap, where it stands him
+  at his loop's start, as the walk home would, so the curl never moves his still home.
+- **The sea carries on.** Each Scene carries its sea outside the source's key, which `seaAfter`
+  writes as negative animation delays; a rising tide waits for his walk back (`glideWait`).
 - **A splash's frame goes on into the work**, so a turn that lands after a failure loads one frame.
-- **Several desktops** keep one memory per width (`desktopScenes()`), and only the widest writes the
-  kept copy, so two never take turns rewriting it.
 - **The kept scene** goes to `$.state` from a `$.clock.after(0)` (a render cannot write), so a fresh
-  activation keeps the frame on screen. The hearth clears it (`scene.forget()`).
+  activation keeps the frame on screen; the hearth clears it (`scene.forget()`). Several desktops
+  keep one memory per width (`desktopScenes()`), and only the widest writes the kept copy.
 - **Petting is CSS:** a hover that rests 0.15 s (`HOVER_S`) shows the pet pose and the heart and
   hides the sparkles and drops. Under the pointer his walk pauses; a moment plays on underneath.
 
 ## The hearth (opt-out)
 
-Claude Code's own Clawd sits on the left. He blinks and looks over at what Claude reads, taps a claw
-while Claude edits, and steps in place while a command runs. When a turn lands he raises his arms
-and hops. He sweats when the context runs high, naps when you are away, and spins round and winks
-with a heart when you pet him.
+Claude Code's own Clawd sits on the left. He blinks, looks over at what Claude reads, taps a claw
+while Claude edits and steps in place while a command runs; he raises his arms when a turn lands,
+sweats when the context runs high, naps when you are away, and spins around with a heart when petted.
 
 ```
  ▐▛███▛█      agent-plugins on claude/first-mod · 3 uncommitted          Opus 5.5
@@ -427,18 +463,19 @@ branch, a file name, a command or a todo may be cut, at its end, while 7 charact
 - **Line 2:** the meters step down through four sizes, then `5h limit` becomes `5h`, then they go,
   then the cost, then the 5h figure. The context figure always stays. Before any reading it reads
   `context –`, never "0%".
-- **Line 3:** the tally (`3/7 done` when short) goes before the words lose anything. Each message
-  has shorter forms: "Thinking it over", "Thinking"; "Done in 2m 14s · 7 tools · 2 files changed"
-  down to "Done"; "Stopped on an error after 12s", "Error after 12s", "Error".
+- **Line 3:** the tally (`3/7 done` when short) shows only beside the words whole and goes before
+  they lose anything, so a todo beside it is never cut (`uncut`). "Next up: Write the tests" is cut
+  after two words at least ("Next up: Write the tests…"), never to one word and an ellipsis. Each
+  message has shorter forms: "Thinking it over", "Thinking"; "Done in 2m 14s · 7 tools · 2 files
+  changed" down to "Done"; "Stopped on an error after 12s", "Error after 12s", "Error".
 
 On the desktop, Clawd is a 96 × 64 px `Svg` drawn from his pixel form and animated by CSS alone,
 beside three Box/Text lines, with the meters as rounded Svg pills. The words sit in a panel of
 `columns - 14` cells, at most 64; under 16 cells (30 columns) Clawd has the band alone. Forms are
 measured at the widest of Inter, DejaVu Sans and Liberation Sans, against the panel as a page with
-7.2 px cells would lay it out, so a line keeps a cell or more to spare. A name that must be cut is
-cut with an ellipsis (`cutToFit`), and only its box may clip. The alt text is a full sentence:
-"Clawd rests.", "Clawd taps along as Claude works.", "Clawd sits quietly while Claude works." when
-still.
+7.2 px cells would lay it out, so a line keeps a cell or more to spare; a name that must be cut is
+cut with an ellipsis (`cutToFit`). The alt text is a full sentence: "Clawd rests.", "Clawd taps
+along as Claude works.", or when still "Clawd sits quietly while Claude works."
 
 ### What each moment looks like
 
@@ -452,46 +489,42 @@ still.
 | Thinking | eyes on you; a glance counted from when thinking began, so a turn never opens on one | at work | the todo at work, or Thinking it over |
 | Editing, running | taps a claw on a 4 s beat, or steps in place | one 8 s work loop | Editing register.tsx, Run the tests |
 | A tool failed | squeezes his eyes shut, glances away | the same, then a 1.5 s rest in the flinch's own frame, which stays up while the turn runs | Hiccup · Run the tests, at least a second |
-| Past `warnAt` | a blue bead slides down, every 8 s at work, 16 s idle | a blue drop; it waits 400 ms while Claude works | Getting full · /compact when you are ready |
+| Past `warnAt` | a blue bead slides down, every 8 s at work, 16 s idle | a blue drop; it waits 400 ms while Claude works | Getting full · /compact when you're ready |
 | Near a limit | | | Near the 5h limit · resets 4:57am ("At", "Over" past it) |
 | Idle 3 minutes | eyes closed, a dim z drifts up | eyes close 3 minutes after the Svg appears, a slate z | unchanged |
-| Petted | turns all the way round, winks with arms up and a pixel heart | a hover of 150 ms: a wink, a hop, the pixel heart; asleep, he sleeps on | unchanged |
+| Petted | turns all the way around, winks with arms up and a pixel heart | a hover of 150 ms: a wink, a hop, the pixel heart; asleep, he sleeps on | unchanged |
 
-A hiccup too narrow for its phrase never cuts a set phrase: it says what kind of step it was
-("Hiccup · A command", "Hiccup · A tool"), and last "Hiccup" alone. On the terminal his pose and line
-3 move together, so the held line goes up on a tick, or between ticks once the frame has been up a
-whole tick (`Between`, from `isSettled`); a landing turn and a turn's start show at once. The
-desktop's Svg is built from slow state alone (one `work` mode for every tool, plus the cheer, hello,
-flinch, bead and calm), so a tool starting or finishing hands the page the same Svg. The bead comes
-only in a quiet stretch, never beside a raised claw, blink or glance, in the theme's blue (`ide`).
-Calm is one pose per moment: he still cheers, flinches and naps, without blinks, taps or hops.
+A hiccup too narrow for its words never cuts a set phrase: it says what kind of step it was
+(`hiccupNouns`): "Hiccup · A command" (or a task, a subagent, a skill, a web search), or, for a tool
+at a name, what the name is ("A file", "A search", "A page", "A folder"); then "Hiccup · A tool"
+(but not after "A task", just as short), and "Hiccup" alone only on a band too narrow for any word.
+On the terminal his pose and line 3 move together, so the held line goes up on a tick, or between
+ticks once the frame has been up a whole tick (`Between`, from `isSettled`); a landing turn and a
+turn's start show at once. The desktop's Svg is built from slow state alone (one `work` mode for
+every tool, plus the cheer, hello, flinch, bead and calm), so a tool starting or finishing hands the
+page the same Svg. The bead comes only in a quiet stretch, never beside a raised claw, blink or
+glance, in the theme's blue (`ide`). Calm is one pose per moment: he still cheers, flinches and
+naps, without blinks, taps or hops.
 
 ## Key decisions and why
 
 - **The desktop draws an Svg Clawd beside flex Box and Text, never a block-character `Client`.** The
   desktop draws Box as a flex div and Text as a span in a proportional font, so block-character art
-  shreds and spaces cannot align words. Both looks draw Clawd as an `Svg` and lay the words out with
-  flex, measured in pixels. The terminal keeps a `Client` per look, which owns its frame clock and
-  draws exact cells.
-- **The desktop source is built only from slow state.** A new source reloads the frame and restarts
-  every animation, so anything that changes often stays in the words, and moments end with a redraw
-  from the hooks module rather than a time in the source.
+  shreds and spaces cannot align words; the words are laid out with flex, measured in pixels. The
+  terminal keeps a `Client` per look, which owns its frame clock and draws exact cells.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
-- **One set of facts, a view per look, separate modules.** The facts are written once; `tideInfo()`
-  and `hearthInfo()` are the seam. The `Client` keys differ (`band`, `hearth`), so a switch never
-  hands one look's surface state to the other.
+  The todos shown beside a step are held there too, so one hold serves all four views.
+- **One set of facts, a view per look, separate modules.** `tideInfo()` and `hearthInfo()` are the
+  seam, and the `Client` keys differ (`band`, `hearth`), so a switch never hands over surface state.
 - **`/config` is the look's one home, and the store holds only the motion,** so a reload never finds
   two looks that disagree. `/band` is not marked `immediate`, which would let a switch reload the
   plugin mid-turn.
-- **Both looks are 64 px tall on the desktop and three rows on the terminal,** so a switch never
-  moves the prompt.
 - **One warm color for one warning.** The theme's amber next to the clay nudge read as two alarms.
 - **Bold never sits beside dim.** Ink closes both with one code, so a dim separator after bold text
   came out bold.
 - **The looks write the figure differently on purpose:** on the beach the percent is what the tide
   stands for ("42% context"); on the hearth "context" labels a meter ("context 42%").
-- **A described command is its description alone**, "Run the tests", never "Running: Run the tests".
 - **A moment's source is not kept past its end**, except the hello's, whose key is the idle loop's:
   a remount within the keep would play the moment again.
 - **The hearth's Svg classes start with `hh-`** in case a host ever draws it inline. The tide's
@@ -506,12 +539,12 @@ Calm is one pose per moment: he still cheers, flinches and naps, without blinks,
   would push two tide lines a pixel over; a font wider than the three measured would end a line in
   the page's ellipsis.
 - **A fifth change in a second.** A look switch's first frame cannot wait (the old module is gone),
-  so a switch just after the beach's spin changed on three ticks is a fifth change; the tick fires
-  before the reply reaches the hooks. Two resizes in one second can do the same.
+  so a switch just after the beach's spin changed on three ticks is a fifth change, as are two
+  resizes in one second.
 - **The cheer by the shell with the tide partway in** (56 to 95 columns): stepping out would leave
   the ✻ no sky, so he cheers at home and the ✶ sits a corner off the shell.
 - **Below 34 columns the looks fall back differently**, and under 16 neither Clawd fits whole.
-- **A `/model` shows at the next Enter.** No hook fires on it, so line 3 names the old model until
+- **A `/model` shows at the next Enter.** No hook fires on it, so the band names the old model until
   the next prompt or turn end.
 - **Two word fitters.** Both only take away and are tested at 34 to 160 columns, but a fix to one
   does not reach the other.
@@ -522,17 +555,15 @@ Calm is one pose per moment: he still cheers, flinches and naps, without blinks,
 - **The kept desktop scene lands a moment after its frame**, so a reload in that instant opens from
   the scene before.
 - **Strides wait.** While Claude works, the tide's stride and the hearth's bead reach the picture
-  0.4 s after the reading, and a rising tide waits for his walk back, so the picture can lag the words.
+  0.4 s after the reading, and a rising tide waits for his walk back.
 - **Esc with no word of it.** A host that marked neither the dispatch nor the result would show a
-  splash or hiccup until the turn ends, under a second. An Esc whose turn ends more than a second
-  after the call keeps its splash.
-- **A frame's alt text says how the frame began.** A splash's or flinch's frame stays up through the
-  work after it, and the hello's for its minute, so the alt names that moment.
+  splash or hiccup for under a second; an Esc whose turn ends over a second later keeps its splash.
+- **A frame's alt text says how the frame began**: a splash's or flinch's frame stays up through the
+  work after it, and the hello's for its minute.
 - **The lively hearth's petted turn holds its first frame 500 ms**, since a pet shows between ticks
   and every frame stays a tick. The beach's spin does the same.
-- **A pointer parked on him.** The hover pauses his walk, but the next frame opens where
-  `positionAt` reads the unpaused walk, up to about 10 px away after a long hover. The hover never
-  reaches the plugin.
+- **A pointer parked on him** pauses his walk, but the next frame opens where `positionAt` reads the
+  unpaused walk, up to about 10 px away. The hover never reaches the plugin.
 - **The narrowest nudge** at 36 to 41 desktop columns (38 and 39 on the terminal) is "86% try
   /compact", without its dot.
 - **The upgrade toast is for `hearth` only**; an older stored `still` gets the motion and no toast.
@@ -542,49 +573,66 @@ Calm is one pose per moment: he still cheers, flinches and naps, without blinks,
 - **The water's glide is kept to a twentieth of a unit**, so a second failure in a splash's rush can
   open up to 0.2 px from where the last frame stood.
 - **A wait on you:** whether the band shows beside Claude Code's own question is up to the host.
-- **A glob's last part is one extension**, so "**/*.failing-fixture.ts" gives way to "Splash! A tool
-  failed" and "Hiccup" rather than being cut inside it.
 - **Ambiguous-width glyphs on the hearth:** its meters (`━`) and the dash of `context –` would shift
   line 2 on a terminal that draws them wide.
+- **A glob's last part is one extension**, so `**/*.failing-fixture.ts` gives way to "Splash! A
+  search failed" and "Hiccup · A search" rather than being cut inside it.
+- **Two short rungs of the beach's failure ladder:** Glob and Grep say "Splash! A tool failed" at 47
+  and 48 terminal columns, and NotebookEdit at 47 to 51, before their own noun fits.
+- **A desktop band mounted afresh mid-moment plays the moment again** from its first beat (the host
+  hid and showed it), while the words keep the facts' time. A remount says nothing the module can
+  see, and putting the elapsed time in the source would reload the frame at every redraw.
+- **A tool soon after the prompt reloads the beach's desktop frame twice**: the thinking frame, then
+  the work frame 300 ms later. Holding the first would show him watching the words beside a step.
+- **Idle keeps "Done in 40s" where the next todo has no room for two words**, as for "Next: Fix the
+  splash" below 46 terminal columns.
+- **The holds' own waits.** A todo ticked off while "Planning" is up waits for the step after it,
+  and one with nothing on its way shows half a second late. A read that starts during the tick the
+  quiet line after a lone splash is up comes up to 240 ms behind the desktop, with its whole second.
 
 ## Files
 
 - `.claude-plugin/plugin.json`: the manifest, with the `look` and `warnAt` fields. It has no
   `version`; keep the marketplace entry's description in step with it.
 - `tsconfig.json`: extends `.claude-plugin/types/tsconfig.json`, which the engine lays down.
-- `types/index.d.ts`: the shared facts (`Info`), `Look`, `Motion`, `LookPick`, `KeptScene`.
-- `hooks/hooks.json`: names `register.tsx` as the hooks module.
-- `hooks/register.tsx`: every hook, the timers, the kept scene, and the render that picks the look.
-- `hooks/facts.ts`: the facts' pure rules: `whole()`, `describe()`, `runningAfter`, the holds.
+- `types/index.d.ts`: the shared facts (`Info`), the held lines (`Held`, `DeskShown`, with
+  `TodosShown`), `Look`, `Motion`, `LookPick`, `KeptScene`.
+- `hooks/hooks.json` names `hooks/register.tsx`: every hook, the timers, the kept scene, the render.
+- `hooks/facts.ts`: the facts' pure rules: `whole()`, `describe()`, `runningAfter`, the holds and
+  the todos held beside them (`tallied`, `shownTodos`), `TODO_TOOLS`, `isNewWave`, and the failure
+  nouns (`nounOf`, `NAME_NOUNS`, `nounsFor`).
 - `hooks/look.ts`: the look and `/band`: `parseBand`, `lookNow`, `migrateMotion`, `replyFor`.
 - `hooks/clawd.ts`: Clawd's terminal cells, the shared palette, `cells()`, `textPx()`, the cuts.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
 - `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text.
 - `hooks/tide/props.ts`: the beach's props, `sceneMemory()` and `desktopScenes()`.
-- `hooks/tide/words.ts`: each beach line's forms.
+- `hooks/tide/words.ts`: each beach line's forms, and `article` ("A" or "An" before a server).
 - `hooks/tide/fit.ts`: `fitLine` and the `CELLS` and `PIXELS` measures.
 - `hooks/tide/view.ts`, `hooks/tide/types.ts`: `tideInfo()` and the beach's types.
-- `hooks/hearth/band.tsx`: the hearth's terminal module.
-- `hooks/hearth/desk.tsx`: the hearth's desktop Clawd, pills and pixel budget.
-- `hooks/hearth/words.ts`: each hearth line's forms and cuts, for both surfaces.
-- `hooks/hearth/props.ts`: the hearth's props.
+- `hooks/hearth/band.tsx`, `desk.tsx`, `props.ts`: the hearth's terminal module, its desktop Clawd,
+  pills and pixel budget, and its props.
+- `hooks/hearth/words.ts`: each hearth line's forms, its cuts (private to the file), `uncut` and
+  `hiccupNouns`, for both surfaces.
 - `hooks/hearth/view.ts`, `hooks/hearth/types.ts`: `hearthInfo()` and the hearth's types.
-- `tests/band.test.ts`, `tests/tide.test.ts`, `tests/hearth.test.ts`: the tests below.
 
 ## Tests
 
 - `tests/band.test.ts`: the band as a whole: looks, `/config` and `/band` with every reply, the
   motion and the store, the migration, switches and reloads (fresh activations seeded with the last
   `$.state`), older state, the shared facts and holds, `describe()` and the cuts, git, `/clear`,
-  Esc, and the terminal pace filmed to the 10 ms while a pet, a prompt or a switch lands.
+  Esc, the terminal pace filmed to the 10 ms while a pet, a prompt or a switch lands, each failing
+  tool's words on both ladders, the todos' hold by each way a line can be on its way, the tools a
+  turn ran, "Next:" never cut to one word, and a switch back to the beach or `/band lively` at any
+  point of a splash or a still cheer.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
-  the Svg's CSS.
+  the Svg's CSS; films of a pet at every 250 ms of a cheer, the sparkles at every width from 34 to
+  60 at six tides, the one heart, the step home, and a turn landing mid-splash.
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
-  line at every width from 34 to 160 in cells and pixels, every moment, the bead, calm, petting and
-  the `hh-` classes.
+  line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
+  moment, the bead, calm, petting and the `hh-` classes.
 
 UI tests loop over the terminal and the desktop; slow sweeps and films set their own `timeoutMs`.
 From the repository root:

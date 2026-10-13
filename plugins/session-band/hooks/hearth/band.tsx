@@ -811,8 +811,9 @@ function marks(pose: Pose, sweat: string | null): Row[] {
 //
 // Each line has its forms, longest first (words.ts), measured here in terminal
 // cells; the first that fits the panel is drawn. Parts drop whole, so Ink never
-// cuts a figure or a label: only a branch, a file name or a todo may be cut at
-// its end, in a box of its own, and never below six cells.
+// cuts a figure or a label: only a branch, a file name, a command or a todo may
+// be cut at its end, in a box of its own, and never below the LEAST cells words.ts
+// keeps (seven characters and the ellipsis).
 
 /** Terminal cells: wide CJK characters and emoji count two (see `cells`). */
 const CELLS: Measure = { row: width, gap: 2 }
