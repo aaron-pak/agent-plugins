@@ -1,0 +1,68 @@
+name: Validate plugins
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check marketplace, manifests, skills, and README agree
+        run: python3 scripts/validate.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Bun's version comes from packageManager in package.json.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install the TypeScript toolchain
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting and lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # The bundles plugins run are committed; a fresh build must reproduce them.
+      - name: Check the committed bundles are up to date
+        run: |
+          bun run build
+          if [ -n "$(git status --porcelain -- plugins)" ]; then
+            git status --short -- plugins
+            echo "Run bun run build and commit the bundles."
+            exit 1
+          fi
+
+      - name: Test
+        run: bun run test
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      # --strict fails on warnings. The one warning allowed is a missing version: a mod's
+      # .claude-plugin/plugin.json leaves it unset on purpose, like every manifest here.
+      - name: Validate the marketplace and each plugin with Claude Code
+        run: |
+          status=0
+          for target in . plugins/*/; do
+            out=$(claude plugin validate --strict "$target" 2>&1) && { echo "$out"; continue; }
+            echo "$out"
+            warnings=$(echo "$out" | sed -n 's/.*Found \([0-9]*\) warning.*/\1/p')
+            unset_versions=$(echo "$out" | grep -c 'No version specified' || true)
+            if echo "$out" | grep -q 'Found [0-9]* error' || [ "${warnings:-0}" != "$unset_versions" ]; then
+              status=1
+            fi
+          done
+          exit $status

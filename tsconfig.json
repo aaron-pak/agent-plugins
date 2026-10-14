@@ -1,0 +1,18 @@
+{
+  // The plugins' TypeScript sources, which run on Node: Node's types only, so a Bun-only API fails here.
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["plugins/*/src"]
+}
