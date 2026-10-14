@@ -781,6 +781,51 @@ test('terminal: Esc within the second of a failure takes it back, and Clawd stop
   await ui.unmount()
 })
 
+// A turn that lands while he still flinches cheers at once, as the beach's cheer takes over from its
+// splash: his arms go up on the frame "Done" comes in on, and his cheer plays whole. A flinch that went
+// up less than a tick before keeps that tick first.
+for (const landAt of [60, 125, 375, 625, 1_000, 1_375]) {
+  test(`terminal: a turn that lands ${landAt} ms into his flinch raises his arms with "Done", never "Done" beside the flinch`, { timeoutMs: 30_000 }, async ($, on) => {
+    const { clock } = world(on)
+    await start($)
+    const { ui, read } = await band($, 'terminal', { ...BAND, isWorking: true })
+    const step = async (ms: number) => {
+      for (let left = ms; left > 0; left -= 5) {
+        await ui.advance(Math.min(5, left))
+        await clock.advance(Math.min(5, left))
+      }
+    }
+    await prompt($, 'run the tests')
+    await step(1_500)
+    await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+    let waited = 0
+    while ((await read()).clawd[0] !== HEAD.closed && waited < 1_000) {
+      await step(5)
+      waited += 5
+    }
+    expect((await read()).words[2]).toBe('Hiccup · Run the tests')
+    await step(landAt)
+    await $.turn.complete({ answer: 'Done.', durationMs: 5_000, turnId: 't1', reason: 'answer', isAborted: false } as TurnCompleteInput)
+    await ui.redraw(BAND)
+    const shots: Array<{ t: number; isUp: boolean; isDone: boolean; isFlinch: boolean }> = []
+    for (let t = 0; t <= 2_000; t += 5) {
+      const now = await read()
+      const head = now.clawd[0] ?? ''
+      shots.push({ t, isUp: head.startsWith('▗▟'), isDone: (now.words[2] ?? '').startsWith('Done'), isFlinch: head === HEAD.closed || isSideways(head) })
+      await step(5)
+    }
+    // Never "Done" without his arms up, and never his arms up before "Done".
+    expect(shots.filter(shot => shot.isDone !== shot.isUp).map(shot => shot.t)).toEqual([])
+    // Within a tick, or two for a flinch just begun, and his cheer has its first pose (✶, feet together) a second.
+    const upAt = shots.find(shot => shot.isUp)?.t ?? Infinity
+    expect(upAt).toBeLessThanOrEqual(landAt < 250 ? 500 : 250)
+    // His eyes squeeze shut a tick at least (the flinch was seen up to 5 ms after it went up).
+    expect(landAt + upAt).toBeGreaterThanOrEqual(245)
+    expect(shots.filter(shot => shot.t >= upAt && shot.t < upAt + 1_000).every(shot => shot.isUp)).toBe(true)
+    await ui.unmount()
+  })
+}
+
 test('a turn that lands with the context full says it is done while he cheers, then that it is getting full', async ($, on) => {
   const { clock } = world(on)
   await start($, 86, 1.94)

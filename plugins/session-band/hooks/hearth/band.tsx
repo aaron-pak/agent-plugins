@@ -189,10 +189,10 @@ const Band: ClientModule<BandProps, State> = (props, surface) => {
   // at once only when the second has room for it. Otherwise a landing waits for the next tick that
   // has (his cheer starts there, whole), and any other change waits for it on screen.
   const isNow = columns !== state.frame.columns || hasRoom(state.pace)
-  // A look at the words he began less than a tick ago (as the last read showed) has its tick: a turn
-  // that lands now goes up with its cheer on the next tick, never cutting the glance to a flash.
-  const isGlanceNew = !isSettled(state.pace) && isLookingNow(state.live)
-  receive(state.live, props, { isNow, isFree: isNow && isSettled(state.pace), canLand: isNow && !isGlanceNew })
+  // A look at the words or a flinch he began less than a tick ago (as the last read showed) has its
+  // tick: a turn that lands now goes up with its cheer on the next tick, never cutting it to a flash.
+  const isBeatNew = !isSettled(state.pace) && (isLookingNow(state.live) || state.live.tick === state.live.oopsFrom)
+  receive(state.live, props, { isNow, isFree: isNow && isSettled(state.pace), canLand: isNow && !isBeatNew })
   const frame = compose(state.live, columns)
   const drawn = JSON.stringify(frame)
   if (drawn !== state.drawn && isNow) {
@@ -266,7 +266,7 @@ function waveUntil(greetedMs: number | null | undefined): number {
 /**
  * When new props may show between two ticks. `isNow`: the second has room for a change. `isFree`: and
  * the frame on screen has been up a whole tick, so a line that could as well wait cuts no beat short.
- * `canLand`: and no glance he began less than a tick ago is up, so a turn that lands may show at once.
+ * `canLand`: and no glance or flinch he began less than a tick ago is up, so a turn that lands may show at once.
  */
 type Between = { isNow: boolean; isFree: boolean; canLand: boolean }
 
@@ -282,10 +282,13 @@ function receive(live: Live, props: BandProps, between: Between): void {
     live.propsTick = live.tick
   }
   if (props.cheers > live.seenCheers) {
-    // With no room now, or a glance just begun (as the last read showed), his cheer starts on the
-    // next tick, whole, and the glance has its tick.
-    live.cheerUntil = live.tick + (between.canLand ? 0 : 1) + CHEER_TICKS
+    // With no room now, or a glance or flinch just begun (as the last read showed), his cheer starts
+    // on the next tick, whole, and that beat has its tick. A flinch still up ends as the cheer starts,
+    // as the beach's splash does: his arms go up on the frame "Done" comes in on.
+    const from = live.tick + (between.canLand ? 0 : 1)
+    live.cheerUntil = from + CHEER_TICKS
     live.waveUntil = NEVER
+    live.oopsUntil = Math.min(live.oopsUntil, from)
   }
   const slip = props.lastSlip ?? props.slip
   if (props.oops > live.seenOops && slip !== null) {
@@ -339,8 +342,8 @@ function wanted(live: Live): Shown {
  * has started (a glance, a blink, a claw tap) is up a tick at least. Between ticks (only when the second has room:
  * `receive` calls on this then) what must not wait shows at once: a turn that starts ("Thinking it
  * over" is now), a hiccup over its own tool or "Thinking it over", and a turn that lands, with its
- * cheer, as the beach's does (unless a glance he has just begun is up: `canLand`; then both wait for
- * the next tick).
+ * cheer, as the beach's does (unless a glance or flinch he has just begun is up: `canLand`; then both
+ * wait for the next tick).
  */
 function hold(live: Live, between: Omit<Between, 'isNow'>): void {
   if (live.slipDue !== null && (!live.props.isWorking || (live.slipUpAt !== NEVER && live.tick - live.slipUpAt >= HOLD_TICKS))) {

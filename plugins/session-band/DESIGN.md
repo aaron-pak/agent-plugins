@@ -562,7 +562,9 @@ at a name, what the name is ("A file", "A search", "A page", "A folder"); then "
 (but not after "A task", just as short), and "Hiccup" alone only on a band too narrow for any word.
 On the terminal his pose and line 3 move together, so the held line goes up on a tick, or between
 ticks once the frame has been up a whole tick (`Between`, from `isSettled`); a landing turn and a
-turn's start show at once. The desktop's Svg is built from slow state alone (one `work` mode for
+turn's start show at once. A turn that lands mid-flinch ends the flinch as his cheer starts, as the
+beach's cheer ends its splash, so his arms go up on the frame "Done" comes in on; a glance or flinch
+he began less than a tick before keeps that tick first (`canLand`). The desktop's Svg is built from slow state alone (one `work` mode for
 every tool, plus the cheer, hello, flinch, bead and calm), so a tool starting or finishing hands the
 page the same Svg. The bead comes only in a quiet stretch, never beside a raised claw, blink or
 glance, in the theme's blue (`ide`). Calm is one pose per moment: he still cheers, flinches and
