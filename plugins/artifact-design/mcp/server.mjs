@@ -25621,6 +25621,7 @@ function publish(args) {
   lines.push(...notes);
   lines.push("To update: publish the same file path again in this session (keeps this link); pass `url` to " + "update this artifact from another file or a later session.");
   lines.push("The link is a file on this machine. If the page is meant for someone else, tell the user when you " + "present the page that to share it they send the published page, " + (hasOtherFiles(folder, pageFile) ? `the whole ${folder} folder` : pageFile) + ", not the source file, which lacks the page skeleton.");
+  lines.push("The files you sent are still on disk. For the next small change to this file, send it as `edits` on a " + "publish of the same file_path (old_str/new_str pairs copied exactly from the file as it now stands): that " + "one call changes the file and what is published together, with no Read and no Edit. To change several " + "files, or to rewrite most of the page, Edit the files and publish them in the same response; if an Edit " + "reports that it did not apply, correct it and publish again. If the file's text is no longer in this " + "conversation, Read it first.");
   if (first) {
     if (!OPEN_PAGES)
       lines.push("The page was not opened in a browser (ARTIFACT_OPEN=0); give the user the link.");
