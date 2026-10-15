@@ -10,16 +10,13 @@ import CODEX_REST_TEXT from "./text/codex-rest.md" with { type: "text" };
 
 export const INSTRUCTIONS =
   "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, " +
-  "tools, mockups) as local files, the way claude.ai's Artifact tool publishes them. " +
-  "It stands in for Claude Code's own Artifact tool where that tool is off or absent: its full name " +
-  "carries a server prefix (mcp__plugin_artifact-design_artifact__Artifact in Claude Code, " +
-  "mcp__artifact__Artifact in Codex), and " +
-  '"Artifact" in its description, in quickstart\'s result and in the skills means this tool. ' +
+  "tools, mockups) as local files. Its full name carries a server prefix " +
+  "(mcp__plugin_artifact-design_artifact__Artifact in Claude Code, mcp__artifact__Artifact in Codex), and " +
+  '"Artifact" in its description, in quickstart\'s result and in the skills means this tool; ' +
+  '"ArtifactCheck" means its ArtifactCheck tool, where Playwright is installed. ' +
   'Before writing a new artifact, call Artifact with action "quickstart"; then write the page ' +
   "to a file and publish it with Artifact in the same message, which wraps it in the page " +
-  "skeleton. Give the user the published link. " +
-  "Where a built-in Artifact tool that publishes to claude.ai is also available, use that one " +
-  "instead; this server is for harnesses without it.";
+  "skeleton. Give the user the published link.";
 
 // text/description.md is Claude Code's Artifact tool description (2.1.300), less what only claude.ai
 // can do: runtime capabilities, the shared database, watching, pinning, the asset store, and Artifact
@@ -27,14 +24,18 @@ export const INSTRUCTIONS =
 // by describe().
 const text = (file: string) => file.replace(/\n$/, "");
 
-// Claude Code's ArtifactCheck wording (2.1.294) for its preview, where it applies here.
-const PREVIEW_BULLET =
-  "\n- **preview**: takes `file_path` (one .html page, before or after publishing) and renders that one page file " +
-  "locally the way publish wraps it, in light and dark themes at desktop and phone widths (1280 and 390px), and " +
-  "returns the screenshots (each shows at most the top 1568px of the page) with a mechanical checklist of layout " +
-  "and load problems (horizontal overflow, clipped content, text split by a grid or flex parent, SVG text too small " +
-  "for a phone, theme-only color variables, blocked or local-only loads, diagram and console errors), so Claude can " +
-  "see the page and fix what they show before publishing. Files published beside it are not loaded. Nothing is published.";
+// Claude Code's ArtifactCheck tool (2.1.300) with its preview on: an add-on to the Artifact tool that
+// Claude Code defers behind tool search. Its verify action reads what claude.ai viewers' browsers
+// reported, so only preview is here.
+const CHECK_DESCRIPTION =
+  "Check a page before publishing it with the `Artifact` tool.\n" +
+  '**Preview**: `action: "preview"` with a `file_path` (one .html page, before or after publishing) renders that ' +
+  "one page file locally the way publish wraps it, in light and dark themes at desktop and phone widths (1280 and " +
+  "390px), and returns the screenshots (each shows at most the top 1568px of the page) with a mechanical checklist " +
+  "of layout and load problems (horizontal overflow, clipped content, text split by a grid or flex parent, SVG text " +
+  "too small for a phone, theme-only color variables, blocked or local-only loads, diagram and console errors), so " +
+  "you can see the page and fix what they show before publishing. It publishes nothing, and files published beside " +
+  "the page are not loaded.";
 
 // Codex shows at most 1,000 bytes of an MCP tool's description (codex-rs/tools/src/mcp_tool.rs)
 // and drops every description from an input schema over 5,000 bytes (tools/src/json_schema/
@@ -42,9 +43,6 @@ const PREVIEW_BULLET =
 // Calls list and the contract essentials. quickstart returns the full guidance.
 const CODEX_LEAD = text(CODEX_LEAD_TEXT);
 const CODEX_REST = text(CODEX_REST_TEXT);
-const CODEX_PREVIEW =
-  "\n- preview: file_path (one .html page); renders it at 1280 and 390px in light and dark and returns the " +
-  "screenshots with a checklist of layout and load problems, to fix before publishing.";
 
 // Claude Code cuts an MCP tool's description at 2048 characters (CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH)
 // but passes its input schema whole, so the description keeps its first paragraph and the rest follows,
@@ -52,38 +50,18 @@ const CODEX_PREVIEW =
 // unless they ask to load up front; its own Artifact tool is always loaded.
 const FIRST_CALL =
   ' When the person wants something new made, Claude\'s first call is `action: "quickstart"`, before' +
-  " loading a skill or writing a file (see **Artifact types**).";
+  " loading a skill or writing a file (see **New artifacts**).";
 
-// Parameters of claude.ai's Artifact tool that this one doesn't have, and why.
-const CLAUDE_AI_ONLY: Record<string, string> = {
-  capabilities: "runtime capabilities exist only on claude.ai",
-  type_url: "Artifact types exist only on claude.ai",
-  asset: "the asset store exists only on claude.ai",
-  asset_ids: "the asset store exists only on claude.ai",
-  from_url: "the asset store exists only on claude.ai",
-  file_paths: "the asset store exists only on claude.ai",
+// Parameters of Claude Code's Artifact tool that this one doesn't take, with what to do here instead.
+// The rest get a bare "Unknown parameter", like any other.
+const INSTEAD: Record<string, string> = {
+  capabilities: "a page here is static HTML",
+  type_url: 'every artifact here is a plain page: call action "quickstart", then publish an HTML file',
+  asset: "pass images and other files with `files`",
+  asset_ids: "pass images and other files with `files`",
+  from_url: "pass images and other files with `files`",
+  file_paths: "pass images and other files with `files`",
 };
-const CLAUDE_AI_PARAMS = new Set([
-  "after",
-  "auto_open",
-  "contract",
-  "design_systems",
-  "favicon",
-  "force",
-  "label",
-  "limit",
-  "out_dir",
-  "overwrite_unread",
-  "page",
-  "path",
-  "paths",
-  "pin",
-  "prompt",
-  "root",
-  "scope",
-  "type",
-  "type_query",
-]);
 
 /** What the tool's text says about this machine. */
 export type Setting = {
@@ -93,12 +71,11 @@ export type Setting = {
   opens: boolean;
 };
 
-/** The tool's description, with the preview bullet only when preview is offered. */
-export function describe(preview: boolean, setting: Setting): string {
+/** The tool's description, filled in for this machine. */
+export function describe(setting: Setting): string {
   return text(DESCRIPTION)
     .replaceAll("{opened}", () => (setting.opens ? ", and opened in the browser" : ""))
     .replaceAll("{open_note}", () => (setting.opens ? " A first publish opens the page in the browser." : ""))
-    .replaceAll("{preview}", () => (preview ? PREVIEW_BULLET : ""))
     .replaceAll("{drafts}", () => setting.drafts)
     .replaceAll("{store}", () => setting.store);
 }
@@ -106,8 +83,8 @@ export function describe(preview: boolean, setting: Setting): string {
 type Schema = JSONObject;
 type ObjectSchema = { type: "object"; properties: Record<string, Schema>; additionalProperties: false };
 
-export function schema(preview: boolean, compact = false): ObjectSchema {
-  const actions = ["publish", "quickstart", ...(preview ? ["preview"] : []), "read", "list", "open", "delete"];
+export function schema(compact = false): ObjectSchema {
+  const actions = ["publish", "quickstart", "read", "list", "open", "delete"];
   const listed = actions.map((action) => `'${action}'`).join(", ");
   const source: Schema = { type: "string", description: "An absolute path to the source file." };
   const fromSource: Schema = {
@@ -139,9 +116,7 @@ export function schema(preview: boolean, compact = false): ObjectSchema {
     file_path: {
       type: "string",
       description:
-        "publish" +
-        (preview ? " and preview" : "") +
-        ": the absolute path of the page file (.html, or .md only when a skill says so). A short, distinctive basename also serves as the title when nothing else gives one.",
+        "publish: the absolute path of the page file (.html, or .md only when a skill says so). A short, distinctive basename also serves as the title when nothing else gives one.",
     },
     description: { type: "string", description: "publish: one sentence explaining the page." },
     title: {
@@ -183,7 +158,7 @@ export function schema(preview: boolean, compact = false): ObjectSchema {
       type: "string",
       enum: ["document", "slides", "design", "other"],
       description:
-        "quickstart: what is being made: 'document' (text to read or edit together), 'slides' (a deck or one slide), 'design' (a visual design or prototype on a canvas), 'other' (anything else, or unsure). Only plain pages are made here.",
+        "quickstart: what is being made: 'document' (a report, memo or other text to read), 'slides' (a deck or one slide), 'design' (a visual design or prototype), 'other' (anything else, or unsure). Each is made as a plain page.",
     },
   };
   if (compact) {
@@ -210,43 +185,62 @@ export function schema(preview: boolean, compact = false): ObjectSchema {
 
 /** The tool for this client: a compact one for Codex, and for anything else the full text, split
  * between the description and the input schema's description. */
-export function tool(preview: boolean, client: string | undefined, setting: Setting): Tool {
-  if ((client ?? "").toLowerCase().includes("codex")) {
+export function tool(client: string | undefined, setting: Setting): Tool {
+  if (isCodex(client)) {
     const fill = (codex: string) =>
       codex
         .replaceAll("{opened}", () => (setting.opens ? " and opened in the browser" : ""))
         .replaceAll("{open_note}", () => (setting.opens ? " A first publish opens the page." : ""))
-        .replaceAll("{preview}", () => (preview ? CODEX_PREVIEW : ""))
         .replaceAll("{drafts}", () => setting.drafts)
         .replaceAll("{store}", () => setting.store);
     return {
       name: "Artifact",
       description: fill(CODEX_LEAD),
-      inputSchema: { description: fill(CODEX_REST), ...schema(preview, true) },
+      inputSchema: { description: fill(CODEX_REST), ...schema(true) },
     };
   }
-  const full = describe(preview, setting);
+  const full = describe(setting);
   const split = full.indexOf("\n\n");
   const lead = split === -1 ? full : full.slice(0, split);
   const rest = split === -1 ? "" : full.slice(split + 2);
   return {
     name: "Artifact",
     description: lead + FIRST_CALL + " The rest of this description is the `description` of the tool's input schema.",
-    inputSchema: { description: rest, ...schema(preview) },
+    inputSchema: { description: rest, ...schema() },
     _meta: { "anthropic/alwaysLoad": true },
   };
 }
 
+const isCodex = (client: string | undefined) => (client ?? "").toLowerCase().includes("codex");
+
+/** The ArtifactCheck tool's input schema. */
+export function checkSchema(): ObjectSchema {
+  return {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["preview"], description: "'preview'. Omitting it means 'preview'." },
+      file_path: { type: "string", description: "The absolute path of the .html page file." },
+    },
+    additionalProperties: false,
+  };
+}
+
+/** ArtifactCheck, listed only where preview can run. Like Claude Code's, it isn't loaded up front in
+ * Claude Code; Codex loads every tool of this server up front (omit_tools_from in the manifest). */
+export function checkTool(): Tool {
+  return { name: "ArtifactCheck", description: CHECK_DESCRIPTION, inputSchema: checkSchema() };
+}
+
 /** A short error for a parameter this tool doesn't take, or null. */
-export function unknownParameter(args: Record<string, unknown>, preview: boolean): string | null {
-  const known = Object.keys(schema(true).properties);
+export function unknownParameter(args: Record<string, unknown>, check = false): string | null {
+  const known = Object.keys((check ? checkSchema() : schema()).properties);
   for (const key of Object.keys(args)) {
     if (known.includes(key)) continue;
-    const why = CLAUDE_AI_ONLY[key] ?? (CLAUDE_AI_PARAMS.has(key) ? "it belongs to claude.ai's Artifact tool" : null);
-    const takes = Object.keys(schema(preview).properties)
-      .map((name) => `\`${name}\``)
-      .join(", ");
-    return `Unknown parameter \`${key}\`` + (why ? `: ${why}` : "") + `. This tool takes ${takes}. Nothing was done.`;
+    const instead = check ? undefined : INSTEAD[key];
+    const takes = known.map((name) => `\`${name}\``).join(", ");
+    return (
+      `Unknown parameter \`${key}\`` + (instead ? `: ${instead}` : "") + `. This tool takes ${takes}. Nothing was done.`
+    );
   }
   return null;
 }

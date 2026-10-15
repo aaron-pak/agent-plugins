@@ -62,8 +62,11 @@ class Client {
     this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method }) + "\n");
   }
 
-  async call(args: Record<string, unknown>): Promise<{ text: string; isError: boolean; images: number }> {
-    const reply = await this.request("tools/call", { name: "Artifact", arguments: args });
+  async call(
+    args: Record<string, unknown>,
+    name = "Artifact",
+  ): Promise<{ text: string; isError: boolean; images: number }> {
+    const reply = await this.request("tools/call", { name, arguments: args });
     const content = reply.result.content as { type: string; text?: string }[];
     const images = content.filter((part) => part.type === "image").length;
     return { text: content[0]!.text!, isError: reply.result.isError === true, images };
@@ -281,12 +284,14 @@ describe("Artifact tool", () => {
     const unknown = await server.call({ action: "list", pin: true });
     expect(unknown).toEqual({
       isError: true,
-      text: expect.stringContaining("Unknown parameter `pin`: it belongs to claude.ai's Artifact tool."),
+      text: expect.stringContaining("Unknown parameter `pin`. This tool takes"),
       images: 0,
     });
     expect((await server.call({ action: "preview", file_path: join(TEMP, "x.html") })).text).toBe(
       "Unknown action 'preview'.",
     );
+    const noCheck = await server.request("tools/call", { name: "ArtifactCheck", arguments: {} });
+    expect(noCheck.error?.code).toBe(-32602);
     const wrongTool = await server.request("tools/call", { name: "Other", arguments: {} });
     expect(wrongTool.error?.code).toBe(-32602);
     await server.close();
@@ -304,6 +309,9 @@ const canPreview = (() => {
   }
 })();
 
+const toolNames = (reply: { result?: { tools?: { name: string }[] } }) =>
+  (reply.result?.tools ?? []).map((tool) => tool.name);
+
 describe("preview", () => {
   // The answers sit in this user's drafts folder in the temp directory, one file per setup.
   const answers = (temp: string) => {
@@ -320,12 +328,12 @@ describe("preview", () => {
     const temp = mkdtempSync(join(TEMP, "check-"));
     const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
     const first = await legacy("claude-code", STORE, env);
-    const listed = (await first.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    const listed = toolNames(await first.request("tools/list"));
     await waitFor(() => answers(temp).length > 0);
     await first.close();
-    expect(answers(temp)).toEqual([{ ok: listed.includes("preview") }]);
+    expect(answers(temp)).toEqual([{ ok: listed.includes("ArtifactCheck") }]);
     const second = await legacy("claude-code", STORE, env);
-    expect((await second.request("tools/list")).result.tools[0].inputSchema.properties.action.enum).toEqual(listed);
+    expect(toolNames(await second.request("tools/list"))).toEqual(listed);
     await second.close();
   }, 60_000);
 
@@ -336,8 +344,8 @@ describe("preview", () => {
     writeFileSync(join(folder, "preview-0123456789abcdef.json"), JSON.stringify({ ok: !canPreview }));
     const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
     const server = await legacy("claude-code", STORE, env);
-    const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
-    expect(listed.includes("preview")).toBe(!canPreview);
+    const listed = toolNames(await server.request("tools/list"));
+    expect(listed.includes("ArtifactCheck")).toBe(!canPreview);
     await waitFor(() => answers(temp).length > 1);
     await server.close();
     expect(
@@ -347,8 +355,8 @@ describe("preview", () => {
     ).toEqual([false, true]);
     // The other setup's answer stays, and this setup now lists from its own.
     const again = await legacy("claude-code", STORE, env);
-    const relisted = (await again.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
-    expect(relisted.includes("preview")).toBe(canPreview);
+    const relisted = toolNames(await again.request("tools/list"));
+    expect(relisted.includes("ArtifactCheck")).toBe(canPreview);
     await again.close();
   }, 60_000);
 
@@ -360,8 +368,8 @@ describe("preview", () => {
     mkdirSync(folder, { mode: 0o700 });
     symlinkSync(elsewhere, join(folder, "preview-0123456789abcdef.json"));
     const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1", TMPDIR: temp });
-    const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
-    expect(listed.includes("preview")).toBe(canPreview);
+    const listed = toolNames(await server.request("tools/list"));
+    expect(listed.includes("ArtifactCheck")).toBe(canPreview);
     await server.close();
     expect(JSON.parse(readFileSync(elsewhere, "utf8"))).toEqual({ ok: !canPreview });
   }, 60_000);
@@ -371,10 +379,15 @@ describe("preview", () => {
     async () => {
       const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1" });
       const { tools } = (await server.request("tools/list")).result;
-      expect(tools[0].inputSchema.properties.action.enum).toContain("preview");
+      expect(tools[1].name).toBe("ArtifactCheck");
+      expect(tools[1]._meta).toBeUndefined();
+      expect(tools[0].inputSchema.properties.action.enum).not.toContain("preview");
       const page = join(TEMP, "look.html");
       writeFileSync(page, "<title>Look</title>\n<p>Hello</p>\n");
-      const result = await server.call({ action: "preview", file_path: page });
+      expect((await server.call({ action: "preview", file_path: page })).text).toStartWith(
+        "preview is an action of the ArtifactCheck tool",
+      );
+      const result = await server.call({ action: "preview", file_path: page }, "ArtifactCheck");
       expect(result.text).toStartWith("Previewed look.html");
       expect(result.isError).toBe(false);
       expect(result.images).toBe(4);

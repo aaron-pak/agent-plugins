@@ -229,6 +229,27 @@ function withDescription(skill: string, description: string): string {
 
 const body = (skill: string) => skill.replace(/^---\n[\s\S]*?\n---\n/, "").trimStart();
 
+/** Sentences each verbatim copy leaves out because they name what only claude.ai has (see UPSTREAM.md). */
+const CLAUDE_AI_ONLY: Record<string, string[]> = {
+  "skills/artifact-diagramming/SKILL.md": [
+    " An artifact made from an Artifact type draws its diagrams the way the type's instructions, and the reference " +
+      "pages they name, say to; these mechanics apply there only where those say nothing about diagrams.",
+  ],
+  "skills/dataviz/SKILL.md": [
+    " When the destination is a first-party document connector (host-designated, never self-described) that " +
+      "renders live charts, hand it the rows (inline, or as an uploaded data file the chart cites) rather than a " +
+      "rendered PNG/SVG \u2014 a picture of a chart loses hover, data inspection and per-value comments.",
+  ],
+};
+
+function withoutClaudeAiOnly(path: string, text: string): string {
+  for (const sentence of CLAUDE_AI_ONLY[path] ?? []) {
+    if (!text.includes(sentence)) console.log(`  note      ${path} no longer has: ${sentence.trim().slice(0, 60)}…`);
+    text = text.replace(sentence, "");
+  }
+  return text;
+}
+
 /** Each verbatim copy's path in the plugin, and how to make it from a release's bundle. */
 const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => string }[] = [
   {
@@ -386,7 +407,7 @@ function main(): number {
   for (const { path, from } of VERBATIM) {
     const file = join(plugin, path);
     const current = existsSync(file) ? readFileSync(file, "utf8") : "";
-    const expected = from(after, current);
+    const expected = withoutClaudeAiOnly(path, from(after, current));
     if (current === expected) {
       console.log(`  same      ${path}`);
       continue;

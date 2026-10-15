@@ -4,13 +4,11 @@ description: Design guidance and fundamentals for Artifacts - HTML pages such as
 ---
 
 
-## Outside claude.ai
+## The tools here
 
-This is Claude Code's artifact-design skill. Read it with these substitutions:
-
-- **The Artifact tool** is the `Artifact` tool of this plugin's `artifact` MCP server (its full name carries the server prefix, such as `mcp__plugin_artifact-design_artifact__Artifact` in Claude Code). It takes the same `file_path`, `description`, `title`, `icon` and `files`, publishes to a folder on this machine instead of claude.ai, and returns the page's link; its `preview` action, offered where Playwright is installed, is the preview described below.
-- **Claude** means you, and **CLAUDE.md** means the project's agent instructions file (CLAUDE.md or AGENTS.md).
-- Runtime capabilities, the `db` store, Artifact types, and live updates to open viewers exist only on claude.ai; the steps that need them are left out.
+- **The Artifact tool** is the `Artifact` tool of this plugin's `artifact` MCP server (its full name carries the server prefix, such as `mcp__plugin_artifact-design_artifact__Artifact` in Claude Code). It takes `file_path`, `description`, `title`, `icon` and `files`, publishes to a folder on this machine, and returns the page's `file://` link.
+- **ArtifactCheck** is the same server's `ArtifactCheck` tool, offered where Playwright is installed. Its `preview` is the preview described below.
+- **Claude** means you.
 
 ## Page contract — read before your first publish
 
@@ -59,7 +57,7 @@ Fundamentals below apply to everything. Follow the editorial process after them 
 
 ## Fundamentals for every artifact
 
-**Respect what already exists.** Look for an existing design system first: CLAUDE.md, a tokens or theme file, existing component styles. When one exists, apply it; everything below fills gaps and never overrides. Precedence is always the user's own words, then the project's existing system, then your choices.
+**Respect what already exists.** Look for an existing design system first: CLAUDE.md or AGENTS.md, a tokens or theme file, existing component styles. When one exists, apply it; everything below fills gaps and never overrides. Precedence is always the user's own words, then the project's existing system, then your choices.
 
 **Ground it in the subject.** If the subject isn't already clear, define it: one concrete subject, its audience, and the page's single job. Distinctive choices come from the subject's own world: its materials, instruments, and vernacular. Whatever the treatment, include at least one detail only this subject would have (its real units and scales, its document conventions, its terms of art) as content rather than ornament; it costs nothing even on a plain page. Use real content throughout and never lorem ipsum.
 
@@ -106,7 +104,7 @@ Before writing the page, settle a short design plan (a compact token system) and
 
 Then build the rest of the page from those tokens, deriving every color and type decision from them. The plan is working material, not part of the answer: unless the user asks about the design, one plain sentence on the direction is the most to say about it, with no hex values or font names.
 
-**Write, check once, publish.** Before publishing you may look at the rendered page once, where this session offers a way: one preview with the Artifact tool's `action: "preview"`, or else one screenshot of the local file; if the session offers none of these, skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing it covers needs a check of your own. The look is optional: if you take it, make one pass of edits for what it shows, without a second look; then publish. For a page that charts real numbers, take the look rather than skip it, and spend it on the chart. A page whose point is logic (dates, money, scoring, parsing) may get one more check before publishing: one run of a pure function on a sample input, or, where no preview ran, one syntax check of its script; nothing more. None of this becomes a loop, because the user is waiting for a link: no second screenshot, no scripts that probe the DOM, no re-running a check that passed. Review happens on the live page, and further polish is for the user to request; if the user reports something visibly broken (a clipped column, unreadable text, a control that does nothing), fix that, take at most one more look if the session offers a way, and republish once.
+**Write, check once, publish.** Before publishing you may look at the rendered page once, where this session offers a way: one `ArtifactCheck` preview, or else one screenshot of the local file; if the session offers none of these, skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing it covers needs a check of your own. The look is optional: if you take it, make one pass of edits for what it shows, without a second look; then publish. For a page that charts real numbers, take the look rather than skip it, and spend it on the chart. A page whose point is logic (dates, money, scoring, parsing) may get one more check before publishing: one run of a pure function on a sample input, or, where no preview ran, one syntax check of its script; nothing more. None of this becomes a loop, because the user is waiting for a link: no second screenshot, no scripts that probe the DOM, no re-running a check that passed. Review happens on the live page, and further polish is for the user to request; if the user reports something visibly broken (a clipped column, unreadable text, a control that does nothing), fix that, take at most one more look if the session offers a way, and republish once.
 
 ## When the request is editorial
 
