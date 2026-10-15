@@ -25471,7 +25471,7 @@ function actQuickstart(args) {
 
 ` + onlyPlain + "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own " + "text, so do not load that skill as well. Write the page to a file and publish it in the same " + "message: the two calls run in order. Unless the person named a location, the file goes in " + `${DRAFTS} (or in the scratchpad directory, when the system prompt lists one), not in the project.
 
-` + guidance + `
+` + guidance + "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill before writing it." + `
 
 
 [Design systems not listed: this account lists no Design System type, so there are none to choose from.]`;
