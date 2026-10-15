@@ -3,6 +3,7 @@
 // plugins/artifact-design/src/server.ts
 import { execFile } from "node:child_process";
 import { existsSync as existsSync2, mkdirSync as mkdirSync3, mkdtempSync as mkdtempSync2, readFileSync as readFileSync3, rmSync as rmSync2, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
 import { basename as basename3, dirname as dirname3, extname, join as join5 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
@@ -25379,6 +25380,31 @@ function runScript(args, timeout) {
 }
 var lastLine = (text) => text.trim().split(/\r?\n/).at(-1) ?? "";
 var PREVIEW = { ok: false, reason: "the preview check has not finished", checked: false };
+var PREVIEW_CACHE = join5(tmpdir2(), `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
+var previewKey = (() => {
+  try {
+    const script = statSync3(join5(SCRIPTS, "preview.mjs"));
+    return JSON.stringify([
+      process.execPath,
+      process.env.PATH ?? "",
+      process.env.PLAYWRIGHT_BROWSERS_PATH ?? "",
+      script.size,
+      script.mtimeMs
+    ]);
+  } catch {
+    return null;
+  }
+})();
+var CACHED = (() => {
+  if (!PREVIEW_SWITCH || previewKey === null)
+    return null;
+  try {
+    const cached = JSON.parse(readFileSync3(PREVIEW_CACHE, "utf8"));
+    return cached.key === previewKey && typeof cached.ok === "boolean" ? { ok: cached.ok } : null;
+  } catch {
+    return null;
+  }
+})();
 var previewCheck = (async () => {
   try {
     if (!PREVIEW_SWITCH) {
@@ -25388,18 +25414,26 @@ var previewCheck = (async () => {
     const run = await runScript([join5(SCRIPTS, "preview.mjs"), "--check"], 30000);
     const found = JSON.parse(lastLine(run.stdout));
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
+    if (previewKey !== null && CACHED?.ok !== PREVIEW.ok) {
+      try {
+        writeFileSync2(PREVIEW_CACHE, JSON.stringify({ key: previewKey, ok: PREVIEW.ok }), { mode: 384 });
+      } catch {}
+    }
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${error.message})` });
   } finally {
     PREVIEW.checked = true;
   }
 })();
-async function previewOffered() {
+async function previewReady() {
   const wait = Math.max(0, STARTED + PREVIEW_WAIT - Date.now());
   let timer;
   await Promise.race([previewCheck, new Promise((done) => timer = setTimeout(done, wait))]);
   clearTimeout(timer);
   return PREVIEW.checked && PREVIEW.ok;
+}
+async function previewOffered() {
+  return CACHED ? CACHED.ok : previewReady();
 }
 var SESSION_SOURCES = new Map;
 var ICON_SVG = "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' " + "fill='%23141413'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='17' text-anchor='middle' " + "fill='%23faf9f5'%3E{letter}%3C/text%3E%3C/svg%3E";
@@ -25621,7 +25655,7 @@ async function actPreview(args) {
   if (extra.length) {
     throw new Error(`preview takes only file_path — remove ${extra.join(", ")}.` + (extra.includes("files") ? " Preview renders the single page file; files published beside it are not loaded locally." : ""));
   }
-  if (!await previewOffered())
+  if (!await previewReady())
     throw new Error(`preview isn't available here (${PREVIEW.reason}). Skip the look and publish.`);
   if (!args.file_path)
     throw new Error("preview needs `file_path`: the local .html page to render.");

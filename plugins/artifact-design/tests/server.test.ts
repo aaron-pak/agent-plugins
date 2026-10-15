@@ -4,7 +4,16 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -242,6 +251,20 @@ const canPreview = (() => {
 })();
 
 describe("preview", () => {
+  test("lists it from the last check's answer, kept in the temp folder", async () => {
+    const temp = mkdtempSync(join(TEMP, "check-"));
+    const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
+    const first = await legacy("claude-code", STORE, env);
+    const listed = (await first.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    await first.close();
+    const cache = readdirSync(temp).find((name) => name.startsWith("artifact-design-preview-"));
+    expect(cache).toBeDefined();
+    expect(JSON.parse(readFileSync(join(temp, cache!), "utf8")).ok).toBe(listed.includes("preview"));
+    const second = await legacy("claude-code", STORE, env);
+    expect((await second.request("tools/list")).result.tools[0].inputSchema.properties.action.enum).toEqual(listed);
+    await second.close();
+  }, 60_000);
+
   test.skipIf(!canPreview)(
     "renders a page as publish wraps it and returns its captures",
     async () => {

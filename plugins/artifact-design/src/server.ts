@@ -26,6 +26,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -122,6 +123,34 @@ const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
 
 const PREVIEW = { ok: false, reason: "the preview check has not finished", checked: false };
 
+// The last check's answer, kept in the temp folder so that tools/list can answer at once instead
+// of making Claude Code start its first turn without the tool. It holds while the runtime, the
+// search path, Playwright's browser folder and preview.mjs stay the same.
+const PREVIEW_CACHE = join(tmpdir(), `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
+const previewKey = (() => {
+  try {
+    const script = statSync(join(SCRIPTS, "preview.mjs"));
+    return JSON.stringify([
+      process.execPath,
+      process.env.PATH ?? "",
+      process.env.PLAYWRIGHT_BROWSERS_PATH ?? "",
+      script.size,
+      script.mtimeMs,
+    ]);
+  } catch {
+    return null;
+  }
+})();
+const CACHED = ((): { ok: boolean } | null => {
+  if (!PREVIEW_SWITCH || previewKey === null) return null;
+  try {
+    const cached = JSON.parse(readFileSync(PREVIEW_CACHE, "utf8")) as { key?: unknown; ok?: unknown };
+    return cached.key === previewKey && typeof cached.ok === "boolean" ? { ok: cached.ok } : null;
+  } catch {
+    return null;
+  }
+})();
+
 /** Whether preview can run here: Playwright and a Chromium (preview.mjs --check). */
 const previewCheck = (async () => {
   try {
@@ -132,6 +161,13 @@ const previewCheck = (async () => {
     const run = await runScript([join(SCRIPTS, "preview.mjs"), "--check"], 30_000);
     const found = JSON.parse(lastLine(run.stdout)) as { ok?: unknown; reason?: unknown };
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
+    if (previewKey !== null && CACHED?.ok !== PREVIEW.ok) {
+      try {
+        writeFileSync(PREVIEW_CACHE, JSON.stringify({ key: previewKey, ok: PREVIEW.ok }), { mode: 0o600 });
+      } catch {
+        // the next start checks again
+      }
+    }
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${(error as Error).message})` });
   } finally {
@@ -139,12 +175,20 @@ const previewCheck = (async () => {
   }
 })();
 
-async function previewOffered(): Promise<boolean> {
+/** Whether this start's own check found preview can run, waiting for it within PREVIEW_WAIT. */
+async function previewReady(): Promise<boolean> {
   const wait = Math.max(0, STARTED + PREVIEW_WAIT - Date.now());
   let timer: NodeJS.Timeout | undefined;
   await Promise.race([previewCheck, new Promise((done) => (timer = setTimeout(done, wait)))]);
   clearTimeout(timer);
   return PREVIEW.checked && PREVIEW.ok;
+}
+
+/** Whether the tool lists preview: the last check's answer when there is one, so the list comes
+ * back at once and stays the same all session, and otherwise this start's own. A call to preview
+ * always waits for this start's. */
+async function previewOffered(): Promise<boolean> {
+  return CACHED ? CACHED.ok : previewReady();
 }
 
 // ---------------------------------------------------------------- publishing
@@ -420,7 +464,7 @@ async function actPreview(args: Args): Promise<Result> {
           : ""),
     );
   }
-  if (!(await previewOffered()))
+  if (!(await previewReady()))
     throw new Error(`preview isn't available here (${PREVIEW.reason}). Skip the look and publish.`);
   if (!args.file_path) throw new Error("preview needs `file_path`: the local .html page to render.");
   const source = absolute(args.file_path, "file_path");
