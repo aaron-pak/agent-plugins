@@ -171,8 +171,8 @@ describe("tool", () => {
     const texts = [tool("claude-code", setting), tool("codex-mcp-client", setting), checkTool()].map((listed) =>
       JSON.stringify(listed),
     );
-    const skills = ["artifact-design", "artifact-diagramming", "dataviz"].map((skill) =>
-      readFileSync(join(import.meta.dir, "..", "skills", skill, "SKILL.md"), "utf8"),
+    const skills = ["skills/artifact-design", "skills/artifact-diagramming", "codex-skills/dataviz"].map((skill) =>
+      readFileSync(join(import.meta.dir, "..", skill, "SKILL.md"), "utf8"),
     );
     for (const text of [...texts, INSTRUCTIONS, ...skills]) expect(text).not.toMatch(NATIVE_ONLY);
   });

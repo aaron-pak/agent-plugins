@@ -3,7 +3,7 @@
 The three skills are Anthropic's built-in Claude Code skills, captured from Claude Code 2.1.300 (2026-10-15), as are `scripts/markdown-template.html`, `scripts/hljs-runtime.html` and `scripts/hljs-languages.json`. This note lives outside the skills so that the model reads only Claude Code's text.
 
 - `artifact-diagramming` is verbatim, less one sentence on how an artifact made from an Artifact type draws diagrams.
-- `dataviz` is verbatim, with its `references/` and `scripts/` unchanged, less one sentence of its description on handing chart rows to a first-party document connector.
+- `dataviz` is verbatim, with its `references/` and `scripts/` unchanged, in `codex-skills/`, which only Codex's manifest names: Claude Code lists its built-in `dataviz` in every session, so a second copy would only repeat it. It leaves out one sentence of its description on handing chart rows to a first-party document connector.
 
   Artifact types and that connector exist only on claude.ai, and the skills here name nothing the plugin doesn't have. `bun run drift` leaves the two sentences out when it compares or refreshes the copies, and says so if Claude Code drops one.
 - `artifact-design` keeps Claude Code's wording. The page contract and guidance are also what the Artifact tool's `quickstart` returns for a plain page, and the `artifact` server reads them from this `SKILL.md`. The only edits:

@@ -235,7 +235,7 @@ const CLAUDE_AI_ONLY: Record<string, string[]> = {
     " An artifact made from an Artifact type draws its diagrams the way the type's instructions, and the reference " +
       "pages they name, say to; these mechanics apply there only where those say nothing about diagrams.",
   ],
-  "skills/dataviz/SKILL.md": [
+  "codex-skills/dataviz/SKILL.md": [
     " When the destination is a first-party document connector (host-designated, never self-described) that " +
       "renders live charts, hand it the rows (inline, or as an uploaded data file the chart cites) rather than a " +
       "rendered PNG/SVG \u2014 a picture of a chart loses hover, data inspection and per-value comments.",
@@ -263,7 +263,7 @@ const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => strin
   },
   {
     // Claude Code lists dataviz by its own description and loads the body of its SKILL.md.
-    path: "skills/dataviz/SKILL.md",
+    path: "codex-skills/dataviz/SKILL.md",
     from: (bundle, current) => {
       const description = cook(literalWith(bundle, "brand-neutral placeholder palette").literal);
       const skill = only(
@@ -285,7 +285,7 @@ const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => strin
     "references/palette.md",
     "scripts/validate_palette.js",
     "scripts/validate_palette.py",
-  ].map((file) => ({ path: `skills/dataviz/${file}`, from: (bundle: Bundle) => skillFile(bundle, file) })),
+  ].map((file) => ({ path: `codex-skills/dataviz/${file}`, from: (bundle: Bundle) => skillFile(bundle, file) })),
   {
     path: "skills/artifact-design/scripts/markdown-template.html",
     from: (bundle) => only(bundle, "Markdown template", (_name, text) => text.startsWith("<!--\nname: plan\n"))[1],

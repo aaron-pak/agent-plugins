@@ -45,13 +45,13 @@ def frontmatter(path):
     return None
 
 
-def check_skills(plugin_dir, where):
-    skills_dir = plugin_dir / "skills"
+def check_skills(plugin_dir, where, folder="skills"):
+    skills_dir = plugin_dir / folder
     skill_dirs = sorted(p for p in skills_dir.iterdir() if p.is_dir()) if skills_dir.is_dir() else []
     if skills_dir.is_dir() and not skill_dirs:
-        error(where, "skills/ has no skill directories")
+        error(where, f"{folder}/ has no skill directories")
     for skill_dir in skill_dirs:
-        skill_where = f"{where}/skills/{skill_dir.name}"
+        skill_where = f"{where}/{folder}/{skill_dir.name}"
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.is_file():
             error(skill_where, "missing SKILL.md")
@@ -142,8 +142,17 @@ def check_plugin(entry):
         manifest_path = Path(".codex-plugin") / "plugin.json"
         manifest = load_json(plugin_dir / manifest_path)
         if manifest is not None:
-            if manifest.get("skills") not in (None, "./skills/", "./skills"):
-                error(f"{where}/{manifest_path}", "skills should be ./skills/")
+            # Codex reads skills/ and, for skills Claude Code already has built in, codex-skills/.
+            skills = manifest.get("skills")
+            skills = [skills] if isinstance(skills, str) else skills
+            if skills is not None and not (
+                isinstance(skills, list) and skills and skills[0] in ("./skills/", "./skills") and set(skills[1:]) <= {"./codex-skills/"}
+            ):
+                error(f"{where}/{manifest_path}", "skills should be ./skills/, then optionally ./codex-skills/")
+            elif skills and "./codex-skills/" in skills:
+                check_skills(plugin_dir, where, "codex-skills")
+            elif (plugin_dir / "codex-skills").exists():
+                error(f"{where}/{manifest_path}", "codex-skills/ exists but skills doesn't list ./codex-skills/")
             servers = manifest.get("mcpServers")
             if servers is not None and not isinstance(servers, dict):
                 error(f"{where}/{manifest_path}", "mcpServers should be an object of servers")
