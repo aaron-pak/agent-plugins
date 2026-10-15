@@ -423,7 +423,7 @@ describe("preview", () => {
       const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1" });
       const { tools } = (await server.request("tools/list")).result;
       expect(tools[1].name).toBe("ArtifactCheck");
-      expect(tools[1]._meta).toBeUndefined();
+      expect(tools[1]._meta).toEqual({ "anthropic/alwaysLoad": true });
       expect(tools[0].inputSchema.properties.action.enum).not.toContain("preview");
       const page = join(TEMP, "look.html");
       writeFileSync(page, "<title>Look</title>\n<p>Hello</p>\n");

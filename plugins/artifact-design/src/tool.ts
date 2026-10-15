@@ -248,10 +248,17 @@ export function checkSchema(): ObjectSchema {
   };
 }
 
-/** ArtifactCheck, listed only where preview can run. Like Claude Code's, it isn't loaded up front in
- * Claude Code; Codex loads every tool of this server up front (omit_tools_from in the manifest). */
+/** ArtifactCheck, listed only where preview can run. Claude Code defers its own ArtifactCheck, but
+ * its released build has no local preview to offer; deferred, this one went unused even where the
+ * skill says to take the look (a dashboard: 0 of 4 runs, against 3 of 3 up front), so it asks to load
+ * up front. Codex loads every tool of this server up front (omit_tools_from in the manifest). */
 export function checkTool(): Tool {
-  return { name: "ArtifactCheck", description: CHECK_DESCRIPTION, inputSchema: checkSchema() };
+  return {
+    name: "ArtifactCheck",
+    description: CHECK_DESCRIPTION,
+    inputSchema: checkSchema(),
+    _meta: { "anthropic/alwaysLoad": true },
+  };
 }
 
 /** A short error for a parameter this tool doesn't take, or null. */

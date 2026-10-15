@@ -25435,7 +25435,12 @@ function checkSchema() {
   };
 }
 function checkTool() {
-  return { name: "ArtifactCheck", description: CHECK_DESCRIPTION, inputSchema: checkSchema() };
+  return {
+    name: "ArtifactCheck",
+    description: CHECK_DESCRIPTION,
+    inputSchema: checkSchema(),
+    _meta: { "anthropic/alwaysLoad": true }
+  };
 }
 function unknownParameter(args, check = false) {
   const known = Object.keys((check ? checkSchema() : schema()).properties);
