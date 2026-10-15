@@ -3,8 +3,18 @@
 // on every request), with a publish, read, list and delete round trip in a temporary store.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -17,9 +27,9 @@ afterAll(() => rmSync(TEMP, { recursive: true, force: true }));
 
 type Reply = { id: number; result?: any; error?: { code: number; message: string } };
 
-const spawnServer = (store: string) =>
+const spawnServer = (store: string, env: Record<string, string> = {}) =>
   spawn("node", [SERVER], {
-    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP },
+    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP, ...env },
     stdio: ["pipe", "pipe", "inherit"],
   });
 
@@ -31,8 +41,9 @@ class Client {
   constructor(
     private meta?: Record<string, unknown>,
     store = STORE,
+    env: Record<string, string> = {},
   ) {
-    this.child = spawnServer(store);
+    this.child = spawnServer(store, env);
     createInterface({ input: this.child.stdout }).on("line", (line) => {
       const reply = JSON.parse(line) as Reply;
       this.waiting.get(reply.id)?.(reply);
@@ -51,9 +62,11 @@ class Client {
     this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method }) + "\n");
   }
 
-  async call(args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+  async call(args: Record<string, unknown>): Promise<{ text: string; isError: boolean; images: number }> {
     const reply = await this.request("tools/call", { name: "Artifact", arguments: args });
-    return { text: reply.result.content[0].text, isError: reply.result.isError === true };
+    const content = reply.result.content as { type: string; text?: string }[];
+    const images = content.filter((part) => part.type === "image").length;
+    return { text: content[0]!.text!, isError: reply.result.isError === true, images };
   }
 
   close(): Promise<unknown> {
@@ -62,8 +75,8 @@ class Client {
   }
 }
 
-async function legacy(client: string, store = STORE): Promise<Client> {
-  const server = new Client(undefined, store);
+async function legacy(client: string, store = STORE, env: Record<string, string> = {}): Promise<Client> {
+  const server = new Client(undefined, store, env);
   const reply = await server.request("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
@@ -100,6 +113,16 @@ describe("initialize era", () => {
     expect(tool._meta).toBeUndefined();
     await server.close();
   });
+
+  test("keeps the compact tool within Codex's limits with long paths, preview and opening", async () => {
+    const long = join(TEMP, "Library", "Application Support", "Some Long Folder Name For Pages", "artifacts");
+    const temp = mkdtempSync(join(TEMP, "private-var-folders-xx-yyyyyyyyyyyyyyyyyyyy-T-"));
+    const server = await legacy("codex-mcp-client", long, { ARTIFACT_OPEN: "1", ARTIFACT_PREVIEW: "1", TMPDIR: temp });
+    const [tool] = (await server.request("tools/list")).result.tools;
+    expect(Buffer.byteLength(tool.description, "utf8")).toBeLessThanOrEqual(1000);
+    expect(Buffer.byteLength(JSON.stringify(tool.inputSchema), "utf8")).toBeLessThanOrEqual(5000);
+    await server.close();
+  }, 60_000);
 });
 
 describe("2026-07-28 era", () => {
@@ -145,6 +168,81 @@ describe("Artifact tool", () => {
     await server.close();
   });
 
+  test("publishes edits and saves them to the file", async () => {
+    const server = await legacy("claude-code");
+    const source = join(TEMP, "notes.html");
+    writeFileSync(source, "<title>Team Notes</title>\n<h1>Draft</h1>\n");
+    expect((await server.call({ file_path: source, description: "Notes.", icon: "note" })).isError).toBe(false);
+
+    const edited = await server.call({ file_path: source, edits: [{ old_str: "Draft", new_str: "Final" }] });
+    expect(edited.isError).toBe(false);
+    expect(edited.text).toContain("(Version 2)");
+    expect(edited.text).toContain("The edit was written to the file after it was published");
+    expect(readFileSync(source, "utf8")).toBe("<title>Team Notes</title>\n<h1>Final</h1>\n");
+    expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
+
+    const missed = await server.call({ file_path: source, edits: [{ old_str: "Draft", new_str: "Again" }] });
+    expect(missed).toEqual({
+      isError: true,
+      text: expect.stringMatching(
+        /^No edits were applied and nothing was published: edits\[0\] old_str does not occur/,
+      ),
+      images: 0,
+    });
+    expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
+    expect(existsSync(join(STORE, "team-notes", ".versions", "3.html"))).toBe(false);
+
+    const stored = join(STORE, "team-notes", "index.html");
+    const inStore = await server.call({ file_path: stored, edits: [{ old_str: "Final", new_str: "Twice" }] });
+    expect(inStore.text).toStartWith("No edits were applied and nothing was published: ");
+    expect(inStore.text).toContain("inside the published artifact team-notes");
+    expect(readFileSync(stored, "utf8")).toContain("<h1>Final</h1>");
+
+    const latin = join(TEMP, "latin.html");
+    writeFileSync(latin, Buffer.from("<title>Caf\xe9</title>\n", "latin1"));
+    const notUtf8 = await server.call({ file_path: latin, edits: [{ old_str: "Caf", new_str: "Cafe" }] });
+    expect(notUtf8.text).toStartWith("No edits were applied: the source file is not valid UTF-8");
+
+    const withFiles = await server.call({ file_path: source, files: [], edits: [{ old_str: "Final", new_str: "X" }] });
+    expect(withFiles.text).toStartWith("`edits` changes only the file at `file_path`");
+    expect((await server.call({ action: "read", url: "team-notes", edits: [] })).text).toBe(
+      '`edits` applies only to a publish of `file_path` \u2014 remove it from this "read" call.',
+    );
+    await server.close();
+  });
+
+  test("names and describes artifacts as Claude Code does", async () => {
+    const server = await legacy("claude-code");
+    const md = join(TEMP, "plan-notes.md");
+    writeFileSync(md, "# Launch plan\n\nSteps.\n");
+    await server.call({ file_path: md, title: "Custom Name" });
+    const html = join(TEMP, "board.html");
+    writeFileSync(html, "<title>Ops Board</title>\n<h1>Weekly status for the ops team</h1>\n");
+    const named = await server.call({ file_path: html, title: "Other Name" });
+    expect(named.text).toContain(
+      'The document\'s own <title> ("Ops Board") names this artifact; the `title` parameter ("Other Name") was not applied',
+    );
+    expect(named.text).not.toContain("No `description`");
+    const listed = (await server.call({ action: "list" })).text;
+    expect(listed).toContain("plan-notes.md");
+    expect(listed).not.toContain("Custom Name");
+    expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
+      '<meta name="description" content="Weekly status for the ops team">',
+    );
+    writeFileSync(html, "<title>Ops Board</title>\n<h1>Final status for the ops team</h1>\n");
+    await server.call({ file_path: html });
+    expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
+      '<meta name="description" content="Final status for the ops team">',
+    );
+    await server.call({ file_path: html, description: "Chosen words." });
+    writeFileSync(html, "<title>Ops Board</title>\n<h1>Another heading entirely</h1>\n");
+    await server.call({ file_path: html });
+    expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
+      '<meta name="description" content="Chosen words.">',
+    );
+    await server.close();
+  });
+
   test("renders a Markdown file into the document template, with highlight.js for code", async () => {
     const server = await legacy("claude-code");
     const source = join(TEMP, "notes.md");
@@ -184,6 +282,7 @@ describe("Artifact tool", () => {
     expect(unknown).toEqual({
       isError: true,
       text: expect.stringContaining("Unknown parameter `pin`: it belongs to claude.ai's Artifact tool."),
+      images: 0,
     });
     expect((await server.call({ action: "preview", file_path: join(TEMP, "x.html") })).text).toBe(
       "Unknown action 'preview'.",
@@ -192,4 +291,96 @@ describe("Artifact tool", () => {
     expect(wrongTool.error?.code).toBe(-32602);
     await server.close();
   });
+});
+
+// Preview needs Playwright and a Chromium, which CI doesn't install; where they are found, the
+// server renders a page through preview.mjs.
+const PREVIEW_CHECK = join(import.meta.dir, "..", "skills", "artifact-design", "scripts", "preview.mjs");
+const canPreview = (() => {
+  try {
+    return JSON.parse(spawnSync("node", [PREVIEW_CHECK, "--check"], { encoding: "utf8" }).stdout).ok === true;
+  } catch {
+    return false;
+  }
+})();
+
+describe("preview", () => {
+  // The answers sit in this user's drafts folder in the temp directory, one file per setup.
+  const answers = (temp: string) => {
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    return readdirSync(folder)
+      .filter((name) => /^preview-[0-9a-f]{16}\.json$/.test(name))
+      .map((name) => JSON.parse(readFileSync(join(folder, name), "utf8")) as { ok: boolean });
+  };
+  const waitFor = async (done: () => boolean) => {
+    for (let tries = 0; !done() && tries < 300; tries++) await Bun.sleep(100);
+  };
+
+  test("lists it from the last check's answer, kept in the user's drafts folder", async () => {
+    const temp = mkdtempSync(join(TEMP, "check-"));
+    const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
+    const first = await legacy("claude-code", STORE, env);
+    const listed = (await first.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    await waitFor(() => answers(temp).length > 0);
+    await first.close();
+    expect(answers(temp)).toEqual([{ ok: listed.includes("preview") }]);
+    const second = await legacy("claude-code", STORE, env);
+    expect((await second.request("tools/list")).result.tools[0].inputSchema.properties.action.enum).toEqual(listed);
+    await second.close();
+  }, 60_000);
+
+  test("lists it from another setup's answer until this setup has its own", async () => {
+    const temp = mkdtempSync(join(TEMP, "stale-"));
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    mkdirSync(folder, { mode: 0o700 });
+    writeFileSync(join(folder, "preview-0123456789abcdef.json"), JSON.stringify({ ok: !canPreview }));
+    const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
+    const server = await legacy("claude-code", STORE, env);
+    const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    expect(listed.includes("preview")).toBe(!canPreview);
+    await waitFor(() => answers(temp).length > 1);
+    await server.close();
+    expect(
+      answers(temp)
+        .map((answer) => answer.ok)
+        .sort(),
+    ).toEqual([false, true]);
+    // The other setup's answer stays, and this setup now lists from its own.
+    const again = await legacy("claude-code", STORE, env);
+    const relisted = (await again.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    expect(relisted.includes("preview")).toBe(canPreview);
+    await again.close();
+  }, 60_000);
+
+  test("ignores an answer that isn't a file of this user's own folder", async () => {
+    const temp = mkdtempSync(join(TEMP, "planted-"));
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    const elsewhere = join(temp, "elsewhere.json");
+    writeFileSync(elsewhere, JSON.stringify({ ok: !canPreview }));
+    mkdirSync(folder, { mode: 0o700 });
+    symlinkSync(elsewhere, join(folder, "preview-0123456789abcdef.json"));
+    const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1", TMPDIR: temp });
+    const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    expect(listed.includes("preview")).toBe(canPreview);
+    await server.close();
+    expect(JSON.parse(readFileSync(elsewhere, "utf8"))).toEqual({ ok: !canPreview });
+  }, 60_000);
+
+  test.skipIf(!canPreview)(
+    "renders a page as publish wraps it and returns its captures",
+    async () => {
+      const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1" });
+      const { tools } = (await server.request("tools/list")).result;
+      expect(tools[0].inputSchema.properties.action.enum).toContain("preview");
+      const page = join(TEMP, "look.html");
+      writeFileSync(page, "<title>Look</title>\n<p>Hello</p>\n");
+      const result = await server.call({ action: "preview", file_path: page });
+      expect(result.text).toStartWith("Previewed look.html");
+      expect(result.isError).toBe(false);
+      expect(result.images).toBe(4);
+      expect(readFileSync(page, "utf8")).toBe("<title>Look</title>\n<p>Hello</p>\n");
+      await server.close();
+    },
+    120_000,
+  );
 });

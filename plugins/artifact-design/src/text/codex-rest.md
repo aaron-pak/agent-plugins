@@ -7,5 +7,5 @@ Calls (action; publish when omitted):
 - list: the artifacts on this machine, with links and source files.
 - open: url; opens it in the browser.
 - delete: url; only when the person asks.
-To update, publish the same file path again in this session; pass url (from list) to update an artifact from another file or session, after reading it.
+To update, publish the same file path again in this session, with edits for a small change; pass url (from list) to update an artifact from another file or session, after reading it.
 Never publish a page that impersonates a real person or organization, fabricated records presented as genuine, or flows that collect credentials or payment details under false pretenses.

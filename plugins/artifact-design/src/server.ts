@@ -9,7 +9,8 @@
 //   folder (ARTIFACTS_DIR, default ~/artifacts), one folder per artifact. Publishing the same
 //   file again in the same session (this server process) updates the same artifact, as the
 //   Artifact tool keeps its file-to-artifact map per session; `url` updates any artifact.
-//   A Markdown file is rendered into the document template Claude Code uses for one.
+//   A Markdown file is rendered into the document template Claude Code uses for one. `edits`
+//   changes the file on the way, as the Artifact tool's does (src/edits.ts).
 // - preview: renders the page at 1280 and 390px wide in light and dark, as Claude Code's
 //   ArtifactCheck does, and returns the captures and what breaks (scripts/preview.mjs). It is
 //   listed only when Playwright and a Chromium are found at startup, and ARTIFACT_PREVIEW=0
@@ -24,7 +25,22 @@
 // scripts/build.ts bundles it into mcp/server.mjs, which runs on Node.
 
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  ftruncateSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,12 +65,15 @@ import {
   markdownPage,
   openInBrowser,
   opener,
+  pageDescription,
   pageTitle,
   readSource,
   unwrap,
   wrap,
 } from "./publish.ts";
-import { makeDrafts } from "./drafts.ts";
+import { DRAFTS_ROOT, draftsRootIsOwn, makeDrafts } from "./drafts.ts";
+import { partsBelow } from "./paths.ts";
+import { applyEdits, editsOf, missMessage, savedMessage, type Edit } from "./edits.ts";
 import {
   STORE,
   absolute,
@@ -120,6 +139,79 @@ const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
 
 const PREVIEW = { ok: false, reason: "the preview check has not finished", checked: false };
 
+// The last check's answer, kept in this user's own drafts folder so that tools/list can answer at
+// once instead of making Claude Code start its first turn without the tool. Each setup (runtime,
+// search path, Playwright's browser folder and preview.mjs) keeps its own answer; a setup with none
+// yet (after an update to the plugin, say) takes the newest one, and this start's check adds its own
+// for the next start.
+const previewKey = (() => {
+  try {
+    const script = statSync(join(SCRIPTS, "preview.mjs"));
+    return JSON.stringify([
+      process.execPath,
+      process.env.PATH ?? "",
+      process.env.PLAYWRIGHT_BROWSERS_PATH ?? "",
+      script.size,
+      script.mtimeMs,
+    ]);
+  } catch {
+    return null;
+  }
+})();
+const PREVIEW_CACHE =
+  previewKey === null
+    ? null
+    : join(DRAFTS_ROOT, `preview-${createHash("sha256").update(previewKey).digest("hex").slice(0, 16)}.json`);
+const isPreviewCache = (name: string) => /^preview-[0-9a-f]{16}\.json$/.test(name);
+
+/** A cached answer: a regular file of this user's in their own drafts folder, or null. */
+function readCached(path: string): { ok: boolean; mtimeMs: number } | null {
+  try {
+    const info = lstatSync(path);
+    if (!info.isFile() || (process.getuid && info.uid !== process.getuid())) return null;
+    const cached = JSON.parse(readFileSync(path, "utf8")) as { ok?: unknown };
+    return typeof cached.ok === "boolean" ? { ok: cached.ok, mtimeMs: info.mtimeMs } : null;
+  } catch {
+    return null;
+  }
+}
+
+const CACHED = ((): { ok: boolean; current: boolean } | null => {
+  if (!PREVIEW_SWITCH || PREVIEW_CACHE === null || !draftsRootIsOwn()) return null;
+  const own = readCached(PREVIEW_CACHE);
+  if (own) return { ok: own.ok, current: true };
+  let newest: { ok: boolean; mtimeMs: number } | null = null;
+  try {
+    for (const name of readdirSync(DRAFTS_ROOT)) {
+      if (!isPreviewCache(name)) continue;
+      const cached = readCached(join(DRAFTS_ROOT, name));
+      if (cached && (!newest || cached.mtimeMs > newest.mtimeMs)) newest = cached;
+    }
+  } catch {
+    return null;
+  }
+  return newest && { ok: newest.ok, current: false };
+})();
+
+/** Keep this start's answer for the next start, written whole, and drop answers no start has
+ * written for a month, and temp files a crash left. */
+function saveCached(ok: boolean): void {
+  if (PREVIEW_CACHE === null || !draftsRootIsOwn()) return;
+  try {
+    const temp = `${PREVIEW_CACHE}.${process.pid}.tmp`;
+    writeFileSync(temp, JSON.stringify({ ok }), { mode: 0o600 });
+    renameSync(temp, PREVIEW_CACHE);
+    for (const name of readdirSync(DRAFTS_ROOT)) {
+      const path = join(DRAFTS_ROOT, name);
+      const age = Date.now() - lstatSync(path).mtimeMs;
+      const leftover = /^preview-[0-9a-f]{16}\.json\.\d+\.tmp$/.test(name) && age > 86_400_000;
+      if ((isPreviewCache(name) && age > 30 * 86_400_000) || leftover) rmSync(path, { force: true });
+    }
+  } catch {
+    // the next start checks again
+  }
+}
+
 /** Whether preview can run here: Playwright and a Chromium (preview.mjs --check). */
 const previewCheck = (async () => {
   try {
@@ -130,6 +222,8 @@ const previewCheck = (async () => {
     const run = await runScript([join(SCRIPTS, "preview.mjs"), "--check"], 30_000);
     const found = JSON.parse(lastLine(run.stdout)) as { ok?: unknown; reason?: unknown };
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
+    if (!PREVIEW.ok) console.error(`artifact: no preview here: ${String(PREVIEW.reason)}`);
+    saveCached(PREVIEW.ok); // every start, so a setup still in use never ages out
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${(error as Error).message})` });
   } finally {
@@ -137,12 +231,20 @@ const previewCheck = (async () => {
   }
 })();
 
-async function previewOffered(): Promise<boolean> {
+/** Whether this start's own check found preview can run, waiting for it within PREVIEW_WAIT. */
+async function previewReady(): Promise<boolean> {
   const wait = Math.max(0, STARTED + PREVIEW_WAIT - Date.now());
   let timer: NodeJS.Timeout | undefined;
   await Promise.race([previewCheck, new Promise((done) => (timer = setTimeout(done, wait)))]);
   clearTimeout(timer);
   return PREVIEW.checked && PREVIEW.ok;
+}
+
+/** Whether the tool lists preview: the last check's answer when there is one, so the list comes
+ * back at once and stays the same all session, and otherwise this start's own. A call to preview
+ * always waits for this start's. */
+async function previewOffered(): Promise<boolean> {
+  return CACHED ? CACHED.ok : previewReady();
 }
 
 // ---------------------------------------------------------------- publishing
@@ -179,6 +281,13 @@ function wrapPage(
 type Args = Record<string, unknown>;
 type Result = string | CallToolResult;
 
+/** A refusal the tool returns as it is, without the "<action> failed:" prefix. */
+class Refusal extends Error {}
+
+// The most of a file a refused publish with edits shows back, so that the result stays under what
+// Claude Code passes on from an MCP tool.
+const MISS_ROOM = 40_000;
+
 const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
 function actQuickstart(args: Args): string {
@@ -204,6 +313,7 @@ function actQuickstart(args: Args): string {
     "message: the two calls run in order. Unless the person named a location, the file goes in " +
     `${DRAFTS} (or in the scratchpad directory, when the system prompt lists one), not in the project.\n\n` +
     guidance +
+    "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill before writing it." +
     "\n\n\n[Design systems not listed: this account lists no Design System type, so there are none to choose from.]"
   );
 }
@@ -212,11 +322,38 @@ function publish(args: Args): string {
   if (!args.file_path) throw new Error("publish needs file_path: write the page to a file first");
   const source = absolute(args.file_path, "file_path");
   if (!isFile(source)) throw new Error(`${source} doesn't exist; write the page there first`);
+  let edits: Edit[] | null = null;
+  if (args.edits !== undefined) {
+    const parsed = editsOf(args.edits);
+    if (typeof parsed === "string") throw new Refusal(`${parsed} Nothing was published.`);
+    if (args.files !== undefined) {
+      throw new Refusal(
+        "`edits` changes only the file at `file_path`: not with `files` (publish the other files in a call " +
+          "without edits). Nothing was published.",
+      );
+    }
+    const below = partsBelow(STORE, source);
+    if (below && below.length >= 2 && loadIndex()[0].has(below[0]!)) {
+      throw new Refusal(
+        `No edits were applied and nothing was published: ${source} is a file inside the published artifact ` +
+          `${below[0]} in ${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` +
+          "Edit this file and publish it without edits.",
+      );
+    }
+    edits = parsed;
+  }
+  const bytes = readFileSync(source);
   let raw: string;
   try {
-    raw = readSource(source);
+    raw = readSource(source, bytes);
   } catch (error) {
+    if (edits) throw new Refusal(`No edits were applied: ${(error as Error).message}`);
     throw new Error(`file_path: ${(error as Error).message}`);
+  }
+  if (edits) {
+    const applied = applyEdits(raw, edits);
+    if (!applied.ok) throw new Refusal(missMessage(applied.miss, edits, raw, MISS_ROOM));
+    raw = applied.text;
   }
   const [index, repaired] = loadIndex(true);
   const notes = repaired ? [repaired] : [];
@@ -270,18 +407,24 @@ function publish(args: Args): string {
   let lang: string | null = null;
   let cover: boolean | null = null;
   if (isMarkdown) {
-    // Rendered into the document template the Artifact tool uses for Markdown; its tab shows the
-    // file name and the artifact takes the document's heading as its name.
-    let heading: string;
-    [content, heading] = markdownPage(raw, name);
-    title = str(args.title) ?? heading;
+    // Rendered into the document template the Artifact tool uses for Markdown, whose tab shows the
+    // file name; like the Artifact tool's, the artifact keeps its file's name, or the one it has.
+    [content] = markdownPage(raw, name);
+    title = entry?.title || name;
   } else {
     ({ content, description: oldDescription, lang, cover } = unwrap(raw));
     if (cover === null && isFullDocument(content)) notes.push(FULL_DOCUMENT_NOTE);
     title = pageTitle(content);
-    if (!title && str(args.title)) {
-      title = str(args.title)!;
+    const asked = str(typeof args.title === "string" ? args.title.trim() : null);
+    if (!title && asked) {
+      title = asked;
       content = `<title>${escape(title)}</title>\n` + content;
+    } else if (title && asked && title !== asked && title !== pageTitle(`<title>${asked}</title>`)) {
+      const cut = (text: string) => ([...text].length > 120 ? `${[...text].slice(0, 120).join("")}\u2026` : text);
+      notes.push(
+        `The document's own <title> ("${cut(title)}") names this artifact; the \`title\` parameter ("${cut(asked)}") ` +
+          "was not applied \u2014 the tag always wins. To rename, edit the <title> in the HTML.",
+      );
     }
     if (!title) {
       notes.push(
@@ -290,8 +433,10 @@ function publish(args: Args): string {
       );
     }
   }
-  const description = str(args.description) ?? (entry?.description || null) ?? oldDescription;
-  if (!description) notes.push("No `description`: pass a one-sentence explanation of the page.");
+  // A description passed now or before stays; otherwise, as the Artifact tool does, each publish
+  // takes one from the page again.
+  const given = str(args.description) ?? (entry && !entry.derived ? entry.description || null : null) ?? oldDescription;
+  const description = given ?? (isMarkdown ? null : pageDescription(content, basename(name, extname(name))) || null);
   const icon = str(args.icon) ?? (entry?.icon || null);
   if (fetchesOwnFiles(content)) notes.push(OWN_FILES_FETCH_NOTE);
   const published = wrapPage(content, description, icon, lang, cover);
@@ -302,7 +447,7 @@ function publish(args: Args): string {
   const first = slug === null;
   if (slug === null || entry === null) {
     // A new folder never reuses one already on disk, whether or not the index knows it.
-    const base = slugify(title || basename(name, extname(name)));
+    const base = slugify((isMarkdown ? null : title) || basename(name, extname(name)));
     slug = base;
     for (let n = 2; index.has(slug) || existsSync(join(STORE, slug)); n++) slug = `${base}-${n}`;
     entry = { source, version: 0, created: null, page: "index.html" };
@@ -327,6 +472,8 @@ function publish(args: Args): string {
     description,
     icon,
   });
+  if (given === null && description !== null) entry.derived = true;
+  else delete entry.derived;
   entry.created = entry.created || now;
   index.set(slug, entry);
   saveIndex(index);
@@ -336,6 +483,7 @@ function publish(args: Args): string {
   const lines = [
     `Published ${source} at ${link} (Version ${entry.version})` + (first && icon ? ` Icon: "${icon}".` : ""),
   ];
+  if (edits) lines.push(saveEdits(source, bytes, raw, edits.length));
   lines.push(...notes);
   lines.push(
     "To update: publish the same file path again in this session (keeps this link); pass `url` to " +
@@ -348,8 +496,12 @@ function publish(args: Args): string {
       ", not the source file, which lacks the page skeleton.",
   );
   lines.push(
-    "The files you sent are still on disk. To change the artifact, Edit them there and publish again " +
-      "in the same message; no read is needed.",
+    "The files you sent are still on disk. For the next small change to this file, send it as `edits` on a " +
+      "publish of the same file_path (old_str/new_str pairs copied exactly from the file as it now stands): that " +
+      "one call changes the file and what is published together, with no Read and no Edit. To change several " +
+      "files, or to rewrite most of the page, Edit the files and publish them in the same response; if an Edit " +
+      "reports that it did not apply, correct it and publish again. If the file's text is no longer in this " +
+      "conversation, Read it first.",
   );
   if (first) {
     if (!OPEN_PAGES) lines.push("The page was not opened in a browser (ARTIFACT_OPEN=0); give the user the link.");
@@ -357,6 +509,34 @@ function publish(args: Args): string {
     else lines.push("There is no browser to open here, so the page was not opened; give the user the link.");
   }
   return lines.join("\n\n");
+}
+
+/** Write a publish's edited text back to its file, unless the file changed while it was published
+ * or has other names, and say how that went. */
+function saveEdits(source: string, before: Buffer, text: string, count: number): string {
+  try {
+    if (!readFileSync(source).equals(before)) return savedMessage(count, "changed_during_publish");
+    if (statSync(source).nlink > 1) return savedMessage(count, "hard_linked");
+  } catch {
+    return savedMessage(count, "changed_during_publish");
+  }
+  const bom = before[0] === 0xef && before[1] === 0xbb && before[2] === 0xbf ? "\uFEFF" : "";
+  let fd: number;
+  try {
+    fd = openSync(source, "r+"); // opening doesn't truncate, so a file that can't be written stays whole
+  } catch {
+    return savedMessage(count, "not_writable");
+  }
+  try {
+    const data = Buffer.from(bom + text, "utf8");
+    writeFileSync(fd, data); // from the start, where r+ opens, and on until every byte is written
+    ftruncateSync(fd, data.length);
+  } catch {
+    return savedMessage(count, "write_failed");
+  } finally {
+    closeSync(fd);
+  }
+  return savedMessage(count);
 }
 
 async function actPreview(args: Args): Promise<Result> {
@@ -371,7 +551,7 @@ async function actPreview(args: Args): Promise<Result> {
           : ""),
     );
   }
-  if (!(await previewOffered()))
+  if (!(await previewReady()))
     throw new Error(`preview isn't available here (${PREVIEW.reason}). Skip the look and publish.`);
   if (!args.file_path) throw new Error("preview needs `file_path`: the local .html page to render.");
   const source = absolute(args.file_path, "file_path");
@@ -380,13 +560,29 @@ async function actPreview(args: Args): Promise<Result> {
   const previews = join(DRAFTS, ".previews");
   mkdirSync(previews, { recursive: true, mode: 0o700 });
   const stem = basename(source, extname(source));
-  return runPreview(source, mkdtempSync(join(previews, `${stem.slice(0, 40)}-`)));
+  const out = mkdtempSync(join(previews, `${stem.slice(0, 40)}-`));
+  // preview.mjs renders the page as publish wraps it; it refuses anything but a non-empty .html page
+  // before reading this copy.
+  const wrapped = join(out, "published.html");
+  if ([".html", ".htm"].includes(extname(source).toLowerCase())) {
+    let raw: string;
+    try {
+      raw = readSource(source);
+    } catch (error) {
+      const why = (error as Error).message.replace("then publish again. Nothing was published.", "then preview again.");
+      return textResult(`Could not preview ${basename(source)}: ${why}`, true);
+    }
+    const { content, lang, cover } = unwrap(raw);
+    writeFileSync(wrapped, wrapPage(content, null, null, lang, cover));
+  }
+  return runPreview(source, wrapped, out);
 }
 
 type Report = { text: string; shots?: { label: string; path: string }[]; failed?: boolean };
 
-async function runPreview(source: string, out: string): Promise<CallToolResult> {
-  const run = await runScript([join(SCRIPTS, "preview.mjs"), source, "--json", "--out", out], 240_000);
+async function runPreview(source: string, wrapped: string, out: string): Promise<CallToolResult> {
+  const args = [join(SCRIPTS, "preview.mjs"), source, "--wrapped", wrapped, "--json", "--out", out];
+  const run = await runScript(args, 240_000);
   if (run.timedOut) {
     throw new Error("the preview ran for 4 minutes without finishing and was stopped; skip the look and publish");
   }
@@ -504,11 +700,18 @@ async function call(args: Args): Promise<CallToolResult> {
   if (typeof action !== "string" || !Object.hasOwn(ACTIONS, action) || (action === "preview" && !PREVIEW_SWITCH)) {
     return textResult(`Unknown action ${repr(action)}.`, true);
   }
+  if (args.edits !== undefined && action !== "publish") {
+    return textResult(
+      `\`edits\` applies only to a publish of \`file_path\` \u2014 remove it from this "${action}" call.`,
+      true,
+    );
+  }
   try {
     const result = await ACTIONS[action]!(args);
     return typeof result === "string" ? textResult(result) : result;
   } catch (error) {
     // reported to the model as a tool error
+    if (error instanceof Refusal) return textResult(error.message, true);
     return textResult(`${action} failed: ${(error as Error).message}`, true);
   }
 }

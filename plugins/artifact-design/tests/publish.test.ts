@@ -100,10 +100,12 @@ describe("wrap and unwrap", () => {
 });
 
 describe("page checks", () => {
-  test("usesMermaid ignores comments, scripts and pages that load Mermaid", () => {
+  test("usesMermaid finds a mermaid <pre> anywhere, as Claude Code does, unless the page loads Mermaid", () => {
     expect(usesMermaid("<pre class='x mermaid'>a</pre>")).toBe(true);
-    expect(usesMermaid('<!-- <pre class="mermaid"> -->')).toBe(false);
-    expect(usesMermaid('<script>"<pre class=\\"mermaid\\">"</script>')).toBe(false);
+    expect(usesMermaid("<PRE data-x=1 class = mermaid>a</PRE>")).toBe(true);
+    expect(usesMermaid('<template><pre class="mermaid">a</pre></template>')).toBe(true);
+    expect(usesMermaid("<script>el.innerHTML = '<pre class=\"mermaid\">' + src;</script>")).toBe(true);
+    expect(usesMermaid('<pre data-class="mermaid">a</pre><preview class="mermaid">')).toBe(false);
     expect(
       usesMermaid('<script src="https://cdn.jsdelivr.net/npm/mermaid"></script><pre class="mermaid">a</pre>'),
     ).toBe(false);

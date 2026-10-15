@@ -30,6 +30,7 @@ export type Entry = {
   title?: string;
   updated?: string;
   description?: string | null;
+  derived?: boolean; // the description was taken from the page, so the next publish takes it again
   icon?: string | null;
 };
 export type Index = Map<string, Entry>;
@@ -106,7 +107,11 @@ export function loadIndex(repair = false): [Index, string | null] {
       if (
         entries.every(
           ([slug, entry]) =>
-            isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && "page" in entry,
+            isSlug(slug) &&
+            !!entry &&
+            typeof entry === "object" &&
+            !Array.isArray(entry) &&
+            ["index.html", "index.md"].includes((entry as { page?: unknown }).page as string),
         )
       ) {
         return [new Map(entries as [string, Entry][]), null];

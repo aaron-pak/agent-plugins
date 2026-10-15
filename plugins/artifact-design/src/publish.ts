@@ -12,7 +12,7 @@ import { page as renderMarkdownPage } from "./render-markdown.ts";
 import HLJS_LANGUAGES from "../skills/artifact-design/scripts/hljs-languages.json" with { type: "json" };
 import MERMAID_RUNTIME from "../skills/artifact-design/scripts/mermaid-runtime.html" with { type: "text" };
 
-// The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.296).
+// The skeleton the Artifact tool wraps around every published page (Claude Code 2.1.300).
 // A page whose own viewport meta leaves out viewport-fit=cover gets the plain variant,
 // without the safe-area padding, as the tool does.
 const SKELETON_START = "<!doctype html><html><head><meta charset=utf8>";
@@ -32,7 +32,7 @@ const PLAIN_RESET = "<style>:root{color-scheme:light}" + RESET_BASE;
 const SKELETON_BODY = "</head><body>\n";
 const SKELETON_END = "\n</body></html>";
 
-// Claude Code's own model of the artifact viewer's content policy (its preview's, 2.1.294),
+// Claude Code's own model of the artifact viewer's content policy (its preview's, 2.1.300),
 // with the five script CDNs the page contract allows, as a CSP. Its `webrtc 'block'` directive is
 // left out: Chromium doesn't know it and logs an error for it on every load of the page.
 const SCRIPT_HOSTS =
@@ -57,11 +57,11 @@ export const GENERATOR = '<meta name="generator" content="artifact-design">';
 const TAIL_MARK = "<!-- artifact-design -->";
 // The markers pages published by the plugin's earlier Python scripts carry, still recognized.
 const GENERATOR_MARKS = /<meta name="generator" content="artifact-design(?: publish\.py)?">/;
-// The Mermaid runtime Claude Code 2.1.293 adds to a page with a <pre class="mermaid"> block,
+// The Mermaid runtime Claude Code 2.1.300 adds to a page with a <pre class="mermaid"> block,
 // byte for byte, except that Mermaid 11.16.1 loads from jsDelivr (the same file, checked by
 // sha256) instead of claude.ai's /_runtime/ path.
 const MERMAID = String(MERMAID_RUNTIME).replace(/\n+$/, "");
-// The highlight.js runtime Claude Code 2.1.296 inlines in a page with a language-tagged code block,
+// The highlight.js runtime Claude Code 2.1.300 inlines in a page with a language-tagged code block,
 // byte for byte: its 186-grammar highlight.js 11.11.1 bundle, then the script that highlights the
 // page's <pre><code> blocks. At about 600 KB it is read from disk only for a page that needs it.
 let hljsRuntime: string | undefined;
@@ -110,8 +110,7 @@ function invalidUtf8At(data: Uint8Array, from: number): number {
 
 /** The page file's text, as UTF-8 (a byte-order mark is dropped). Like the Artifact tool, a file
  * in another encoding is refused rather than published garbled. */
-export function readSource(path: string): string {
-  const data = readFileSync(path);
+export function readSource(path: string, data: Buffer = readFileSync(path)): string {
   const bom = data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf ? 3 : 0;
   try {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data.subarray(bom));
@@ -137,6 +136,36 @@ export function pageTitle(content: string): string | null {
     .replace(/\s+/g, " ")
     .trim();
   return [...text].slice(0, TITLE_MAX).join("") || null;
+}
+
+const clean = (text: string) =>
+  [
+    ...unescape(text)
+      .replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  ]
+    .slice(0, TITLE_MAX)
+    .join("");
+const PLACEHOLDER_NAMES = new Set(["", "index", "untitled", "document"]);
+
+/** The description Claude Code gives a page published without one (2.1.300): its meta description
+ * when that has 10 characters or more, else its first <h1>, or its <title> when the heading only
+ * repeats it, leaving out names like "index", "untitled" or the file's own name. */
+export function pageDescription(content: string, fileStem: string): string {
+  const head = content.slice(0, TITLE_SCAN).replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+  const svg = head.search(/<svg/i);
+  const scan = svg === -1 ? head : head.slice(0, svg);
+  const meta = clean(/<meta[^>]+name=["']description["'][^>]+content=(["'])((?:(?!\1).)*)\1/is.exec(scan)?.[2] ?? "");
+  if (meta.length >= 10) return meta;
+  const text = (pattern: RegExp) => clean((pattern.exec(scan)?.[1] ?? "").replace(/<[^>]+>/g, ""));
+  const stem = fileStem.toLowerCase();
+  let title = text(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const heading = text(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (PLACEHOLDER_NAMES.has(title.toLowerCase()) || title.toLowerCase() === stem) title = "";
+  const lower = heading.toLowerCase();
+  if (lower === title.toLowerCase() || PLACEHOLDER_NAMES.has(lower) || lower === stem) return title;
+  return heading;
 }
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -209,18 +238,59 @@ function coversSafeArea(content: string, fallback: boolean): boolean {
   return viewports.some((tag) => /viewport-fit\s*=\s*cover/i.test(tag));
 }
 
-/** Whether the page has a <pre> element with the class mermaid, the only element Claude Code draws as a diagram.
- *
- * Comments and the raw text of script, style, textarea and template elements can mention
- * <pre class="mermaid"> without making a diagram, so they are left out. A page that loads
- * Mermaid itself with a <script src> draws its own diagrams and gets no second runtime. */
+/** Whether the page has a <pre> element with the class mermaid, found as Claude Code finds it
+ * (2.1.300): anywhere in the text, a <pre tag whose class attribute, within 4096 characters of the
+ * tag's start, lists mermaid. A page that loads Mermaid itself with a <script src> draws its own
+ * diagrams and gets no second runtime. */
 export function usesMermaid(content: string): boolean {
-  let markup = content.replace(/<!--[\s\S]*?-->/g, "");
-  if (/<script\b[^>]*?\ssrc\s*=\s*["']?[^"'\s>]*mermaid/i.test(markup)) return false;
-  markup = markup.replace(/<(script|style|textarea|template|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
-  for (const match of markup.matchAll(/<pre(?=[\s/>])[^<>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
-    const classes = (match[1] || match[2] || match[3] || "").split(/\s+/);
-    if (classes.includes("mermaid")) return true;
+  if (/<script\b[^>]*?\ssrc\s*=\s*["']?[^"'\s>]*mermaid/i.test(content.replace(/<!--[\s\S]*?-->/g, ""))) return false;
+  const text = content.toLowerCase();
+  for (let at = 0; ;) {
+    at = text.indexOf("<pre", at);
+    if (at < 0 || text[at + 4] === undefined) return false;
+    if (!TAG_END.has(text[at + 4]!)) {
+      at += 4;
+      continue;
+    }
+    const limit = Math.min(at + 4096, text.length);
+    let end = limit;
+    let closed = false;
+    for (let i = at + 4; i < limit; i++) {
+      if (text[i] === ">") {
+        end = i;
+        closed = true;
+        break;
+      }
+    }
+    if (classListsMermaid(text.slice(at + 4, end))) return true;
+    at = closed ? end + 1 : end;
+  }
+}
+
+function classListsMermaid(attributes: string): boolean {
+  const n = attributes.length;
+  for (let at = 0; at < n;) {
+    const name = attributes.indexOf("class", at);
+    if (name < 0) return false;
+    at = name + 5;
+    if (!" \t\n\f\r".includes(attributes[name - 1] ?? "x")) continue;
+    let i = name + 5;
+    while (i < n && /\s/.test(attributes[i]!)) i++;
+    if (attributes[i] !== "=") continue;
+    i++;
+    while (i < n && /\s/.test(attributes[i]!)) i++;
+    let value: string;
+    const quote = attributes[i];
+    if (quote === '"' || quote === "'") {
+      const close = attributes.indexOf(quote, i + 1);
+      if (close < 0) return false;
+      value = attributes.slice(i + 1, close);
+    } else {
+      let stop = i;
+      while (stop < n && !/[\s>]/.test(attributes[stop]!)) stop++;
+      value = attributes.slice(i, stop);
+    }
+    if (value.split(/\s+/).includes("mermaid")) return true;
   }
   return false;
 }

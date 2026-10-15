@@ -1,4 +1,4 @@
-// Render a Markdown page the way Claude Code's Artifact tool publishes one (2.1.296): marked
+// Render a Markdown page the way Claude Code's Artifact tool publishes one (2.1.300): marked
 // 16.1.0 with GitHub-flavored Markdown, ```mermaid fences as <pre class="mermaid"> blocks, and the
 // result poured into Claude Code's plan template (markdown-template.html, byte for byte from the
 // CLI). The eyebrow reads "Markdown · <file name>", the tab title is the file name, and a heading
