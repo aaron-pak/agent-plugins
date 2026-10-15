@@ -48,6 +48,13 @@ Claude Code passes its own environment to the server, so set them in your shell 
 
 In a Claude Code session that has its own Artifact tool (signed in to claude.ai, where artifacts are on), that tool publishes to claude.ai and the plugin's adds nothing: Claude Code then lists two `Artifact` tools and both sets of skills, and the model uses its own. Turn the plugin off there, or start Claude Code with `CLAUDE_CODE_ARTIFACT=0` to keep pages local with the plugin.
 
+Codex keeps plugin MCP tools out of the model's sight until it searches for them, so it wouldn't think of the `Artifact` tool unless you named the plugin. `artifact-design` asks Codex to load the tool up front instead (`omit_tools_from` in its `.codex-plugin/plugin.json`). If a Codex release stops honoring that, this line in `~/.codex/config.toml` does the same:
+
+```toml
+[features.code_mode]
+direct_only_tool_namespaces = ["mcp__artifact"]
+```
+
 Publishing asks too. Claude Code asks before the plugin's `Artifact` tool runs, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
 
 ## Global instructions
