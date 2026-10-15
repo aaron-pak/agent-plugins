@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Preview an HTML artifact the way Claude Code's ArtifactCheck does, before publishing it.
 //
-//   node preview.mjs page.html [--out dir] [--json]
+//   node preview.mjs page.html --wrapped published.html [--out dir] [--json]
 //   node preview.mjs --check        (whether a preview can run here, as JSON)
 //
-// Wraps the page with publish.mjs (without touching the file), serves it over http and
-// renders it at 1280 and 390px wide in light and dark, with the same viewports, theme
+// Takes the page as publish wraps it (the artifact MCP server writes that copy to --wrapped,
+// leaving the page itself untouched), serves it over http and renders it at 1280 and 390px wide in light and dark, with the same viewports, theme
 // attribute, settling, content policy, request filter, step timeouts and in-page checks as
 // Claude Code 2.1.294's preview: page and element overflow, SVG labels clipped by their
 // viewport, Mermaid blocks that fail, colors set only inside a theme block, identical light and
@@ -20,7 +20,7 @@
 // Needs Playwright and a Chromium (Playwright's own, or an installed Chrome, Chromium, Edge or
 // Brave); without them it says so and exits, and the skill skips the look.
 
-import { execFileSync, execSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { X509Certificate, createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -30,12 +30,13 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
-const page = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--out");
+const page = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--out" && args[i - 1] !== "--wrapped");
 const outIndex = args.indexOf("--out");
+const wrappedIndex = args.indexOf("--wrapped");
 const asJson = args.includes("--json");
 const checkOnly = args.includes("--check");
-if (!page && !checkOnly) {
-  console.error("usage: node preview.mjs page.html [--out dir] [--json] | --check");
+if (!checkOnly && (!page || wrappedIndex === -1 || !args[wrappedIndex + 1])) {
+  console.error("usage: node preview.mjs page.html --wrapped published.html [--out dir] [--json] | --check");
   process.exit(1);
 }
 
@@ -182,16 +183,8 @@ if (statSync(page).size === 0) await stop("the file is empty \u2014 write the pa
 const stem = basename(page, extname(page));
 const outDir = outIndex !== -1 ? resolve(args[outIndex + 1]) : mkdtempSync(join(tmpdir(), `artifact-preview-${stem}-`));
 mkdirSync(outDir, { recursive: true });
-// The wrapped copy never takes the page's own path, which --out pointing at the page's folder would give it.
-const wrapped = join(outDir, resolve(outDir, `${stem}.html`) === resolve(page) ? `${stem}.wrapped.html` : `${stem}.html`);
-try {
-  execFileSync(process.execPath, [join(here, "publish.mjs"), page, "--out", wrapped, "--no-open", "--quiet"],
-    { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
-} catch (error) {
-  const why = String(error.stderr || error.message).trim().split("\n").at(-1).replace(/^publish\.mjs: .*?: (?=the source file)/, "")
-    .replace("then publish again. Nothing was published.", "then preview again.");
-  await stop(`Could not preview ${basename(page)}: ${why}`, true);
-}
+const wrapped = resolve(args[wrappedIndex + 1]);
+if (!existsSync(wrapped)) await stop(`Could not preview ${basename(page)}: the published copy ${wrapped} is missing.`, true);
 const source = readFileSync(page, "utf8").replace(/^\uFEFF/, "");
 const published = readFileSync(wrapped, "utf8");
 const publishedBytes = Buffer.byteLength(published, "utf8");
@@ -918,7 +911,7 @@ if (ownFiles.length) {
   const listed = ownFiles.slice(0, MAX_FILES).map((f) => clip(f, 60));
   const more = n - listed.length;
   notes.push(`${n} ${plural(n, "file")} referenced relative to the page ${plural(n, "is", "are")} not loaded in preview (${listed.join(", ")}${more > 0 ? `, … ${more} more` : ""}); once published `
-    + (asJson ? `${plural(n, "it exists", "they exist")} only if passed in \`files\`` : `publish.mjs's copy beside the page loads ${plural(n, "it", "them")}`));
+    + `${plural(n, "it exists", "they exist")} only if passed in \`files\``);
 }
 const issueCount = issues.length + Math.min(dropped, MAX_DROPPED);
 const captured = shots.filter((s) => s.path && !s.error);

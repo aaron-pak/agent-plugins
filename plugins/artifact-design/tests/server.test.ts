@@ -3,7 +3,7 @@
 // on every request), with a publish, read, list and delete round trip in a temporary store.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,9 +17,9 @@ afterAll(() => rmSync(TEMP, { recursive: true, force: true }));
 
 type Reply = { id: number; result?: any; error?: { code: number; message: string } };
 
-const spawnServer = (store: string) =>
+const spawnServer = (store: string, env: Record<string, string> = {}) =>
   spawn("node", [SERVER], {
-    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP },
+    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP, ...env },
     stdio: ["pipe", "pipe", "inherit"],
   });
 
@@ -31,8 +31,9 @@ class Client {
   constructor(
     private meta?: Record<string, unknown>,
     store = STORE,
+    env: Record<string, string> = {},
   ) {
-    this.child = spawnServer(store);
+    this.child = spawnServer(store, env);
     createInterface({ input: this.child.stdout }).on("line", (line) => {
       const reply = JSON.parse(line) as Reply;
       this.waiting.get(reply.id)?.(reply);
@@ -51,9 +52,11 @@ class Client {
     this.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method }) + "\n");
   }
 
-  async call(args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
+  async call(args: Record<string, unknown>): Promise<{ text: string; isError: boolean; images: number }> {
     const reply = await this.request("tools/call", { name: "Artifact", arguments: args });
-    return { text: reply.result.content[0].text, isError: reply.result.isError === true };
+    const content = reply.result.content as { type: string; text?: string }[];
+    const images = content.filter((part) => part.type === "image").length;
+    return { text: content[0]!.text!, isError: reply.result.isError === true, images };
   }
 
   close(): Promise<unknown> {
@@ -62,8 +65,8 @@ class Client {
   }
 }
 
-async function legacy(client: string, store = STORE): Promise<Client> {
-  const server = new Client(undefined, store);
+async function legacy(client: string, store = STORE, env: Record<string, string> = {}): Promise<Client> {
+  const server = new Client(undefined, store, env);
   const reply = await server.request("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
@@ -184,6 +187,7 @@ describe("Artifact tool", () => {
     expect(unknown).toEqual({
       isError: true,
       text: expect.stringContaining("Unknown parameter `pin`: it belongs to claude.ai's Artifact tool."),
+      images: 0,
     });
     expect((await server.call({ action: "preview", file_path: join(TEMP, "x.html") })).text).toBe(
       "Unknown action 'preview'.",
@@ -192,4 +196,35 @@ describe("Artifact tool", () => {
     expect(wrongTool.error?.code).toBe(-32602);
     await server.close();
   });
+});
+
+// Preview needs Playwright and a Chromium, which CI doesn't install; where they are found, the
+// server renders a page through preview.mjs.
+const PREVIEW_CHECK = join(import.meta.dir, "..", "skills", "artifact-design", "scripts", "preview.mjs");
+const canPreview = (() => {
+  try {
+    return JSON.parse(spawnSync("node", [PREVIEW_CHECK, "--check"], { encoding: "utf8" }).stdout).ok === true;
+  } catch {
+    return false;
+  }
+})();
+
+describe("preview", () => {
+  test.skipIf(!canPreview)(
+    "renders a page as publish wraps it and returns its captures",
+    async () => {
+      const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1" });
+      const { tools } = (await server.request("tools/list")).result;
+      expect(tools[0].inputSchema.properties.action.enum).toContain("preview");
+      const page = join(TEMP, "look.html");
+      writeFileSync(page, "<title>Look</title>\n<p>Hello</p>\n");
+      const result = await server.call({ action: "preview", file_path: page });
+      expect(result.text).toStartWith("Previewed look.html");
+      expect(result.isError).toBe(false);
+      expect(result.images).toBe(4);
+      expect(readFileSync(page, "utf8")).toBe("<title>Look</title>\n<p>Hello</p>\n");
+      await server.close();
+    },
+    120_000,
+  );
 });

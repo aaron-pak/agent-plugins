@@ -380,13 +380,29 @@ async function actPreview(args: Args): Promise<Result> {
   const previews = join(DRAFTS, ".previews");
   mkdirSync(previews, { recursive: true, mode: 0o700 });
   const stem = basename(source, extname(source));
-  return runPreview(source, mkdtempSync(join(previews, `${stem.slice(0, 40)}-`)));
+  const out = mkdtempSync(join(previews, `${stem.slice(0, 40)}-`));
+  // preview.mjs renders the page as publish wraps it; it refuses anything but a non-empty .html page
+  // before reading this copy.
+  const wrapped = join(out, "published.html");
+  if ([".html", ".htm"].includes(extname(source).toLowerCase())) {
+    let raw: string;
+    try {
+      raw = readSource(source);
+    } catch (error) {
+      const why = (error as Error).message.replace("then publish again. Nothing was published.", "then preview again.");
+      return textResult(`Could not preview ${basename(source)}: ${why}`, true);
+    }
+    const { content, lang, cover } = unwrap(raw);
+    writeFileSync(wrapped, wrapPage(content, null, null, lang, cover));
+  }
+  return runPreview(source, wrapped, out);
 }
 
 type Report = { text: string; shots?: { label: string; path: string }[]; failed?: boolean };
 
-async function runPreview(source: string, out: string): Promise<CallToolResult> {
-  const run = await runScript([join(SCRIPTS, "preview.mjs"), source, "--json", "--out", out], 240_000);
+async function runPreview(source: string, wrapped: string, out: string): Promise<CallToolResult> {
+  const args = [join(SCRIPTS, "preview.mjs"), source, "--wrapped", wrapped, "--json", "--out", out];
+  const run = await runScript(args, 240_000);
   if (run.timedOut) {
     throw new Error("the preview ran for 4 minutes without finishing and was stopped; skip the look and publish");
   }

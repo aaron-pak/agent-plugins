@@ -25467,10 +25467,24 @@ async function actPreview(args) {
   const previews = join5(DRAFTS, ".previews");
   mkdirSync3(previews, { recursive: true, mode: 448 });
   const stem = basename3(source, extname(source));
-  return runPreview(source, mkdtempSync2(join5(previews, `${stem.slice(0, 40)}-`)));
+  const out = mkdtempSync2(join5(previews, `${stem.slice(0, 40)}-`));
+  const wrapped = join5(out, "published.html");
+  if ([".html", ".htm"].includes(extname(source).toLowerCase())) {
+    let raw;
+    try {
+      raw = readSource(source);
+    } catch (error) {
+      const why = error.message.replace("then publish again. Nothing was published.", "then preview again.");
+      return textResult(`Could not preview ${basename3(source)}: ${why}`, true);
+    }
+    const { content, lang, cover } = unwrap(raw);
+    writeFileSync2(wrapped, wrapPage(content, null, null, lang, cover));
+  }
+  return runPreview(source, wrapped, out);
 }
-async function runPreview(source, out) {
-  const run = await runScript([join5(SCRIPTS, "preview.mjs"), source, "--json", "--out", out], 240000);
+async function runPreview(source, wrapped, out) {
+  const args = [join5(SCRIPTS, "preview.mjs"), source, "--wrapped", wrapped, "--json", "--out", out];
+  const run = await runScript(args, 240000);
   if (run.timedOut) {
     throw new Error("the preview ran for 4 minutes without finishing and was stopped; skip the look and publish");
   }
