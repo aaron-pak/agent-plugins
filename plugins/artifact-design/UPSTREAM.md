@@ -1,6 +1,6 @@
 # Upstream
 
-The three skills are Anthropic's built-in Claude Code skills, captured from Claude Code 2.1.296 (2026-10-10), as are `scripts/markdown-template.html`, `scripts/hljs-runtime.html` and `scripts/hljs-languages.json`. This note lives outside the skills so that the model reads only Claude Code's text.
+The three skills are Anthropic's built-in Claude Code skills, captured from Claude Code 2.1.300 (2026-10-15), as are `scripts/markdown-template.html`, `scripts/hljs-runtime.html` and `scripts/hljs-languages.json`. This note lives outside the skills so that the model reads only Claude Code's text.
 
 - `artifact-diagramming` is verbatim.
 - `dataviz` is verbatim, with its `references/` and `scripts/` unchanged.
