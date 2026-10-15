@@ -213,6 +213,27 @@ describe("Artifact tool", () => {
     await server.close();
   });
 
+  test("names and describes artifacts as Claude Code does", async () => {
+    const server = await legacy("claude-code");
+    const md = join(TEMP, "plan-notes.md");
+    writeFileSync(md, "# Launch plan\n\nSteps.\n");
+    await server.call({ file_path: md, title: "Custom Name" });
+    const html = join(TEMP, "board.html");
+    writeFileSync(html, "<title>Ops Board</title>\n<h1>Weekly status for the ops team</h1>\n");
+    const named = await server.call({ file_path: html, title: "Other Name" });
+    expect(named.text).toContain(
+      'The document\'s own <title> ("Ops Board") names this artifact; the `title` parameter ("Other Name") was not applied',
+    );
+    expect(named.text).not.toContain("No `description`");
+    const listed = (await server.call({ action: "list" })).text;
+    expect(listed).toContain("plan-notes.md");
+    expect(listed).not.toContain("Custom Name");
+    expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
+      '<meta name="description" content="Weekly status for the ops team">',
+    );
+    await server.close();
+  });
+
   test("renders a Markdown file into the document template, with highlight.js for code", async () => {
     const server = await legacy("claude-code");
     const source = join(TEMP, "notes.md");

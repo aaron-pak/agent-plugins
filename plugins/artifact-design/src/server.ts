@@ -66,6 +66,7 @@ import {
   markdownPage,
   openInBrowser,
   opener,
+  pageDescription,
   pageTitle,
   readSource,
   unwrap,
@@ -405,16 +406,23 @@ function publish(args: Args): string {
   if (isMarkdown) {
     // Rendered into the document template the Artifact tool uses for Markdown; its tab shows the
     // file name and the artifact takes the document's heading as its name.
-    let heading: string;
-    [content, heading] = markdownPage(raw, name);
-    title = str(args.title) ?? heading;
+    // Like the Artifact tool, a Markdown artifact keeps its file's name, or the name it already has.
+    [content] = markdownPage(raw, name);
+    title = entry?.title || name;
   } else {
     ({ content, description: oldDescription, lang, cover } = unwrap(raw));
     if (cover === null && isFullDocument(content)) notes.push(FULL_DOCUMENT_NOTE);
     title = pageTitle(content);
-    if (!title && str(args.title)) {
-      title = str(args.title)!;
+    const asked = str(args.title);
+    if (!title && asked) {
+      title = asked;
       content = `<title>${escape(title)}</title>\n` + content;
+    } else if (title && asked && title !== asked && title !== pageTitle(`<title>${asked}</title>`)) {
+      const cut = (text: string) => ([...text].length > 120 ? `${[...text].slice(0, 120).join("")}\u2026` : text);
+      notes.push(
+        `The document's own <title> ("${cut(title)}") names this artifact; the \`title\` parameter ("${cut(asked)}") ` +
+          "was not applied \u2014 the tag always wins. To rename, edit the <title> in the HTML.",
+      );
     }
     if (!title) {
       notes.push(
@@ -423,8 +431,11 @@ function publish(args: Args): string {
       );
     }
   }
-  const description = str(args.description) ?? (entry?.description || null) ?? oldDescription;
-  if (!description) notes.push("No `description`: pass a one-sentence explanation of the page.");
+  const description =
+    str(args.description) ??
+    (entry?.description || null) ??
+    oldDescription ??
+    (isMarkdown ? null : pageDescription(content, basename(name, extname(name))) || null);
   const icon = str(args.icon) ?? (entry?.icon || null);
   if (fetchesOwnFiles(content)) notes.push(OWN_FILES_FETCH_NOTE);
   const published = wrapPage(content, description, icon, lang, cover);
@@ -435,7 +446,7 @@ function publish(args: Args): string {
   const first = slug === null;
   if (slug === null || entry === null) {
     // A new folder never reuses one already on disk, whether or not the index knows it.
-    const base = slugify(title || basename(name, extname(name)));
+    const base = slugify((isMarkdown ? null : title) || basename(name, extname(name)));
     slug = base;
     for (let n = 2; index.has(slug) || existsSync(join(STORE, slug)); n++) slug = `${base}-${n}`;
     entry = { source, version: 0, created: null, page: "index.html" };

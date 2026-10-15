@@ -24585,6 +24585,28 @@ function pageTitle(content) {
   const text = unescape2(match[1]).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
   return [...text].slice(0, TITLE_MAX).join("") || null;
 }
+var clean = (text) => [
+  ...unescape2(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim()
+].slice(0, TITLE_MAX).join("");
+var PLACEHOLDER_NAMES = new Set(["", "index", "untitled", "document"]);
+function pageDescription(content, fileStem) {
+  const head = content.slice(0, TITLE_SCAN).replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+  const svg = head.search(/<svg/i);
+  const scan = svg === -1 ? head : head.slice(0, svg);
+  const meta = clean(/<meta[^>]+name=["']description["'][^>]+content=(["'])((?:(?!\1).)*)\1/is.exec(scan)?.[2] ?? "");
+  if (meta.length >= 10)
+    return meta;
+  const text = (pattern) => clean((pattern.exec(scan)?.[1] ?? "").replace(/<[^>]+>/g, ""));
+  const stem = fileStem.toLowerCase();
+  let title = text(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const heading = text(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (PLACEHOLDER_NAMES.has(title.toLowerCase()) || title.toLowerCase() === stem)
+    title = "";
+  const lower = heading.toLowerCase();
+  if (lower === title.toLowerCase() || PLACEHOLDER_NAMES.has(lower) || lower === stem)
+    return title;
+  return heading;
+}
 var escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 var SKELETON_RE = new RegExp('^<![dD][oO][cC][tT][yY][pP][eE] [hH][tT][mM][lL]><html(?: lang="([^"]{1,35})")?><head><meta charset=utf8>' + '<meta name=viewport content="width=device-width,initial-scale=1(,viewport-fit=cover)?">' + '((?:<meta http-equiv="Content-Security-Policy" content="[^"]*">)?(?:' + GENERATOR_MARKS.source + ')?(?:<link rel="icon" href="[^"]*">)?(?:<meta name="description" content="([^"]*)">)?)' + "<style>[^<]*</style></head><body>\\r?\\n");
 var TAIL_RE = new RegExp(`\\r?\\n(?:${escapeRegExp(TAIL_MARK)}|<!-- artifact-design publish\\.py -->)\\r?\\n`);
@@ -24630,13 +24652,64 @@ function coversSafeArea(content, fallback) {
   return viewports.some((tag) => /viewport-fit\s*=\s*cover/i.test(tag));
 }
 function usesMermaid(content) {
-  let markup = content.replace(/<!--[\s\S]*?-->/g, "");
-  if (/<script\b[^>]*?\ssrc\s*=\s*["']?[^"'\s>]*mermaid/i.test(markup))
+  if (/<script\b[^>]*?\ssrc\s*=\s*["']?[^"'\s>]*mermaid/i.test(content.replace(/<!--[\s\S]*?-->/g, "")))
     return false;
-  markup = markup.replace(/<(script|style|textarea|template|title)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
-  for (const match of markup.matchAll(/<pre(?=[\s/>])[^<>]*?\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi)) {
-    const classes = (match[1] || match[2] || match[3] || "").split(/\s+/);
-    if (classes.includes("mermaid"))
+  const text = content.toLowerCase();
+  for (let at = 0;; ) {
+    at = text.indexOf("<pre", at);
+    if (at < 0 || text[at + 4] === undefined)
+      return false;
+    if (!TAG_END.has(text[at + 4])) {
+      at += 4;
+      continue;
+    }
+    const limit = Math.min(at + 4096, text.length);
+    let end = limit;
+    let closed = false;
+    for (let i = at + 4;i < limit; i++) {
+      if (text[i] === ">") {
+        end = i;
+        closed = true;
+        break;
+      }
+    }
+    if (classListsMermaid(text.slice(at + 4, end)))
+      return true;
+    at = closed ? end + 1 : end;
+  }
+}
+function classListsMermaid(attributes) {
+  const n = attributes.length;
+  for (let at = 0;at < n; ) {
+    const name = attributes.indexOf("class", at);
+    if (name < 0)
+      return false;
+    at = name + 5;
+    if (!` 	
+\f\r`.includes(attributes[name - 1] ?? "x"))
+      continue;
+    let i = name + 5;
+    while (i < n && /\s/.test(attributes[i]))
+      i++;
+    if (attributes[i] !== "=")
+      continue;
+    i++;
+    while (i < n && /\s/.test(attributes[i]))
+      i++;
+    let value;
+    const quote = attributes[i];
+    if (quote === '"' || quote === "'") {
+      const close = attributes.indexOf(quote, i + 1);
+      if (close < 0)
+        return false;
+      value = attributes.slice(i + 1, close);
+    } else {
+      let stop = i;
+      while (stop < n && !/[\s>]/.test(attributes[stop]))
+        stop++;
+      value = attributes.slice(i, stop);
+    }
+    if (value.split(/\s+/).includes("mermaid"))
       return true;
   }
   return false;
@@ -25187,7 +25260,7 @@ function isDir(path) {
 }
 
 // plugins/artifact-design/src/text/description.md
-var description_default = "The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}{opened}. It stands in for Claude Code's own Artifact tool where that tool is off or absent: its full name carries a server prefix (in Claude Code, `mcp__plugin_artifact-design_artifact__Artifact`), and \"Artifact\" in this text, in quickstart's result and in the skills means this tool, so a call to the bare name `Artifact` that fails as unavailable or disabled goes to this tool's full name instead. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.\n\nWhen a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as \"can you write up the plan?\". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as \"should we ship this?\", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as \"just give me the .html file\" or \"save these notes as a .md file\", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.\n\n**Before writing the file, Claude must load the `artifact-design` skill**, including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file (via Write/Edit) and calls Artifact with its absolute path, putting the file, when the person names no other location, in its scratchpad directory if the system prompt lists one and otherwise in {drafts}. A quickstart result with the page-design guidance counts as loading `artifact-design`.\n\n**If Claude writes a page before that skill has loaded**, the skill's contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never \"Name: explainer\", and puts the explanation in `description`. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme=\"light\"])` and again under `:root[data-theme=\"dark\"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.\n\n**Format**: Claude always authors the page as `.html`, and publishes a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, Claude builds an HTML page from its content, keeping its substance and designing the page as it would any other artifact rather than transcribing the Markdown one to one.\n\n**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but what a page stores lives only in that viewer's browser. It survives republishes to the same link and never reaches other viewers, other devices or Claude. It can come back empty, or the accessor can throw, in a private window, with cleared or blocked site data, or in previews, so Claude wraps every read and write in try/catch and makes the page render correctly without it. Claude uses it only for per-viewer conveniences, such as a remembered tab or filter, a collapsed section or an unsent draft, and never for state that must persist reliably, be shared between viewers or be read back by Claude.\n\n**Size**: Claude keeps the rendered page at 16MB or smaller, and embedded `data:` URIs count toward that limit.\n\n**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. The page opens from a `file://` link, so it can link to these files and load them as images, stylesheets and classic scripts, but it cannot `fetch()`, import or start Workers from them: data a script reads goes inline. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.\n\n**Calls**: `action` picks one (publish when omitted):\n- **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place.{open_note}\n- **quickstart**: takes `intent` and returns the page contract and the design guidance for a plain page. It is read-only. Only plain pages can be made here; Slides, Design and Docs are claude.ai Artifact types.{preview}\n- **read**: takes `url` and returns the published page's content, without the skeleton that publishing adds.\n- **list**: returns the artifacts published on this machine, newest first, with title, link, last-updated time and source file.\n- **delete**: with `url`, permanently deletes a published artifact and its versions, which cannot be undone. Claude does this only when the person asks for that artifact to be deleted or unpublished, or says they did not want it published, never on its own initiative. The source file stays.\n- **open**: takes `url` and opens that existing artifact in the browser without changing it. Claude uses it when the person asks to see one. An artifact Claude just published needs no open.\n\n**To update** an artifact published earlier in this session, Claude calls Artifact again with the same file path, which republishes it to the same link. A different path creates a new link, so Claude changes the path only when it wants a separate artifact. For a small change to a page published from a file in this session, Claude can send the change as `edits` on the publish call itself (old_str/new_str pairs copied exactly from the file as it now stands) instead of editing the file first. For a change to several files at once, or a rewrite of most of a page, Claude makes the change with Edit, not a shell command, and publishes the artifact again with the same file path in the same response: the Edit call(s) first, then the publish, with no Read and without waiting for the Edit result. The calls run in the order sent, so the publish carries the edited file. If one of those Edit calls does not apply, the publish still goes out without that change, so Claude corrects the Edit and publishes again. Either way, Claude reads the file first only when its text is not in this conversation or the change cannot be placed exactly from that text.\n\n**To update an artifact from another file or an earlier session**, Claude passes that artifact's link as `url`. Claude does this whenever the person wants an existing artifact changed or its link kept, and finds the link with `action: \"list\"` or by asking the person. Claude first reads the artifact with `action: \"read\"` and builds on the version that comes back. Publishing without `url` creates a separate artifact, even from a path published in an earlier session. If the person asks where to find their artifacts again, `action: \"list\"` lists them, and each one is a folder in {store}.\n\n**Files Claude did not write**: Claude reads the whole file before publishing it, even when the person asks it not to. Publishing distributes the content, and Claude never distributes what it has not seen. A request for privacy is a reason to read before publishing, not an exemption. If Claude cannot read the file, it does not publish it.\n\n**Artifact types**: published Artifact types (ready-made pages, such as slide decks, documents or designs, that take Claude's content as data) exist only on claude.ai, so every artifact here is a plain page. When the person wants something new made, in whatever words — a document for others to read (not one that belongs in the codebase), a visual design or any other page — Claude's first call is `action: \"quickstart\"` with the fitting `intent`, before loading a skill or writing a file, once per new artifact. The quickstart result replaces, for a plain page, loading the artifact-design skill.\n\n**Claude never publishes** a page that impersonates a real person or organization, for example by using their name, branding, byline or domain. Claude also never publishes fabricated records, receipts or reviews presented as genuine, forms or flows that collect credentials or payment details under false pretenses, or content that targets a private individual. Claude refuses whether it wrote the page or the person supplied it, and whatever purpose is claimed, such as a prop or a test, when the page would work as the real thing. If publishing is refused, Claude does not suggest other ways to host or share the page.\n";
+var description_default = "The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}{opened}. It stands in for Claude Code's own Artifact tool where that tool is off or absent: its full name carries a server prefix (in Claude Code, `mcp__plugin_artifact-design_artifact__Artifact`), and \"Artifact\" in this text, in quickstart's result and in the skills means this tool, so a call to the bare name `Artifact` that fails as unavailable or disabled goes to this tool's full name instead. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Where a built-in Artifact tool that publishes to claude.ai is also available, Claude uses that one instead; this tool is for harnesses without it. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.\n\nWhen a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as \"can you write up the plan?\". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as \"should we ship this?\", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as \"just give me the .html file\" or \"save these notes as a .md file\", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.\n\n**Before writing the file, Claude must load the `artifact-design` skill**, including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file (via Write/Edit) and calls Artifact with its absolute path, putting the file, when the person names no other location, in its scratchpad directory if the system prompt lists one and otherwise in {drafts}. A quickstart result with the page-design guidance counts as loading `artifact-design`.\n\n**If Claude writes a page before that skill has loaded**, the skill's contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never \"Name: explainer\", and puts the explanation in `description`. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme=\"light\"])` and again under `:root[data-theme=\"dark\"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.\n\n**Format**: Claude always authors the page as `.html`, and publishes a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, Claude builds an HTML page from its content, keeping its substance and designing the page as it would any other artifact rather than transcribing the Markdown one to one.\n\n**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but every artifact on this machine opens from `file://`, which the browser may treat as one origin shared by all of them, so Claude prefixes every key with the page's name; what a page stores lives only in that viewer's browser. It survives republishes to the same link and never reaches other viewers, other devices or Claude. It can come back empty, or the accessor can throw, in a private window, with cleared or blocked site data, or in previews, so Claude wraps every read and write in try/catch and makes the page render correctly without it. Claude uses it only for per-viewer conveniences, such as a remembered tab or filter, a collapsed section or an unsent draft, and never for state that must persist reliably, be shared between viewers or be read back by Claude.\n\n**Size**: Claude keeps the rendered page at 16MB or smaller, and embedded `data:` URIs count toward that limit.\n\n**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. The page opens from a `file://` link, so it can link to these files and load them as images, stylesheets and classic scripts, but it cannot `fetch()`, import or start Workers from them: data a script reads goes inline. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.\n\n**Calls**: `action` picks one (publish when omitted):\n- **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place.{open_note}\n- **quickstart**: takes `intent` and returns the page contract and the design guidance for a plain page. It is read-only. Only plain pages can be made here; Slides, Design and Docs are claude.ai Artifact types.{preview}\n- **read**: takes `url` and returns the published page's content, without the skeleton that publishing adds.\n- **list**: returns the artifacts published on this machine, newest first, with title, link, last-updated time and source file.\n- **delete**: with `url`, permanently deletes a published artifact and its versions, which cannot be undone. Claude does this only when the person asks for that artifact to be deleted or unpublished, or says they did not want it published, never on its own initiative. The source file stays.\n- **open**: takes `url` and opens that existing artifact in the browser without changing it. Claude uses it when the person asks to see one. An artifact Claude just published needs no open.\n\n**To update** an artifact published earlier in this session, Claude calls Artifact again with the same file path, which republishes it to the same link. A different path creates a new link, so Claude changes the path only when it wants a separate artifact. For a small change to a page published from a file in this session, Claude can send the change as `edits` on the publish call itself (old_str/new_str pairs copied exactly from the file as it now stands) instead of editing the file first. For a change to several files at once, or a rewrite of most of a page, Claude makes the change with Edit, not a shell command, and publishes the artifact again with the same file path in the same response: the Edit call(s) first, then the publish, with no Read and without waiting for the Edit result. The calls run in the order sent, so the publish carries the edited file. If one of those Edit calls does not apply, the publish still goes out without that change, so Claude corrects the Edit and publishes again. Either way, Claude reads the file first only when its text is not in this conversation or the change cannot be placed exactly from that text.\n\n**To update an artifact from another file or an earlier session**, Claude passes that artifact's link as `url`. Claude does this whenever the person wants an existing artifact changed or its link kept, and finds the link with `action: \"list\"` or by asking the person. Claude first reads the artifact with `action: \"read\"` and builds on the version that comes back. Publishing without `url` creates a separate artifact, even from a path published in an earlier session. If the person asks where to find their artifacts again, `action: \"list\"` lists them, and each one is a folder in {store}.\n\n**Files Claude did not write**: Claude reads the whole file before publishing it, even when the person asks it not to. Publishing distributes the content, and Claude never distributes what it has not seen. A request for privacy is a reason to read before publishing, not an exemption. If Claude cannot read the file, it does not publish it.\n\n**Artifact types**: published Artifact types (ready-made pages, such as slide decks, documents or designs, that take Claude's content as data) exist only on claude.ai, so every artifact here is a plain page. When the person wants something new made, in whatever words — a document for others to read (not one that belongs in the codebase), a visual design or any other page — Claude's first call is `action: \"quickstart\"` with the fitting `intent`, before loading a skill or writing a file, once per new artifact. The quickstart result replaces, for a plain page, loading the artifact-design skill.\n\n**Claude never publishes** a page that impersonates a real person or organization, for example by using their name, branding, byline or domain. Claude also never publishes fabricated records, receipts or reviews presented as genuine, forms or flows that collect credentials or payment details under false pretenses, or content that targets a private individual. Claude refuses whether it wrote the page or the person supplied it, and whatever purpose is claimed, such as a prop or a test, when the page would work as the real thing. If publishing is refused, Claude does not suggest other ways to host or share the page.\n";
 
 // plugins/artifact-design/src/text/codex-lead.md
 var codex_lead_default = `Publishes an HTML file as an Artifact: a web page written as a local file in {store}{opened}. It stands in for Claude Code's Artifact tool: "Artifact" here, in quickstart's result and in the skills means this tool (full name mcp__artifact__Artifact). Use it when a page would be clearer than terminal text, and for finished work meant for other people (a report, a plan, the case for a decision): publish it and give the person the link. When the person wants something new made, your first call is action "quickstart", before loading a skill or writing a file: it returns the page contract and design guidance, the full guidance this short description leaves out. Then write the page to a file and publish it in the same turn. The input schema's description lists the calls.
@@ -25601,26 +25674,27 @@ function publish(args) {
   let lang = null;
   let cover = null;
   if (isMarkdown) {
-    let heading;
-    [content, heading] = markdownPage(raw, name);
-    title = str(args.title) ?? heading;
+    [content] = markdownPage(raw, name);
+    title = entry?.title || name;
   } else {
     ({ content, description: oldDescription, lang, cover } = unwrap(raw));
     if (cover === null && isFullDocument(content))
       notes.push(FULL_DOCUMENT_NOTE);
     title = pageTitle(content);
-    if (!title && str(args.title)) {
-      title = str(args.title);
+    const asked = str(args.title);
+    if (!title && asked) {
+      title = asked;
       content = `<title>${escape2(title)}</title>
 ` + content;
+    } else if (title && asked && title !== asked && title !== pageTitle(`<title>${asked}</title>`)) {
+      const cut = (text) => [...text].length > 120 ? `${[...text].slice(0, 120).join("")}…` : text;
+      notes.push(`The document's own <title> ("${cut(title)}") names this artifact; the \`title\` parameter ("${cut(asked)}") ` + "was not applied — the tag always wins. To rename, edit the <title> in the HTML.");
     }
     if (!title) {
       notes.push("The page has no <title> in its first 8KB (one after an <svg> doesn't count), so the " + "artifact is named after the file: put a <title> at the top, or pass `title`.");
     }
   }
-  const description = str(args.description) ?? (entry?.description || null) ?? oldDescription;
-  if (!description)
-    notes.push("No `description`: pass a one-sentence explanation of the page.");
+  const description = str(args.description) ?? (entry?.description || null) ?? oldDescription ?? (isMarkdown ? null : pageDescription(content, basename3(name, extname(name))) || null);
   const icon = str(args.icon) ?? (entry?.icon || null);
   if (fetchesOwnFiles(content))
     notes.push(OWN_FILES_FETCH_NOTE);
@@ -25630,7 +25704,7 @@ function publish(args) {
   }
   const first = slug === null;
   if (slug === null || entry === null) {
-    const base = slugify2(title || basename3(name, extname(name)));
+    const base = slugify2((isMarkdown ? null : title) || basename3(name, extname(name)));
     slug = base;
     for (let n = 2;index.has(slug) || existsSync2(join5(STORE, slug)); n++)
       slug = `${base}-${n}`;

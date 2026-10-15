@@ -7,7 +7,7 @@
 // Takes the page as publish wraps it (the artifact MCP server writes that copy to --wrapped,
 // leaving the page itself untouched), serves it over http and renders it at 1280 and 390px wide in light and dark, with the same viewports, theme
 // attribute, settling, content policy, request filter, step timeouts and in-page checks as
-// Claude Code 2.1.294's preview: page and element overflow, SVG labels clipped by their
+// Claude Code 2.1.300's preview: page and element overflow, SVG labels clipped by their
 // viewport, Mermaid blocks that fail, colors set only inside a theme block, identical light and
 // dark renders, loads the preview leaves out, dialogs, navigation, and console errors, including
 // a script that fails to parse. Two in-page checks go beyond Claude Code's ArtifactCheck: running
@@ -132,7 +132,7 @@ if (checkOnly) {
 }
 if (!playwright) await stop("Playwright isn't installed here, so there is no preview. Skip the look and publish.");
 
-// Claude Code's preview settings (2.1.293).
+// Claude Code's preview settings (2.1.300).
 const WIDTHS = [1280, 390];
 const THEMES = ["light", "dark"];
 const viewportHeight = (width) => (width < 600 ? 844 : 900);
