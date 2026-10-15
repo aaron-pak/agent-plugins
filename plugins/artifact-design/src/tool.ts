@@ -2,6 +2,8 @@
 
 import type { JSONObject, Tool } from "@modelcontextprotocol/server";
 
+import { MAX_EDITS } from "./edits.ts";
+
 import DESCRIPTION from "./text/description.md" with { type: "text" };
 import CODEX_LEAD_TEXT from "./text/codex-lead.md" with { type: "text" };
 import CODEX_REST_TEXT from "./text/codex-rest.md" with { type: "text" };
@@ -19,7 +21,7 @@ export const INSTRUCTIONS =
   "Where a built-in Artifact tool that publishes to claude.ai is also available, use that one " +
   "instead; this server is for harnesses without it.";
 
-// text/description.md is Claude Code's Artifact tool description (2.1.293), less what only claude.ai
+// text/description.md is Claude Code's Artifact tool description (2.1.300), less what only claude.ai
 // can do: runtime capabilities, the shared database, watching, pinning, the asset store, and Artifact
 // types beyond the rule that a new artifact starts with quickstart. Its {placeholders} are filled in
 // by describe().
@@ -157,6 +159,22 @@ export function schema(preview: boolean, compact = false): ObjectSchema {
       description:
         'publish: supporting files, as {"published/path": "/absolute/source/path"} (or {"from": "/absolute/source/path", "contentType": "..."}); null removes one. A list of paths relative to the page\'s folder publishes each file at that same path.',
     },
+    edits: {
+      type: "array",
+      minItems: 1,
+      maxItems: MAX_EDITS,
+      items: {
+        type: "object",
+        properties: {
+          old_str: { type: "string", description: "Text copied exactly from the file; must occur once." },
+          new_str: { type: "string", description: "Its replacement; empty deletes old_str." },
+        },
+        required: ["old_str", "new_str"],
+        additionalProperties: false,
+      },
+      description:
+        "publish: small changes Claude makes to the file at `file_path` in this same call, instead of editing the file with Edit and publishing after. Use it on a page (add `url` to update an artifact from another file or a later session). Not allowed with `files`. Each old_str is text copied exactly from the file as it now stands and must occur in it exactly once; new_str takes its place (empty deletes it). The edits apply in order, all or none: the file is published with them and then saved with them on disk, so it stays the source for later changes; on a miss nothing is changed or published, and the result says which edit failed and why.",
+    },
     url: {
       type: "string",
       description: "publish: an existing artifact's link to update. read, open and delete: the artifact's link.",
@@ -176,10 +194,14 @@ export function schema(preview: boolean, compact = false): ObjectSchema {
       title: "Fallback name when the page has no <title>.",
       icon: "One generic word for the tab icon, on a first publish.",
       files: '{"published/path": "/absolute/source"}; null removes one.',
+      edits: "Exact old_str/new_str pairs applied to file_path, then published and saved.",
       url: "An artifact's link (from list).",
       intent: "What is being made.",
     };
     for (const [name, description] of Object.entries(short)) properties[name]!.description = description;
+    const pair = (properties.edits!.items as { properties: Record<string, Schema> }).properties;
+    pair.old_str = { type: "string" };
+    pair.new_str = { type: "string" };
     mapItems[0] = { type: "string" };
     fromSource.properties = { from: { type: "string" }, contentType: { type: "string" } };
   }

@@ -148,6 +148,38 @@ describe("Artifact tool", () => {
     await server.close();
   });
 
+  test("publishes edits and saves them to the file", async () => {
+    const server = await legacy("claude-code");
+    const source = join(TEMP, "notes.html");
+    writeFileSync(source, "<title>Team Notes</title>\n<h1>Draft</h1>\n");
+    expect((await server.call({ file_path: source, description: "Notes.", icon: "note" })).isError).toBe(false);
+
+    const edited = await server.call({ file_path: source, edits: [{ old_str: "Draft", new_str: "Final" }] });
+    expect(edited.isError).toBe(false);
+    expect(edited.text).toContain("(Version 2)");
+    expect(edited.text).toContain("The edit was written to the file after it was published");
+    expect(readFileSync(source, "utf8")).toBe("<title>Team Notes</title>\n<h1>Final</h1>\n");
+    expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
+
+    const missed = await server.call({ file_path: source, edits: [{ old_str: "Draft", new_str: "Again" }] });
+    expect(missed).toEqual({
+      isError: true,
+      text: expect.stringMatching(
+        /^No edits were applied and nothing was published: edits\[0\] old_str does not occur/,
+      ),
+      images: 0,
+    });
+    expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
+    expect(existsSync(join(STORE, "team-notes", ".versions", "3.html"))).toBe(false);
+
+    const withFiles = await server.call({ file_path: source, files: [], edits: [{ old_str: "Final", new_str: "X" }] });
+    expect(withFiles.text).toStartWith("`edits` changes only the file at `file_path`");
+    expect((await server.call({ action: "read", url: "team-notes", edits: [] })).text).toBe(
+      '`edits` applies only to a publish of `file_path` \u2014 remove it from this "read" call.',
+    );
+    await server.close();
+  });
+
   test("renders a Markdown file into the document template, with highlight.js for code", async () => {
     const server = await legacy("claude-code");
     const source = join(TEMP, "notes.md");

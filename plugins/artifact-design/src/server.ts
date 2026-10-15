@@ -9,7 +9,8 @@
 //   folder (ARTIFACTS_DIR, default ~/artifacts), one folder per artifact. Publishing the same
 //   file again in the same session (this server process) updates the same artifact, as the
 //   Artifact tool keeps its file-to-artifact map per session; `url` updates any artifact.
-//   A Markdown file is rendered into the document template Claude Code uses for one.
+//   A Markdown file is rendered into the document template Claude Code uses for one. `edits`
+//   changes the file on the way, as the Artifact tool's does (src/edits.ts).
 // - preview: renders the page at 1280 and 390px wide in light and dark, as Claude Code's
 //   ArtifactCheck does, and returns the captures and what breaks (scripts/preview.mjs). It is
 //   listed only when Playwright and a Chromium are found at startup, and ARTIFACT_PREVIEW=0
@@ -24,7 +25,7 @@
 // scripts/build.ts bundles it into mcp/server.mjs, which runs on Node.
 
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,6 +56,7 @@ import {
   wrap,
 } from "./publish.ts";
 import { makeDrafts } from "./drafts.ts";
+import { applyEdits, editsOf, missMessage, savedMessage, type Edit } from "./edits.ts";
 import {
   STORE,
   absolute,
@@ -179,6 +181,13 @@ function wrapPage(
 type Args = Record<string, unknown>;
 type Result = string | CallToolResult;
 
+/** A refusal the tool returns as it is, without the "<action> failed:" prefix. */
+class Refusal extends Error {}
+
+// The most of a file a refused publish with edits shows back, so that the result stays under what
+// Claude Code passes on from an MCP tool.
+const MISS_ROOM = 40_000;
+
 const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
 function actQuickstart(args: Args): string {
@@ -212,11 +221,36 @@ function publish(args: Args): string {
   if (!args.file_path) throw new Error("publish needs file_path: write the page to a file first");
   const source = absolute(args.file_path, "file_path");
   if (!isFile(source)) throw new Error(`${source} doesn't exist; write the page there first`);
+  let edits: Edit[] | null = null;
+  if (args.edits !== undefined) {
+    const parsed = editsOf(args.edits);
+    if (typeof parsed === "string") throw new Refusal(`${parsed} Nothing was published.`);
+    if (args.files !== undefined) {
+      throw new Refusal(
+        "`edits` changes only the file at `file_path`: not with `files` (publish the other files in a call " +
+          "without edits). Nothing was published.",
+      );
+    }
+    edits = parsed;
+  }
+  const bytes = readFileSync(source);
   let raw: string;
   try {
     raw = readSource(source);
   } catch (error) {
+    if (edits) {
+      throw new Refusal(
+        "No edits were applied and nothing was published: the file at file_path is not a text file, and `edits` " +
+          "works only on text files (JSON, HTML, CSS, JavaScript, Markdown, CSV, XML, SVG and plain text); publish " +
+          "it without edits.",
+      );
+    }
     throw new Error(`file_path: ${(error as Error).message}`);
+  }
+  if (edits) {
+    const applied = applyEdits(raw, edits);
+    if (!applied.ok) throw new Refusal(missMessage(applied.miss, edits, raw, MISS_ROOM));
+    raw = applied.text;
   }
   const [index, repaired] = loadIndex(true);
   const notes = repaired ? [repaired] : [];
@@ -336,6 +370,7 @@ function publish(args: Args): string {
   const lines = [
     `Published ${source} at ${link} (Version ${entry.version})` + (first && icon ? ` Icon: "${icon}".` : ""),
   ];
+  if (edits) lines.push(saveEdits(source, bytes, raw, edits.length));
   lines.push(...notes);
   lines.push(
     "To update: publish the same file path again in this session (keeps this link); pass `url` to " +
@@ -347,16 +382,30 @@ function publish(args: Args): string {
       (hasOtherFiles(folder, pageFile) ? `the whole ${folder} folder` : pageFile) +
       ", not the source file, which lacks the page skeleton.",
   );
-  lines.push(
-    "The files you sent are still on disk. To change the artifact, Edit them there and publish again " +
-      "in the same message; no read is needed.",
-  );
   if (first) {
     if (!OPEN_PAGES) lines.push("The page was not opened in a browser (ARTIFACT_OPEN=0); give the user the link.");
     else if (openInBrowser(pageFile)) lines.push("Opened it in the browser.");
     else lines.push("There is no browser to open here, so the page was not opened; give the user the link.");
   }
   return lines.join("\n\n");
+}
+
+/** Write a publish's edited text back to its file, unless the file changed while it was published
+ * or has other names, and say how that went. */
+function saveEdits(source: string, before: Buffer, text: string, count: number): string {
+  try {
+    if (!readFileSync(source).equals(before)) return savedMessage(count, "changed_during_publish");
+    if (statSync(source).nlink > 1) return savedMessage(count, "hard_linked");
+  } catch {
+    return savedMessage(count, "changed_during_publish");
+  }
+  const bom = before[0] === 0xef && before[1] === 0xbb && before[2] === 0xbf ? "\uFEFF" : "";
+  try {
+    writeFileSync(source, bom + text);
+  } catch {
+    return savedMessage(count, "write_failed");
+  }
+  return savedMessage(count);
 }
 
 async function actPreview(args: Args): Promise<Result> {
@@ -520,11 +569,18 @@ async function call(args: Args): Promise<CallToolResult> {
   if (typeof action !== "string" || !Object.hasOwn(ACTIONS, action) || (action === "preview" && !PREVIEW_SWITCH)) {
     return textResult(`Unknown action ${repr(action)}.`, true);
   }
+  if (args.edits !== undefined && action !== "publish") {
+    return textResult(
+      `\`edits\` applies only to a publish of \`file_path\` \u2014 remove it from this "${action}" call.`,
+      true,
+    );
+  }
   try {
     const result = await ACTIONS[action]!(args);
     return typeof result === "string" ? textResult(result) : result;
   } catch (error) {
     // reported to the model as a tool error
+    if (error instanceof Refusal) return textResult(error.message, true);
     return textResult(`${action} failed: ${(error as Error).message}`, true);
   }
 }
