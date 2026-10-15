@@ -7,12 +7,15 @@
 set -eu
 cd "$1"
 every=${2:-5}
-branch=$(git symbolic-ref --short HEAD)
-echo "Following origin/$branch in $(pwd); Ctrl-C stops."
+# The branch it tracks upstream, else the remote branch of the same name.
+upstream=$(git rev-parse --abbrev-ref '@{u}' 2>/dev/null || echo "origin/$(git symbolic-ref --short HEAD)")
+remote=${upstream%%/*}
+branch=${upstream#*/}
+echo "Following $remote/$branch in $(pwd); Ctrl-C stops."
 while :; do
-  if git fetch -q origin "$branch" 2>/dev/null && [ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]; then
+  if git fetch -q "$remote" "$branch" && [ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]; then
     if ! git merge -q --ff-only FETCH_HEAD; then
-      echo "Can't fast-forward to origin/$branch; stopping."
+      echo "Can't fast-forward to $remote/$branch; stopping."
       exit 1
     fi
     echo "$(date +%T) now at $(git log -1 --format='%h %s')"

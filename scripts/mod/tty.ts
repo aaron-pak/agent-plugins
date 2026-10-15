@@ -18,7 +18,8 @@ Starts \`claude --plugin-dir <dir>\` in a detached tmux pane, types each --send 
 records the pane whenever it changes, to --out: frames.txt (text) and frames.jsonl (with colors).
 
   --send <text>       type this and press Enter; repeat for more (a "/band hearth", a prompt)
-  --wait <s>          how long to record after each send (default 8), and --boot <s> after start (6)
+  --wait <s>          how long to record after a send (default 8; give one per --send, in order,
+                      or one for all), and --boot <s> after start (6)
   --cols 100 --rows 30  the pane's size
   --colors truecolor  or 256, to see the colors a 256-color terminal rounds to
   --cmd "<command>"   run this in place of claude --plugin-dir <dir>
@@ -32,6 +33,9 @@ function tmux(...args: string[]): string {
   if (result.exitCode !== 0) throw new Error(`tmux ${args[0]}: ${result.stderr.toString().trim()}`);
   return result.stdout.toString();
 }
+
+// An OSC sequence, such as a hyperlink (OSC 8), which a capture keeps around its text.
+export const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -85,11 +89,12 @@ export async function ttyCapture(words: string[], flags: Map<string, string[]>):
 
   try {
     let open = await record("start", Number(one("boot") ?? 6));
-    for (const text of flags.get("send") ?? []) {
+    const waits = flags.get("wait") ?? [];
+    for (const [i, text] of (flags.get("send") ?? []).entries()) {
       if (!open) break;
       tmux("send-keys", "-t", session, "-l", text);
       tmux("send-keys", "-t", session, "Enter");
-      open = await record(text, Number(one("wait") ?? 8));
+      open = await record(text, Number(waits[i] ?? waits.at(-1) ?? 8));
     }
   } finally {
     try {
@@ -99,7 +104,11 @@ export async function ttyCapture(words: string[], flags: Map<string, string[]>):
     }
   }
 
-  const plain = (ansi: string) => ansi.replace(/\x1b\[[0-9;:]*m/g, "").replace(/\s+$/gm, "");
+  const plain = (ansi: string) =>
+    ansi
+      .replace(OSC, "")
+      .replace(/\x1b\[[0-9;:]*m/g, "")
+      .replace(/\s+$/gm, "");
   writeFileSync(join(out, "frames.jsonl"), frames.map((f) => JSON.stringify(f)).join("\n") + "\n");
   writeFileSync(
     join(out, "frames.txt"),
