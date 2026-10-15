@@ -40,7 +40,6 @@ import {
   rmSync,
   statSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -194,16 +193,19 @@ const CACHED = ((): { ok: boolean; current: boolean } | null => {
   return newest && { ok: newest.ok, current: false };
 })();
 
-/** Keep this start's answer for the next start, written whole, and drop answers a month old. */
+/** Keep this start's answer for the next start, written whole, and drop answers no start has
+ * written for a month, and temp files a crash left. */
 function saveCached(ok: boolean): void {
   if (PREVIEW_CACHE === null || !draftsRootIsOwn()) return;
   try {
     const temp = `${PREVIEW_CACHE}.${process.pid}.tmp`;
-    writeFileSync(temp, JSON.stringify({ ok }), { mode: 0o600, flag: "wx" });
+    writeFileSync(temp, JSON.stringify({ ok }), { mode: 0o600 });
     renameSync(temp, PREVIEW_CACHE);
     for (const name of readdirSync(DRAFTS_ROOT)) {
       const path = join(DRAFTS_ROOT, name);
-      if (isPreviewCache(name) && Date.now() - lstatSync(path).mtimeMs > 30 * 86_400_000) rmSync(path, { force: true });
+      const age = Date.now() - lstatSync(path).mtimeMs;
+      const leftover = /^preview-[0-9a-f]{16}\.json\.\d+\.tmp$/.test(name) && age > 86_400_000;
+      if ((isPreviewCache(name) && age > 30 * 86_400_000) || leftover) rmSync(path, { force: true });
     }
   } catch {
     // the next start checks again
@@ -221,7 +223,7 @@ const previewCheck = (async () => {
     const found = JSON.parse(lastLine(run.stdout)) as { ok?: unknown; reason?: unknown };
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
     if (!PREVIEW.ok) console.error(`artifact: no preview here: ${String(PREVIEW.reason)}`);
-    if (!CACHED?.current || CACHED.ok !== PREVIEW.ok) saveCached(PREVIEW.ok);
+    saveCached(PREVIEW.ok); // every start, so a setup still in use never ages out
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${(error as Error).message})` });
   } finally {
@@ -330,10 +332,11 @@ function publish(args: Args): string {
           "without edits). Nothing was published.",
       );
     }
-    if (partsBelow(STORE, source)) {
+    const below = partsBelow(STORE, source);
+    if (below && below.length >= 2 && loadIndex()[0].has(below[0]!)) {
       throw new Refusal(
-        `No edits were applied and nothing was published: ${source} is a file inside the artifacts folder ` +
-          `${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` +
+        `No edits were applied and nothing was published: ${source} is a file inside the published artifact ` +
+          `${below[0]} in ${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` +
           "Edit this file and publish it without edits.",
       );
     }
@@ -344,7 +347,7 @@ function publish(args: Args): string {
   try {
     raw = readSource(source, bytes);
   } catch (error) {
-    if (edits) throw new Refusal(`No edits were applied and nothing was published: ${(error as Error).message}`);
+    if (edits) throw new Refusal(`No edits were applied: ${(error as Error).message}`);
     throw new Error(`file_path: ${(error as Error).message}`);
   }
   if (edits) {
@@ -404,16 +407,15 @@ function publish(args: Args): string {
   let lang: string | null = null;
   let cover: boolean | null = null;
   if (isMarkdown) {
-    // Rendered into the document template the Artifact tool uses for Markdown; its tab shows the
-    // file name and the artifact takes the document's heading as its name.
-    // Like the Artifact tool, a Markdown artifact keeps its file's name, or the name it already has.
+    // Rendered into the document template the Artifact tool uses for Markdown, whose tab shows the
+    // file name; like the Artifact tool's, the artifact keeps its file's name, or the one it has.
     [content] = markdownPage(raw, name);
     title = entry?.title || name;
   } else {
     ({ content, description: oldDescription, lang, cover } = unwrap(raw));
     if (cover === null && isFullDocument(content)) notes.push(FULL_DOCUMENT_NOTE);
     title = pageTitle(content);
-    const asked = str(args.title);
+    const asked = str(typeof args.title === "string" ? args.title.trim() : null);
     if (!title && asked) {
       title = asked;
       content = `<title>${escape(title)}</title>\n` + content;
@@ -431,11 +433,10 @@ function publish(args: Args): string {
       );
     }
   }
-  const description =
-    str(args.description) ??
-    (entry?.description || null) ??
-    oldDescription ??
-    (isMarkdown ? null : pageDescription(content, basename(name, extname(name))) || null);
+  // A description passed now or before stays; otherwise, as the Artifact tool does, each publish
+  // takes one from the page again.
+  const given = str(args.description) ?? (entry && !entry.derived ? entry.description || null : null) ?? oldDescription;
+  const description = given ?? (isMarkdown ? null : pageDescription(content, basename(name, extname(name))) || null);
   const icon = str(args.icon) ?? (entry?.icon || null);
   if (fetchesOwnFiles(content)) notes.push(OWN_FILES_FETCH_NOTE);
   const published = wrapPage(content, description, icon, lang, cover);
@@ -471,6 +472,8 @@ function publish(args: Args): string {
     description,
     icon,
   });
+  if (given === null && description !== null) entry.derived = true;
+  else delete entry.derived;
   entry.created = entry.created || now;
   index.set(slug, entry);
   saveIndex(index);
@@ -526,7 +529,7 @@ function saveEdits(source: string, before: Buffer, text: string, count: number):
   }
   try {
     const data = Buffer.from(bom + text, "utf8");
-    writeSync(fd, data, 0, data.length, 0);
+    writeFileSync(fd, data); // from the start, where r+ opens, and on until every byte is written
     ftruncateSync(fd, data.length);
   } catch {
     return savedMessage(count, "write_failed");

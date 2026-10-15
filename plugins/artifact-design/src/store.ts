@@ -30,6 +30,7 @@ export type Entry = {
   title?: string;
   updated?: string;
   description?: string | null;
+  derived?: boolean; // the description was taken from the page, so the next publish takes it again
   icon?: string | null;
 };
 export type Index = Map<string, Entry>;

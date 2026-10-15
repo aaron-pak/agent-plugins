@@ -195,15 +195,13 @@ describe("Artifact tool", () => {
     const stored = join(STORE, "team-notes", "index.html");
     const inStore = await server.call({ file_path: stored, edits: [{ old_str: "Final", new_str: "Twice" }] });
     expect(inStore.text).toStartWith("No edits were applied and nothing was published: ");
-    expect(inStore.text).toContain("inside the artifacts folder");
+    expect(inStore.text).toContain("inside the published artifact team-notes");
     expect(readFileSync(stored, "utf8")).toContain("<h1>Final</h1>");
 
     const latin = join(TEMP, "latin.html");
     writeFileSync(latin, Buffer.from("<title>Caf\xe9</title>\n", "latin1"));
     const notUtf8 = await server.call({ file_path: latin, edits: [{ old_str: "Caf", new_str: "Cafe" }] });
-    expect(notUtf8.text).toStartWith(
-      "No edits were applied and nothing was published: the source file is not valid UTF-8",
-    );
+    expect(notUtf8.text).toStartWith("No edits were applied: the source file is not valid UTF-8");
 
     const withFiles = await server.call({ file_path: source, files: [], edits: [{ old_str: "Final", new_str: "X" }] });
     expect(withFiles.text).toStartWith("`edits` changes only the file at `file_path`");
@@ -230,6 +228,17 @@ describe("Artifact tool", () => {
     expect(listed).not.toContain("Custom Name");
     expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
       '<meta name="description" content="Weekly status for the ops team">',
+    );
+    writeFileSync(html, "<title>Ops Board</title>\n<h1>Final status for the ops team</h1>\n");
+    await server.call({ file_path: html });
+    expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
+      '<meta name="description" content="Final status for the ops team">',
+    );
+    await server.call({ file_path: html, description: "Chosen words." });
+    writeFileSync(html, "<title>Ops Board</title>\n<h1>Another heading entirely</h1>\n");
+    await server.call({ file_path: html });
+    expect(readFileSync(join(STORE, "ops-board", "index.html"), "utf8")).toContain(
+      '<meta name="description" content="Chosen words.">',
     );
     await server.close();
   });

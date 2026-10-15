@@ -16,8 +16,7 @@ import {
   renameSync as renameSync2,
   rmSync as rmSync2,
   statSync as statSync3,
-  writeFileSync as writeFileSync2,
-  writeSync as writeSync2
+  writeFileSync as writeFileSync2
 } from "node:fs";
 import { basename as basename3, dirname as dirname3, extname, join as join5 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
@@ -25517,11 +25516,13 @@ function saveCached(ok) {
     return;
   try {
     const temp = `${PREVIEW_CACHE}.${process.pid}.tmp`;
-    writeFileSync2(temp, JSON.stringify({ ok }), { mode: 384, flag: "wx" });
+    writeFileSync2(temp, JSON.stringify({ ok }), { mode: 384 });
     renameSync2(temp, PREVIEW_CACHE);
     for (const name of readdirSync3(DRAFTS_ROOT)) {
       const path = join5(DRAFTS_ROOT, name);
-      if (isPreviewCache(name) && Date.now() - lstatSync3(path).mtimeMs > 30 * 86400000)
+      const age = Date.now() - lstatSync3(path).mtimeMs;
+      const leftover = /^preview-[0-9a-f]{16}\.json\.\d+\.tmp$/.test(name) && age > 86400000;
+      if (isPreviewCache(name) && age > 30 * 86400000 || leftover)
         rmSync2(path, { force: true });
     }
   } catch {}
@@ -25537,8 +25538,7 @@ var previewCheck = (async () => {
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
     if (!PREVIEW.ok)
       console.error(`artifact: no preview here: ${String(PREVIEW.reason)}`);
-    if (!CACHED?.current || CACHED.ok !== PREVIEW.ok)
-      saveCached(PREVIEW.ok);
+    saveCached(PREVIEW.ok);
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${error.message})` });
   } finally {
@@ -25610,8 +25610,9 @@ function publish(args) {
     if (args.files !== undefined) {
       throw new Refusal("`edits` changes only the file at `file_path`: not with `files` (publish the other files in a call " + "without edits). Nothing was published.");
     }
-    if (partsBelow(STORE, source)) {
-      throw new Refusal(`No edits were applied and nothing was published: ${source} is a file inside the artifacts folder ` + `${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` + "Edit this file and publish it without edits.");
+    const below = partsBelow(STORE, source);
+    if (below && below.length >= 2 && loadIndex()[0].has(below[0])) {
+      throw new Refusal(`No edits were applied and nothing was published: ${source} is a file inside the published artifact ` + `${below[0]} in ${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` + "Edit this file and publish it without edits.");
     }
     edits = parsed;
   }
@@ -25621,7 +25622,7 @@ function publish(args) {
     raw = readSource(source, bytes);
   } catch (error) {
     if (edits)
-      throw new Refusal(`No edits were applied and nothing was published: ${error.message}`);
+      throw new Refusal(`No edits were applied: ${error.message}`);
     throw new Error(`file_path: ${error.message}`);
   }
   if (edits) {
@@ -25681,7 +25682,7 @@ function publish(args) {
     if (cover === null && isFullDocument(content))
       notes.push(FULL_DOCUMENT_NOTE);
     title = pageTitle(content);
-    const asked = str(args.title);
+    const asked = str(typeof args.title === "string" ? args.title.trim() : null);
     if (!title && asked) {
       title = asked;
       content = `<title>${escape2(title)}</title>
@@ -25694,7 +25695,8 @@ function publish(args) {
       notes.push("The page has no <title> in its first 8KB (one after an <svg> doesn't count), so the " + "artifact is named after the file: put a <title> at the top, or pass `title`.");
     }
   }
-  const description = str(args.description) ?? (entry?.description || null) ?? oldDescription ?? (isMarkdown ? null : pageDescription(content, basename3(name, extname(name))) || null);
+  const given = str(args.description) ?? (entry && !entry.derived ? entry.description || null : null) ?? oldDescription;
+  const description = given ?? (isMarkdown ? null : pageDescription(content, basename3(name, extname(name))) || null);
   const icon = str(args.icon) ?? (entry?.icon || null);
   if (fetchesOwnFiles(content))
     notes.push(OWN_FILES_FETCH_NOTE);
@@ -25731,6 +25733,10 @@ function publish(args) {
     description,
     icon
   });
+  if (given === null && description !== null)
+    entry.derived = true;
+  else
+    delete entry.derived;
   entry.created = entry.created || now;
   index.set(slug, entry);
   saveIndex(index);
@@ -25775,7 +25781,7 @@ function saveEdits(source, before, text, count) {
   }
   try {
     const data = Buffer.from(bom + text, "utf8");
-    writeSync2(fd, data, 0, data.length, 0);
+    writeFileSync2(fd, data);
     ftruncateSync(fd, data.length);
   } catch {
     return savedMessage(count, "write_failed");
