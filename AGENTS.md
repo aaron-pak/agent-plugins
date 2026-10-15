@@ -54,6 +54,24 @@ Edit `src/`, never a bundle. `scripts/build.ts` bundles each entry point, with i
 
 `bun run dev:artifact` runs the `artifact` server from source and restarts it when a file in `src/` is saved. To try it in Claude Code, start a session with that server under another name, such as `claude --mcp-config '{"mcpServers":{"artifact-dev":{"command":"bun","args":["--cwd","/path/to/agent-plugins/plugins/artifact-design/src","--watch","server.ts"]}}}'`; Claude Code keeps the connection across restarts, so the next call runs the new code. Keep the `--cwd`: Claude Code's Edit and Write save by replacing the file, and Bun's watcher misses a replaced file outside its working folder. It misses one in `src/text/` too, so after editing those, save a `.ts` file to restart.
 
+## Developing a mod
+
+`bun run mod` is the loop for a mod (a plugin of function hooks). Each command works on a copy of the folder it names, so it runs on any mod, including one on another branch or outside the repository, and leaves the folder as it was. `bun run mod help <command>` lists the options.
+
+```sh
+bun run mod check plugins/<mod>                # validate --strict, tsc against this build's API, every test
+bun run mod test plugins/<mod> --grep splash   # the tests whose names match; without --grep, all of them
+bun run mod preview plugins/<mod> --styles tide,hearth   # play a band through a session and check its layout
+bun run mod preview plugins/<mod> --png        # and paint both surfaces, dark and light; --gifs animates them
+bun run mod tty plugins/<mod> --send "/band hearth" --send "run false"   # real Claude Code in tmux
+```
+
+- `mod test` cuts each test file into runs of neighbouring tests that run side by side, balanced by each test's last time. Iterate with `--grep` on what changed and run everything before pushing. A test that leans on the one before it stays beside it unless a cut falls between them; name such pairs "(1 of 2)" and "(2 of 2)" and no cut does.
+- `mod preview` plays fresh, idle, cheer, working, reading, thinking, oops, high, nap and pet through the mod's `AbovePrompt` hook on both surfaces at 64, 100 and 140 columns, then writes `report.txt` and `frames.txt` (the terminal band as text, each animation's distinct frames). Read those before painting, and paint for what text can't show: color and the desktop. The report fails on a height that changes, a row past the band's edge, an emoji-capable glyph, block characters in desktop Text, or an element a surface refuses, and warns on rows within 2 columns of the edge, glyphs outside the safe set, space-aligned desktop Text and more than 4 frame changes a second. When a round of looking finds a fault of a new kind, add it to `scripts/mod/preview/lint.ts` or to the mod's tests, so no later round has to look for it. The desktop paint approximates the real page.
+- `mod types` uses the `.claude-plugin/types/` an interactive session lays beside a mod it loads from its folder; elsewhere it uses the declarations the plugin-authoring skill writes each time it loads, so load that skill first in a cloud session.
+- `mod tty` starts `claude --plugin-dir <mod>` in a detached tmux pane, types each `--send`, and records every change to the pane, which is where the host's own lines, wrapping and 256-color rounding show. A cloud container's auto mode refuses an interactive `claude`, so run it on a Mac, through Remote Control.
+- To see each push on a Mac with no restart, name the mod's checkout in `CLAUDE_CODE_PLUGIN_DIRS` and set `CLAUDE_CODE_PLUGIN_DIR_WATCH=1`, both in `env` of `~/.claude/settings.json`. An interactive session reloads a watched mod when a file in it is saved; the variable makes the desktop app's sessions do the same. Then `scripts/mod/follow.sh <checkout>` fast-forwards the checkout to each push to its branch.
+
 ## Trying changes locally
 
 Add the local checkout as the marketplace so changes show up without pushing:
