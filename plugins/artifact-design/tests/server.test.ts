@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { NATIVE_ONLY } from "./native-only.ts";
 
 const SERVER = join(import.meta.dir, "..", "mcp", "server.mjs");
 const TEMP = mkdtempSync(join(tmpdir(), "artifact-server-test-"));
@@ -102,7 +103,7 @@ describe("initialize era", () => {
     const server = await legacy("claude-code");
     const { tools } = (await server.request("tools/list")).result;
     expect(tools.map((tool: { name: string }) => tool.name)).toEqual(["Artifact"]);
-    expect(tools[0].description.length).toBeLessThanOrEqual(2048);
+    expect(tools[0].description.length).toBeLessThanOrEqual(4096);
     expect(tools[0]._meta).toEqual({ "anthropic/alwaysLoad": true });
     expect(tools[0].inputSchema.properties.action.enum).not.toContain("preview");
     await server.close();
@@ -374,6 +375,42 @@ describe("preview", () => {
     expect(JSON.parse(readFileSync(elsewhere, "utf8"))).toEqual({ ok: !canPreview });
   }, 60_000);
 
+  test("routes preview to ArtifactCheck and names it in quickstart only when it is listed", async () => {
+    const temp = mkdtempSync(join(TEMP, "listed-"));
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    mkdirSync(folder, { mode: 0o700 });
+    writeFileSync(join(folder, "preview-0123456789abcdef.json"), JSON.stringify({ ok: true }));
+    const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1", TMPDIR: temp });
+    expect(toolNames(await server.request("tools/list"))).toEqual(["Artifact", "ArtifactCheck"]);
+    const page = join(TEMP, "routed.html");
+    writeFileSync(page, "<title>Routed</title>\n<p>Hello</p>\n");
+    const redirect = await server.call({ action: "preview", file_path: page });
+    expect(redirect.text).toBe("preview is an action of the ArtifactCheck tool: call ArtifactCheck with `file_path`.");
+    expect(redirect.isError).toBe(true);
+    const files = await server.call({ file_path: page, files: {} }, "ArtifactCheck");
+    expect(files.text).toStartWith("Unknown parameter `files`");
+    const verify = await server.call({ action: "verify" }, "ArtifactCheck");
+    expect(verify.text).toBe("Unknown action 'verify'.");
+    if (!canPreview) {
+      const missing = await server.call({ file_path: page, widths: [800], themes: ["dark"] }, "ArtifactCheck");
+      expect(missing.text).toStartWith("preview failed: preview isn't available here");
+    }
+    const listed = (await server.call({ action: "quickstart", intent: "other" })).text;
+    expect(listed).toContain("one `ArtifactCheck` preview, or else one screenshot");
+    expect(listed).toContain("`artifact-design:artifact-diagramming` in the Skill tool");
+    expect(listed).not.toMatch(NATIVE_ONLY);
+    await server.close();
+    const off = await legacy("codex-mcp-client", STORE, { ARTIFACT_PREVIEW: "0" });
+    for (const intent of ["other", "document", "slides", "design"]) {
+      const text = (await off.call({ action: "quickstart", intent })).text;
+      expect(text).not.toContain("ArtifactCheck");
+      expect(text).not.toContain("Skill tool");
+      expect(text).toContain("In this text, Claude means you.");
+      expect(text).not.toMatch(NATIVE_ONLY);
+    }
+    await off.close();
+  }, 60_000);
+
   test.skipIf(!canPreview)(
     "renders a page as publish wraps it and returns its captures",
     async () => {
@@ -391,6 +428,10 @@ describe("preview", () => {
       expect(result.text).toStartWith("Previewed look.html");
       expect(result.isError).toBe(false);
       expect(result.images).toBe(4);
+      const narrow = await server.call({ file_path: page, widths: [800, 99999], themes: ["dark"] }, "ArtifactCheck");
+      expect(narrow.text).toStartWith("Previewed look.html");
+      expect(narrow.text).toContain("at 800/2560 px in dark");
+      expect(narrow.images).toBe(2);
       expect(readFileSync(page, "utf8")).toBe("<title>Look</title>\n<p>Hello</p>\n");
       await server.close();
     },

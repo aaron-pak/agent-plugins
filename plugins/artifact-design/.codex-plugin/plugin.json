@@ -1,6 +1,6 @@
 {
   "name": "artifact-design",
-  "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with an Artifact MCP tool that publishes and previews them on this machine. From Anthropic's Claude Code.",
+  "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with Artifact and ArtifactCheck MCP tools that publish and preview them on this machine. From Anthropic's Claude Code.",
   "author": {
     "name": "Anthropic"
   },
@@ -10,6 +10,7 @@
       "command": "node",
       "args": ["mcp/server.mjs"],
       "cwd": ".",
+      "env_vars": ["ARTIFACTS_DIR", "ARTIFACT_OPEN", "ARTIFACT_PREVIEW", "ARTIFACT_PREVIEW_CA", "DISPLAY", "WAYLAND_DISPLAY"],
       "omit_tools_from": ["deferred", "code_mode"]
     }
   }

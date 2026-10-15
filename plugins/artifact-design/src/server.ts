@@ -12,15 +12,14 @@
 //   A Markdown file is rendered into the document template Claude Code uses for one. `edits`
 //   changes the file on the way, as the Artifact tool's does (src/edits.ts).
 // - list, read, open, delete: the published artifacts.
-// - ArtifactCheck's preview: renders the page at 1280 and 390px wide in light and dark, as Claude
-//   Code's ArtifactCheck does, and returns the captures and what breaks (scripts/preview.mjs). The
+// - ArtifactCheck's preview: renders the page at 1280 and 390px wide in light and dark (or the
+//   widths and themes given), as Claude Code's ArtifactCheck does, and returns the captures and what breaks (scripts/preview.mjs). The
 //   tool is listed only when Playwright and a Chromium are found at startup, and ARTIFACT_PREVIEW=0
 //   leaves it out. Claude Code's ArtifactCheck also has verify, which reads what claude.ai viewers'
 //   browsers reported; there is nothing like it here.
 //
-// Codex reads at most 1,000 bytes of an MCP tool's description and strips every description
-// from an input schema over 5,000 bytes, so a Codex client gets a compact tool whose text fits
-// those limits and points to quickstart for the rest.
+// Codex strips every description from an input schema over 5,000 bytes, so a Codex client gets a
+// compact tool whose text fits and points to quickstart for the rest.
 //
 // Speaks MCP over stdio, both the 2026-07-28 revision and the earlier ones, with the MCP SDK.
 // scripts/build.ts bundles it into mcp/server.mjs, which runs on Node.
@@ -93,7 +92,7 @@ import {
   withStoreLock,
   type Entry,
 } from "./store.ts";
-import { INSTRUCTIONS, checkTool, tool, unknownParameter, type Setting } from "./tool.ts";
+import { INSTRUCTIONS, checkTool, isCodex, tool, unknownParameter, type Setting } from "./tool.ts";
 
 // Anything printed goes to stderr: stdout carries only protocol messages.
 console.log = console.info = console.debug = console.error;
@@ -291,15 +290,20 @@ const MISS_ROOM = 40_000;
 
 const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
-function actQuickstart(args: Args): string {
+async function actQuickstart(args: Args, client?: string): Promise<string> {
   const text = readFileSync(GUIDANCE, "utf8");
   const start = text.indexOf("## Page contract");
   if (start === -1) throw new Error(`${GUIDANCE} has no "## Page contract" section`);
   // Claude Code's quickstart leaves the empty dataviz callout's blank lines before "## Process".
-  const guidance = text
+  let guidance = text
     .slice(start)
     .trim()
     .replace("\n\n## Process", () => "\n\n\n\n## Process");
+  // Name ArtifactCheck only where it is listed.
+  if (!(PREVIEW_SWITCH && (await previewOffered()))) {
+    guidance = guidance.replace("one `ArtifactCheck` preview, or else one screenshot", () => "one screenshot");
+  }
+  const codex = isCodex(client);
   const onlyPlain =
     args.intent !== undefined && args.intent !== null && args.intent !== "other"
       ? "Every artifact here is a plain HTML page, so make this one as a plain page.\n\n"
@@ -309,9 +313,11 @@ function actQuickstart(args: Args): string {
     "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own " +
     "text, so do not load that skill as well. Write the page to a file and publish it in the same " +
     "message: the two calls run in order. Unless the person named a location, the file goes in " +
-    `${DRAFTS}, not in the project.\n\n` +
+    `${DRAFTS}, not in the project. In this text, Claude means you.\n\n` +
     guidance +
-    "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill before writing it."
+    "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill" +
+    (codex ? "" : " (`artifact-design:artifact-diagramming` in the Skill tool)") +
+    " before writing it."
   );
 }
 
@@ -489,7 +495,7 @@ function publish(args: Args): string {
   lines.push(
     "The link is a file on this machine. If the page is meant for someone else, tell the user when you " +
       "present the page that to share it they send the published page, " +
-      (hasOtherFiles(folder, pageFile) ? `the whole ${folder} folder` : pageFile) +
+      (hasOtherFiles(folder, pageFile) ? `the ${folder} folder, without its .versions folder` : pageFile) +
       ", not the source file, which lacks the page skeleton.",
   );
   lines.push(
@@ -503,7 +509,7 @@ function publish(args: Args): string {
   if (first) {
     if (!OPEN_PAGES) lines.push("The page was not opened in a browser (ARTIFACT_OPEN=0); give the user the link.");
     else if (openInBrowser(pageFile)) lines.push("Opened it in the browser.");
-    else lines.push("There is no browser to open here, so the page was not opened; give the user the link.");
+    else lines.push("This server can't open a browser here, so the page was not opened; give the user the link.");
   }
   return lines.join("\n\n");
 }
@@ -537,17 +543,6 @@ function saveEdits(source: string, before: Buffer, text: string, count: number):
 }
 
 async function actPreview(args: Args): Promise<Result> {
-  const extra = Object.keys(args)
-    .filter((key) => key !== "action" && key !== "file_path")
-    .sort();
-  if (extra.length) {
-    throw new Error(
-      `preview takes only file_path \u2014 remove ${extra.join(", ")}.` +
-        (extra.includes("files")
-          ? " Preview renders the single page file; files published beside it are not loaded locally."
-          : ""),
-    );
-  }
   if (!(await previewReady()))
     throw new Error(`preview isn't available here (${PREVIEW.reason}). Skip the look and publish.`);
   if (!args.file_path) throw new Error("preview needs `file_path`: the local .html page to render.");
@@ -572,13 +567,22 @@ async function actPreview(args: Args): Promise<Result> {
     const { content, lang, cover } = unwrap(raw);
     writeFileSync(wrapped, wrapPage(content, null, null, lang, cover));
   }
-  return runPreview(source, wrapped, out);
+  return runPreview(source, wrapped, out, args.widths, args.themes);
 }
 
 type Report = { text: string; shots?: { label: string; path: string }[]; failed?: boolean };
 
-async function runPreview(source: string, wrapped: string, out: string): Promise<CallToolResult> {
+async function runPreview(
+  source: string,
+  wrapped: string,
+  out: string,
+  widths: unknown,
+  themes: unknown,
+): Promise<CallToolResult> {
   const args = [join(SCRIPTS, "preview.mjs"), source, "--wrapped", wrapped, "--json", "--out", out];
+  // preview.mjs clamps and filters these as Claude Code does.
+  if (Array.isArray(widths)) args.push("--widths", widths.filter((w) => typeof w === "number").join(","));
+  if (Array.isArray(themes)) args.push("--themes", themes.filter((t) => typeof t === "string").join(","));
   const run = await runScript(args, 240_000);
   if (run.timedOut) {
     throw new Error("the preview ran for 4 minutes without finishing and was stopped; skip the look and publish");
@@ -675,9 +679,9 @@ function actOpen(args: Args): string {
     : `There is no browser to open here; the page is ${link}.`;
 }
 
-const ACTIONS: Record<string, (args: Args) => Result | Promise<Result>> = {
+const ACTIONS: Record<string, (args: Args, client?: string) => Result | Promise<Result>> = {
   publish: (args) => withStoreLock(() => publish(args)),
-  quickstart: actQuickstart,
+  quickstart: (args, client) => actQuickstart(args, client),
   read: actRead,
   list: actList,
   open: actOpen,
@@ -689,7 +693,7 @@ const textResult = (text: string, isError = false): CallToolResult => ({
   ...(isError ? { isError: true } : {}),
 });
 
-async function call(args: Args): Promise<CallToolResult> {
+async function call(args: Args, client?: string): Promise<CallToolResult> {
   const problem = unknownParameter(args);
   if (problem) return textResult(problem, true);
   const action = args.action || "publish";
@@ -706,7 +710,7 @@ async function call(args: Args): Promise<CallToolResult> {
     );
   }
   try {
-    const result = await ACTIONS[action]!(args);
+    const result = await ACTIONS[action]!(args, client);
     return typeof result === "string" ? textResult(result) : result;
   } catch (error) {
     // reported to the model as a tool error
@@ -721,7 +725,7 @@ async function callCheck(args: Args): Promise<CallToolResult> {
   const action = args.action ?? "preview";
   if (action !== "preview") return textResult(`Unknown action ${repr(action)}.`, true);
   try {
-    const result = await actPreview({ file_path: args.file_path });
+    const result = await actPreview({ file_path: args.file_path, widths: args.widths, themes: args.themes });
     return typeof result === "string" ? textResult(result) : result;
   } catch (error) {
     return textResult(`preview failed: ${(error as Error).message}`, true);
@@ -746,13 +750,14 @@ serveStdio(() => {
       ...(PREVIEW_SWITCH && (await previewOffered()) ? [checkTool()] : []),
     ],
   }));
-  server.setRequestHandler("tools/call", async (request) => {
+  server.setRequestHandler("tools/call", async (request, ctx) => {
     const args = request.params.arguments ?? {};
     const name = request.params.name;
     if (name !== "Artifact" && !(name === "ArtifactCheck" && PREVIEW_SWITCH)) {
       throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
-    return server.projectCallToolResult(await (name === "Artifact" ? call(args) : callCheck(args)), undefined);
+    const result = name === "Artifact" ? call(args, clientName(server, ctx)) : callCheck(args);
+    return server.projectCallToolResult(await result, undefined);
   });
   return server;
 });

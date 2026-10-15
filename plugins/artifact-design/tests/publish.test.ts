@@ -1,7 +1,7 @@
 // Publishing a page: escaping, the page's name, the skeleton round trip, and the tool's size limits.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,6 +19,7 @@ import {
   wrap,
 } from "../src/publish.ts";
 import { INSTRUCTIONS, checkTool, tool, unknownParameter } from "../src/tool.ts";
+import { NATIVE_ONLY } from "./native-only.ts";
 
 describe("html", () => {
   test("escape matches the Artifact tool's", () => {
@@ -160,7 +161,8 @@ describe("tool", () => {
 
   test("keeps Claude Code's description whole", () => {
     const claude = tool("claude-code", setting);
-    expect(claude.description!.length).toBeLessThanOrEqual(2048);
+    expect(claude.description!.length).toBeLessThanOrEqual(4096);
+    expect(claude.description).toContain("**Before writing the file, Claude must load the `artifact-design` skill**");
     expect(claude.inputSchema.description).toContain("**Calls**");
     expect(claude._meta).toEqual({ "anthropic/alwaysLoad": true });
   });
@@ -169,9 +171,10 @@ describe("tool", () => {
     const texts = [tool("claude-code", setting), tool("codex-mcp-client", setting), checkTool()].map((listed) =>
       JSON.stringify(listed),
     );
-    for (const text of [...texts, INSTRUCTIONS]) {
-      expect(text).not.toMatch(/claude\.ai|Artifact types?\b|ArtifactComments|ArtifactData|design system|scratchpad/i);
-    }
+    const skills = ["artifact-design", "artifact-diagramming"].map((skill) =>
+      readFileSync(join(import.meta.dir, "..", "skills", skill, "SKILL.md"), "utf8"),
+    );
+    for (const text of [...texts, INSTRUCTIONS, ...skills]) expect(text).not.toMatch(NATIVE_ONLY);
   });
 
   test("refuses parameters it doesn't take, saying what to do instead", () => {

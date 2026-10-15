@@ -67,10 +67,15 @@ def check_skills(plugin_dir, where):
     return bool(skill_dirs)
 
 
-def check_mcp(plugin_dir, where, codex_servers=None):
+def check_mcp(plugin_dir, where, codex_servers=None, codex_manifest=False):
     """Compare the Claude Code servers with Codex's: mcp.json, or the mcpServers in .codex-plugin/plugin.json."""
     agent_plugins = plugin_dir / "mcp.json"
     claude_code = plugin_dir / ".mcp.json"
+    if codex_manifest and codex_servers is None:
+        # Without mcpServers in its manifest, Codex reads .mcp.json, as Claude Code does.
+        if agent_plugins.exists():
+            error(where, "has mcp.json beside .codex-plugin/plugin.json; Codex reads .mcp.json or the manifest's mcpServers")
+        return claude_code.exists()
     if codex_servers is not None:
         if agent_plugins.exists():
             error(where, "has mcp.json beside .codex-plugin/plugin.json; Codex reads only the manifest's mcpServers")
@@ -161,7 +166,7 @@ def check_plugin(entry):
             error(where_manifest, "author.name is missing")
 
     has_skills = check_skills(plugin_dir, where)
-    has_mcp = check_mcp(plugin_dir, where, codex_servers)
+    has_mcp = check_mcp(plugin_dir, where, codex_servers, (plugin_dir / ".codex-plugin" / "plugin.json").exists())
     if not has_skills and not has_mcp:
         error(where, "has neither skills/ nor mcp.json")
 

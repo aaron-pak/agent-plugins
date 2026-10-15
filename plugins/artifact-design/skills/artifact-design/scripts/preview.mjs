@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 // Preview an HTML artifact the way Claude Code's ArtifactCheck does, before publishing it.
 //
-//   node preview.mjs page.html --wrapped published.html [--out dir] [--json]
+//   node preview.mjs page.html --wrapped published.html [--widths 1280,390] [--themes light,dark] [--out dir] [--json]
 //   node preview.mjs --check        (whether a preview can run here, as JSON)
 //
 // Takes the page as publish wraps it (the artifact MCP server writes that copy to --wrapped,
-// leaving the page itself untouched), serves it over http and renders it at 1280 and 390px wide in light and dark, with the same viewports, theme
+// leaving the page itself untouched), serves it over http and renders it at 1280 and 390px wide in light and dark
+// (or the widths and themes given), with the same viewports, theme
 // attribute, settling, content policy, request filter, step timeouts and in-page checks as
 // Claude Code 2.1.300's preview: page and element overflow, SVG labels clipped by their
 // viewport, Mermaid blocks that fail, colors set only inside a theme block, identical light and
 // dark renders, loads the preview leaves out, dialogs, navigation, and console errors, including
 // a script that fails to parse. Two in-page checks go beyond Claude Code's ArtifactCheck: running
 // text that a grid or flex parent splits into separate rows or columns, and SVG text drawn too
-// small to read at phone width. Like Claude Code's, it loads only the page, the Mermaid runtime
-// and Google Fonts: CDN scripts are blocked and the page's own files are listed in a note. It
+// small to read at phone width. It loads the page, Google Fonts and scripts from the five CDNs the
+// page contract allows, as the published page does (Claude Code's preview blocks those scripts);
+// the page's own files are listed in a note. It
 // prints the same report, with a JPEG capture of each render, sized and compressed as Claude
 // Code sizes them. --json prints the report and capture paths as JSON for the artifact MCP
 // server, whose publish takes the page's own files through `files`, as the Artifact tool's does.
@@ -30,13 +32,17 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
-const page = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--out" && args[i - 1] !== "--wrapped");
+const page = args.find((a, i) => !a.startsWith("--") && !["--out", "--wrapped", "--widths", "--themes"].includes(args[i - 1]));
 const outIndex = args.indexOf("--out");
 const wrappedIndex = args.indexOf("--wrapped");
 const asJson = args.includes("--json");
+const listArg = (flag) => {
+  const at = args.indexOf(flag);
+  return at === -1 || !args[at + 1] ? [] : args[at + 1].split(",");
+};
 const checkOnly = args.includes("--check");
 if (!checkOnly && (!page || wrappedIndex === -1 || !args[wrappedIndex + 1])) {
-  console.error("usage: node preview.mjs page.html --wrapped published.html [--out dir] [--json] | --check");
+  console.error("usage: node preview.mjs page.html --wrapped published.html [--widths 1280,390] [--themes light,dark] [--out dir] [--json] | --check");
   process.exit(1);
 }
 
@@ -132,9 +138,12 @@ if (checkOnly) {
 }
 if (!playwright) await stop("Playwright isn't installed here, so there is no preview. Skip the look and publish.");
 
-// Claude Code's preview settings (2.1.300).
-const WIDTHS = [1280, 390];
-const THEMES = ["light", "dark"];
+// Claude Code's preview settings (2.1.300): up to three widths, clamped to 320-2560px, and either
+// theme, by default 1280 and 390px in both.
+const widthsGiven = [...new Set(listArg("--widths").map(Number).filter((w) => Number.isFinite(w)).map((w) => Math.round(Math.min(2560, Math.max(320, w)))))].slice(0, 3);
+const WIDTHS = widthsGiven.length ? widthsGiven : [1280, 390];
+const themesGiven = ["light", "dark"].filter((theme) => listArg("--themes").includes(theme));
+const THEMES = themesGiven.length ? themesGiven : ["light", "dark"];
 const viewportHeight = (width) => (width < 600 ? 844 : 900);
 const MAX_CAPTURE = 1568; // captures stop at this height; taller pages are noted
 const SETTLE_MS = 2000;
@@ -159,12 +168,13 @@ const JPEG_START = 85;
 const JPEG_STEP = 5;
 const JPEG_MIN = 10;
 const MAX_BASE64 = 1398100;
-// The content policy Claude Code's preview renders under: only Google Fonts loads from outside.
-// The page's Mermaid runtime is added to script-src because it loads from jsDelivr here, where
-// Claude Code serves it from the preview's own origin.
+// The content policy Claude Code's preview renders under, where only Google Fonts loads from
+// outside, with the five script CDNs the page contract allows added, since the page published
+// here loads them (src/publish.ts). The page's Mermaid runtime loads from jsDelivr too.
 const here = dirname(fileURLToPath(import.meta.url));
 const MERMAID_SRC = readFileSync(join(here, "mermaid-runtime.html"), "utf8").match(/src="([^"]+)"/)[1];
-const PREVIEW_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: " + MERMAID_SRC
+const SCRIPT_HOSTS = ["https://cdnjs.cloudflare.com/", "https://cdn.jsdelivr.net/npm/", "https://unpkg.com/", "https://cdn.tailwindcss.com/", "https://code.jquery.com/"];
+const PREVIEW_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/npm/ https://unpkg.com https://cdn.tailwindcss.com https://code.jquery.com"
   + "; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self' blob:; form-action 'self'; frame-src 'self' blob: data:; object-src 'none'; webrtc 'block'; base-uri 'self'";
 const FONT_ORIGINS = new Set(["https://fonts.googleapis.com", "https://fonts.gstatic.com"]);
 const FONT_PATHS = ["/css", "/icon", "/earlyaccess/", "/s/", "/l/", "/ea/"];
@@ -659,6 +669,7 @@ function allowed(url, method, hasBody, pageHref) {
   try {
     const u = new URL(url);
     if (u.protocol === "data:" || u.protocol === "blob:" || u.href === "about:blank") return true;
+    if (SCRIPT_HOSTS.some((host) => u.href.startsWith(host))) return true;
     return FONT_ORIGINS.has(u.origin) && FONT_PATHS.some((prefix) => u.pathname.startsWith(prefix));
   } catch {
     return false;
@@ -873,7 +884,7 @@ if (browser) {
           dropped++;
           continue;
         }
-        add("csp", `${clip(where, 100)} is blocked by the artifact content policy (${clip(v.directive, 24)}) — only Google Fonts loads from outside`);
+        add("csp", `${clip(where, 100)} is blocked by the artifact content policy (${clip(v.directive, 24)}) — only the page contract's script CDNs and Google Fonts load from outside`);
       }
       for (const type of dialogs) add("load", `the page opened a JavaScript dialog (${type}) on load; build any confirmation into the page instead`);
       for (const [kind, text] of blockedFindings(blocked, href)) add(kind, text);

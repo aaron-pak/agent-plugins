@@ -24951,7 +24951,7 @@ function savedMessage(edits, failure) {
   }
   const lead = `Published — the page now has ${one ? "the edit" : `the ${edits} edits`}, but the file at file_path does not`;
   if (failure === "write_failed") {
-    return `${lead}: writing it back failed, and the file may be partly written. read it before anything else, restore it ` + `to the published text (the published page, ${one ? "the edit" : "the edits"} included), and only then publish it ` + "again; publishing it as it is could put damaged content on the page.";
+    return `${lead}: writing it back failed, and the file may be partly written. Read it before anything else, restore it ` + `to the published text (the published page, ${one ? "the edit" : "the edits"} included), and only then publish it ` + "again; publishing it as it is could put damaged content on the page.";
   }
   return `${lead} (${{ changed_during_publish: "it changed on disk while the publish ran", hard_linked: "it has other names on disk (a hard link)", not_writable: "it can't be written" }[failure]}, so it was left as it is). ` + `Apply the same ${one ? "edit" : "edits"} to that file before you publish it again` + `${failure === "hard_linked" ? ", and publish it without `edits` while it has other names" : ""}; publishing it as it is would revert ${one ? "it" : "them"}.`;
 }
@@ -25259,21 +25259,23 @@ function isDir(path) {
 }
 
 // plugins/artifact-design/src/text/description.md
-var description_default = "The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}{opened}. Its full name carries a server prefix (in Claude Code, `mcp__plugin_artifact-design_artifact__Artifact`), and \"Artifact\" in this text, in quickstart's result and in the skills means this tool, so a call to the bare name `Artifact` goes to this tool's full name instead. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.\n\nWhen a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as \"can you write up the plan?\". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as \"should we ship this?\", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as \"just give me the .html file\" or \"save these notes as a .md file\", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.\n\n**Before writing the file, Claude must load the `artifact-design` skill**, including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file (via Write/Edit) and calls Artifact with its absolute path, putting the file in {drafts} when the person names no other location. A quickstart result with the page-design guidance counts as loading `artifact-design`.\n\n**If Claude writes a page before that skill has loaded**, the skill's contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never \"Name: explainer\", and puts the explanation in `description`. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme=\"light\"])` and again under `:root[data-theme=\"dark\"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.\n\n**Format**: Claude always authors the page as `.html`, and publishes a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, Claude builds an HTML page from its content, keeping its substance and designing the page as it would any other artifact rather than transcribing the Markdown one to one.\n\n**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but every artifact on this machine opens from `file://`, which the browser may treat as one origin shared by all of them, so Claude prefixes every key with the page's name; what a page stores lives only in that viewer's browser. It survives republishes to the same link and never reaches other viewers, other devices or Claude. It can come back empty, or the accessor can throw, in a private window, with cleared or blocked site data, or in previews, so Claude wraps every read and write in try/catch and makes the page render correctly without it. Claude uses it only for per-viewer conveniences, such as a remembered tab or filter, a collapsed section or an unsent draft, and never for state that must persist reliably, be shared between viewers or be read back by Claude.\n\n**Size**: Claude keeps the rendered page at 16MB or smaller, and embedded `data:` URIs count toward that limit.\n\n**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. The page opens from a `file://` link, so it can link to these files and load them as images, stylesheets and classic scripts, but it cannot `fetch()`, import or start Workers from them: data a script reads goes inline. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.\n\n**Calls**: `action` picks one (publish when omitted):\n- **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place.{open_note}\n- **quickstart**: takes `intent` and returns the page contract and the design guidance for a plain page. It is read-only. Only plain pages are made here.\n- **read**: takes `url` and returns the published page's content, without the skeleton that publishing adds.\n- **list**: returns the artifacts published on this machine, newest first, with title, link, last-updated time and source file.\n- **delete**: with `url`, permanently deletes a published artifact and its versions, which cannot be undone. Claude does this only when the person asks for that artifact to be deleted or unpublished, or says they did not want it published, never on its own initiative. The source file stays.\n- **open**: takes `url` and opens that existing artifact in the browser without changing it. Claude uses it when the person asks to see one. An artifact Claude just published needs no open.\n\n**To update** an artifact published earlier in this session, Claude calls Artifact again with the same file path, which republishes it to the same link. A different path creates a new link, so Claude changes the path only when it wants a separate artifact. For a small change to a page published from a file in this session, Claude can send the change as `edits` on the publish call itself (old_str/new_str pairs copied exactly from the file as it now stands) instead of editing the file first. For a change to several files at once, or a rewrite of most of a page, Claude makes the change with Edit, not a shell command, and publishes the artifact again with the same file path in the same response: the Edit call(s) first, then the publish, with no Read and without waiting for the Edit result. The calls run in the order sent, so the publish carries the edited file. If one of those Edit calls does not apply, the publish still goes out without that change, so Claude corrects the Edit and publishes again. Either way, Claude reads the file first only when its text is not in this conversation or the change cannot be placed exactly from that text.\n\n**To update an artifact from another file or an earlier session**, Claude passes that artifact's link as `url`. Claude does this whenever the person wants an existing artifact changed or its link kept, and finds the link with `action: \"list\"` or by asking the person. Claude first reads the artifact with `action: \"read\"` and builds on the version that comes back. Publishing without `url` creates a separate artifact, even from a path published in an earlier session. If the person asks where to find their artifacts again, `action: \"list\"` lists them, and each one is a folder in {store}.\n\n**Files Claude did not write**: Claude reads the whole file before publishing it, even when the person asks it not to. Publishing distributes the content, and Claude never distributes what it has not seen. A request for privacy is a reason to read before publishing, not an exemption. If Claude cannot read the file, it does not publish it.\n\n**New artifacts**: every artifact here is a plain page. When the person wants something new made, in whatever words — a deck, a document for others to read (not one that belongs in the codebase), a visual design or any other page — Claude's first call is `action: \"quickstart\"` with the fitting `intent`, before loading a skill or writing a file, once per new artifact. The quickstart result replaces loading the artifact-design skill.\n\n**Claude never publishes** a page that impersonates a real person or organization, for example by using their name, branding, byline or domain. Claude also never publishes fabricated records, receipts or reviews presented as genuine, forms or flows that collect credentials or payment details under false pretenses, or content that targets a private individual. Claude refuses whether it wrote the page or the person supplied it, and whatever purpose is claimed, such as a prop or a test, when the page would work as the real thing. If publishing is refused, Claude does not suggest other ways to host or share the page.\n";
+var description_default = "The Artifact tool renders an HTML file as an Artifact: a web page published as a local file on this machine, in {store}{opened}. Its full name carries a server prefix (in Claude Code, `mcp__plugin_artifact-design_artifact__Artifact`), and \"Artifact\" in this text, in quickstart's result and in the skills means this tool, so a call to the bare name `Artifact` goes to this tool's full name instead. Claude uses it when a page would be clearer than terminal text, or when the person or their team would use the page rather than only read it. Claude may publish its own work without being asked, because a published page stays on this machine. The exception is content that could mislead or cause harm if shared further: anything that imitates a real organization, person or record, and anything the person presented as sensitive. Claude builds those as files and lets the person decide whether to publish them. Here, as in the `artifact-design` skill, Claude means you, the agent using this tool.\n\nWhen a finished piece of work is meant for other people or agents, such as a report for a team or the case for a decision the team has yet to make, Claude does not treat it as finished while it exists only in terminal scrollback. Claude publishes it as an Artifact and gives the person the link, so they have a page ready to share when they choose. Claude publishes it even when the request is phrased as a question, such as \"can you write up the plan?\". When the request says who else will read or use the work, such as a team, a manager or a reviewer, or where it will be posted or presented, such as a channel or a meeting, Claude publishes it. A write-up that will be posted in a channel or a thread is still published; when it is short, Claude also gives the text in its reply, ready to paste. When it might be passed along but nothing says so, Claude offers the page in one line instead of saying nothing. When the person asks only for Claude's own verdict, such as \"should we ship this?\", and names no one else who will read it, Claude gives the answer in the terminal and offers the page in one line instead of publishing it. A recommendation or analysis written up for someone else to act on is finished work for that reader, so Claude publishes it. Claude publishes an artifact for apps, sites, dashboards and games, and whenever the person asks for an artifact or for an HTML or Markdown page to view or share. When the person asks for the file itself, such as \"just give me the .html file\" or \"save these notes as a .md file\", Claude gives them that file and does not publish it. Advice that the person will act on by themselves, right away, in the code they are working on is not meant for other people, so Claude does not need to publish it.\n\n**Before writing the file, Claude must load the `artifact-design` skill** (`artifact-design:artifact-design` in the Skill tool), including for a `.md` file that a skill told Claude to write. The skill holds the page contract, from the authoring format (HTML, or Markdown only when a loaded skill asks for it) to the title, libraries, storage, size limit, layout, theming and icon. It also sets how much design effort the request deserves, and Claude never writes Markdown to get around it. Claude then writes the content to a file (via Write/Edit) and calls Artifact with its absolute path, putting the file in {drafts} when the person names no other location. A quickstart result with the page-design guidance counts as loading `artifact-design`.\n\n**If Claude writes a page before that skill has loaded**, the skill's contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never \"Name: explainer\", and puts the explanation in `description`. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme=\"light\"])` and again under `:root[data-theme=\"dark\"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.\n\n**Format**: Claude always authors the page as `.html`, and publishes a `.md` file only when a loaded skill explicitly asks for one. When the person shares a Markdown document or asks to turn one into an artifact, Claude builds an HTML page from its content, keeping its substance and designing the page as it would any other artifact rather than transcribing the Markdown one to one.\n\n**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but every artifact on this machine opens from `file://`, which the browser may treat as one origin shared by all of them, so Claude prefixes every key with the page's name; what a page stores lives only in that viewer's browser. It survives republishes to the same link and never reaches other viewers, other devices or Claude. It can come back empty, or the accessor can throw, in a private window, with cleared or blocked site data, or in previews, so Claude wraps every read and write in try/catch and makes the page render correctly without it. Claude uses it only for per-viewer conveniences, such as a remembered tab or filter, a collapsed section or an unsent draft, and never for state that must persist reliably, be shared between viewers or be read back by Claude.\n\n**Size**: Claude keeps the rendered page at 16MB or smaller, and embedded `data:` URIs count toward that limit.\n\n**Supporting files**: a multi-file artifact (separate stylesheets, scripts, data, images, or further HTML pages) publishes its other files through `files`, which maps each published path to a source file. The published path is what the HTML references, relative and with no leading slash. The page opens from a `file://` link, so it can link to these files and load them as images, stylesheets and classic scripts, but it cannot `fetch()`, import or start Workers from them: data a script reads goes inline. Only the page itself is wrapped in a document skeleton at publish time: an HTML file in `files` is another page served without one, so Claude starts each with its own `<!doctype html>`, charset and viewport metas and base styles, or, without the doctype, it renders in quirks mode with browser defaults. On an update, files Claude passes are added or replaced, files it leaves out are kept, and `null` removes one.\n\n**Calls**: `action` picks one (publish when omitted):\n- **publish** (the default): takes `file_path`, plus `icon` on a first publish and an optional one-sentence `description`, and with `url` updates that existing artifact in place.{open_note}\n- **quickstart**: takes `intent` and returns the page contract and the design guidance for a plain page. It is read-only. Only plain pages are made here.\n- **read**: takes `url` and returns the published page's content, without the skeleton that publishing adds.\n- **list**: returns the artifacts published on this machine, newest first, with title, link, last-updated time and source file.\n- **delete**: with `url`, permanently deletes a published artifact and its versions, which cannot be undone. Claude does this only when the person asks for that artifact to be deleted or unpublished, or says they did not want it published, never on its own initiative. The source file stays.\n- **open**: takes `url` and opens that existing artifact in the browser without changing it. Claude uses it when the person asks to see one. An artifact Claude just published needs no open.\n\n**To update** an artifact published earlier in this session, Claude calls Artifact again with the same file path, which republishes it to the same link. A different path creates a new link, so Claude changes the path only when it wants a separate artifact. For a small change to a page published from a file in this session, Claude can send the change as `edits` on the publish call itself (old_str/new_str pairs copied exactly from the file as it now stands) instead of editing the file first. For a change to several files at once, or a rewrite of most of a page, Claude makes the change with Edit, not a shell command, and publishes the artifact again with the same file path in the same response: the Edit call(s) first, then the publish, with no Read and without waiting for the Edit result. The calls run in the order sent, so the publish carries the edited file. If one of those Edit calls does not apply, the publish still goes out without that change, so Claude corrects the Edit and publishes again. Either way, Claude reads the file first only when its text is not in this conversation or the change cannot be placed exactly from that text.\n\n**To update an artifact from another file or an earlier session**, Claude passes that artifact's link as `url`. Claude does this whenever the person wants an existing artifact changed or its link kept, and finds the link with `action: \"list\"` or by asking the person. Claude first reads the artifact with `action: \"read\"` and builds on the version that comes back. Publishing without `url` creates a separate artifact, even from a path published in an earlier session. If the person asks where to find their artifacts again, `action: \"list\"` lists them, and each one is a folder in {store}.\n\n**Files Claude did not write**: Claude reads the whole file before publishing it, even when the person asks it not to. Publishing distributes the content, and Claude never distributes what it has not seen. A request for privacy is a reason to read before publishing, not an exemption. If Claude cannot read the file, it does not publish it.\n\n**New artifacts**: every artifact here is a plain page. When the person wants something new made, in whatever words — a deck, a document for others to read (not one that belongs in the codebase), a visual design or any other page — Claude's first call is `action: \"quickstart\"` with the fitting `intent`, before loading a skill or writing a file, once per new artifact. The quickstart result replaces loading the artifact-design skill.\n\n**Claude never publishes** a page that impersonates a real person or organization, for example by using their name, branding, byline or domain. Claude also never publishes fabricated records, receipts or reviews presented as genuine, forms or flows that collect credentials or payment details under false pretenses, or content that targets a private individual. Claude refuses whether it wrote the page or the person supplied it, and whatever purpose is claimed, such as a prop or a test, when the page would work as the real thing. If publishing is refused, Claude does not suggest other ways to host or share the page.\n";
 
 // plugins/artifact-design/src/text/codex-lead.md
 var codex_lead_default = `Publishes an HTML file as an Artifact: a web page written as a local file in {store}{opened}. "Artifact" here, in quickstart's result and in the skills means this tool (full name mcp__artifact__Artifact). Use it when a page would be clearer than terminal text, and for finished work meant for other people (a report, a plan, the case for a decision): publish it and give the person the link. When the person wants something new made, your first call is action "quickstart", before loading a skill or writing a file: it returns the page contract and design guidance, the full guidance this short description leaves out. Then write the page to a file and publish it in the same turn. The input schema's description lists the calls.
 `;
 
 // plugins/artifact-design/src/text/codex-rest.md
-var codex_rest_default = 'Write the page content to a file (in {drafts} unless the person names another location) and pass its absolute path. Page contract essentials: write only the page content (no doctype, html, head or body tags: publishing adds the skeleton), <title> and <style> first; the <title> is a name of two to four words and the explanation goes in `description`. Colors are tokens on :root, redefined for dark mode under @media (prefers-color-scheme: dark) guarded by :root:not([data-theme="light"]) and again under :root[data-theme="dark"]; body gets an explicit background. Scripts load only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, each pinned to an exact version at least two weeks old; stylesheets only from Google Fonts; everything else inline. The layout works at phone width (16px gutter, no horizontal scroll); the page stays at 16MB or less. Author .html; publish .md only when a loaded skill asks for it. localStorage works only per viewer: wrap it in try/catch and render correctly without it.\nPublish finished work meant for others even when the request is phrased as a question; when the person asks only for your own verdict, answer in the terminal and offer the page in one line. Read the whole of any file you did not write before publishing it.\nCalls (action; publish when omitted):\n- publish: file_path, plus icon on a first publish and a one-sentence description; with url, updates that artifact. files maps published paths to source files for a multi-file page.{open_note}\n- quickstart: intent; returns the page contract and design guidance.\n- read: url; returns the page content without its skeleton.\n- list: the artifacts on this machine, with links and source files.\n- open: url; opens it in the browser.\n- delete: url; only when the person asks.\nTo update, publish the same file path again in this session, with edits for a small change; pass url (from list) to update an artifact from another file or session, after reading it.\nNever publish a page that impersonates a real person or organization, fabricated records presented as genuine, or flows that collect credentials or payment details under false pretenses.\n';
+var codex_rest_default = 'Write the page content to a file (in {drafts} unless the person names another location) and pass its absolute path. Page contract essentials: write only the page content (no doctype, html, head or body tags: publishing adds the skeleton), <title> and <style> first; the <title> is a name of two to four words and the explanation goes in `description`. Colors are tokens on :root, redefined for dark mode under @media (prefers-color-scheme: dark) guarded by :root:not([data-theme="light"]) and again under :root[data-theme="dark"]; body gets an explicit background. Scripts load only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, each pinned to an exact version at least two weeks old; stylesheets only from Google Fonts; everything else inline. The layout works at phone width (16px gutter, no horizontal scroll); the page stays at 16MB or less. Author .html; publish .md only when a loaded skill asks for it. localStorage works only per viewer, and every file:// page may share it: prefix keys with the page\'s name, wrap it in try/catch and render correctly without it. The page can\'t fetch() its own files: put the data a script reads inline.\nPublish finished work meant for others even when the request is phrased as a question; when the person asks only for your own verdict, answer in the terminal and offer the page in one line. Read the whole of any file you did not write before publishing it.\nCalls (action; publish when omitted):\n- publish: file_path, plus icon on a first publish and a one-sentence description; with url, updates that artifact. files maps published paths to source files for a multi-file page.{open_note}\n- quickstart: intent; returns the page contract and design guidance.\n- read: url; returns the page content without its skeleton.\n- list: the artifacts on this machine, with links and source files.\n- open: url; opens it in the browser.\n- delete: url; only when the person asks.\nTo update, publish the same file path again in this session, with edits for a small change; pass url (from list) to update an artifact from another file or session, after reading it.\nNever publish a page that impersonates a real person or organization, fabricated records presented as genuine, or flows that collect credentials or payment details under false pretenses.\n';
 
 // plugins/artifact-design/src/tool.ts
-var INSTRUCTIONS = "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, " + "tools, mockups) as local files. Its full name carries a server prefix " + "(mcp__plugin_artifact-design_artifact__Artifact in Claude Code, mcp__artifact__Artifact in Codex), and " + `"Artifact" in its description, in quickstart's result and in the skills means this tool; ` + '"ArtifactCheck" means its ArtifactCheck tool, where Playwright is installed. ' + 'Before writing a new artifact, call Artifact with action "quickstart"; then write the page ' + "to a file and publish it with Artifact in the same message, which wraps it in the page " + "skeleton. Give the user the published link.";
+var INSTRUCTIONS = "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, tools, " + 'mockups) as local files; before writing a new one, call it with action "quickstart".';
 var text = (file) => file.replace(/\n$/, "");
-var CHECK_DESCRIPTION = "Check a page before publishing it with the `Artifact` tool.\n" + '**Preview**: `action: "preview"` with a `file_path` (one .html page, before or after publishing) renders that ' + "one page file locally the way publish wraps it, in light and dark themes at desktop and phone widths (1280 and " + "390px), and returns the screenshots (each shows at most the top 1568px of the page) with a mechanical checklist " + "of layout and load problems (horizontal overflow, clipped content, text split by a grid or flex parent, SVG text " + "too small for a phone, theme-only color variables, blocked or local-only loads, diagram and console errors), so " + "you can see the page and fix what they show before publishing. It publishes nothing, and files published beside " + "the page are not loaded.";
+var CHECK_DESCRIPTION = "Check a page before publishing it with the `Artifact` tool.\n\n" + '**Preview**: `action: "preview"` with a `file_path` renders that one page file locally the way publish wraps it, ' + "in light and dark themes at desktop and phone widths, and returns the screenshots with a mechanical checklist of " + "layout and load problems, so you can see the page and fix what they show before publishing. It uploads nothing " + "and needs no artifact URL.";
+var PREVIEW_ACTION = "'preview' renders a local page file before you publish it — pass `file_path` (one .html file; files " + "published beside it are not loaded), optionally `widths` (viewport widths in px, default 1280 and 390) and " + "`themes` ('light', 'dark', default both) — and returns a screenshot per width and theme (each shows at most " + "the top 1568 px of the page) plus a checklist of layout and load problems (horizontal overflow, clipped content, " + "text split by a grid or flex parent, SVG text too small for a phone, theme-only color variables, blocked or " + "local-only loads, diagram and console errors). Nothing is uploaded.";
 var CODEX_LEAD = text(codex_lead_default);
 var CODEX_REST = text(codex_rest_default);
+var DESCRIPTION_ROOM = 4096;
 var FIRST_CALL = ' When the person wants something new made, Claude\'s first call is `action: "quickstart"`, before' + " loading a skill or writing a file (see **New artifacts**).";
 var INSTEAD = {
   capabilities: "a page here is static HTML",
@@ -25389,26 +25391,45 @@ function tool(client, setting) {
       inputSchema: { description: fill(CODEX_REST), ...schema(true) }
     };
   }
-  const full = describe2(setting);
-  const split = full.indexOf(`
+  const paragraphs = describe2(setting).split(`
 
 `);
-  const lead = split === -1 ? full : full.slice(0, split);
-  const rest = split === -1 ? "" : full.slice(split + 2);
+  let count = 1;
+  while (count < paragraphs.length && upFront(paragraphs.slice(0, count + 1)).length <= DESCRIPTION_ROOM)
+    count++;
   return {
     name: "Artifact",
-    description: lead + FIRST_CALL + " The rest of this description is the `description` of the tool's input schema.",
-    inputSchema: { description: rest, ...schema() },
+    description: upFront(paragraphs.slice(0, count)),
+    inputSchema: { description: paragraphs.slice(count).join(`
+
+`), ...schema() },
     _meta: { "anthropic/alwaysLoad": true }
   };
 }
+var upFront = (paragraphs) => paragraphs.join(`
+
+`) + FIRST_CALL + " The rest of this description is the `description` of the tool's input schema.";
 var isCodex = (client) => (client ?? "").toLowerCase().includes("codex");
 function checkSchema() {
   return {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["preview"], description: "'preview'. Omitting it means 'preview'." },
-      file_path: { type: "string", description: "The absolute path of the .html page file." }
+      action: { type: "string", enum: ["preview"], description: `Omitting it means 'preview'. ${PREVIEW_ACTION}` },
+      file_path: { type: "string", description: "preview: the absolute path of the .html page file." },
+      widths: {
+        type: "array",
+        items: { type: "integer", minimum: 320, maximum: 2560 },
+        minItems: 1,
+        maxItems: 3,
+        description: "preview only: viewport widths to render at, in CSS pixels (default 1280 and 390; at most 3)."
+      },
+      themes: {
+        type: "array",
+        items: { type: "string", enum: ["light", "dark"] },
+        minItems: 1,
+        maxItems: 2,
+        description: "preview only: color themes to render, 'light' and/or 'dark' (default both) — each sets the page's " + "data-theme attribute and the emulated prefers-color-scheme together."
+      }
     },
     additionalProperties: false
   };
@@ -25561,24 +25582,28 @@ class Refusal extends Error {
 }
 var MISS_ROOM = 40000;
 var str = (value) => typeof value === "string" && value ? value : null;
-function actQuickstart(args) {
+async function actQuickstart(args, client) {
   const text = readFileSync3(GUIDANCE, "utf8");
   const start = text.indexOf("## Page contract");
   if (start === -1)
     throw new Error(`${GUIDANCE} has no "## Page contract" section`);
-  const guidance = text.slice(start).trim().replace(`
+  let guidance = text.slice(start).trim().replace(`
 
 ## Process`, () => `
 
 
 
 ## Process`);
+  if (!(PREVIEW_SWITCH && await previewOffered())) {
+    guidance = guidance.replace("one `ArtifactCheck` preview, or else one screenshot", () => "one screenshot");
+  }
+  const codex = isCodex(client);
   const onlyPlain = args.intent !== undefined && args.intent !== null && args.intent !== "other" ? `Every artifact here is a plain HTML page, so make this one as a plain page.
 
 ` : "";
-  return onlyPlain + "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own " + "text, so do not load that skill as well. Write the page to a file and publish it in the same " + "message: the two calls run in order. Unless the person named a location, the file goes in " + `${DRAFTS}, not in the project.
+  return onlyPlain + "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own " + "text, so do not load that skill as well. Write the page to a file and publish it in the same " + "message: the two calls run in order. Unless the person named a location, the file goes in " + `${DRAFTS}, not in the project. In this text, Claude means you.
 
-` + guidance + "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill before writing it.";
+` + guidance + "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill" + (codex ? "" : " (`artifact-design:artifact-diagramming` in the Skill tool)") + " before writing it.";
 }
 function publish(args) {
   if (!args.file_path)
@@ -25733,7 +25758,7 @@ function publish(args) {
     lines.push(saveEdits(source, bytes, raw, edits.length));
   lines.push(...notes);
   lines.push("To update: publish the same file path again in this session (keeps this link); pass `url` to " + "update this artifact from another file or a later session.");
-  lines.push("The link is a file on this machine. If the page is meant for someone else, tell the user when you " + "present the page that to share it they send the published page, " + (hasOtherFiles(folder, pageFile) ? `the whole ${folder} folder` : pageFile) + ", not the source file, which lacks the page skeleton.");
+  lines.push("The link is a file on this machine. If the page is meant for someone else, tell the user when you " + "present the page that to share it they send the published page, " + (hasOtherFiles(folder, pageFile) ? `the ${folder} folder, without its .versions folder` : pageFile) + ", not the source file, which lacks the page skeleton.");
   lines.push("The files you sent are still on disk. For the next small change to this file, send it as `edits` on a " + "publish of the same file_path (old_str/new_str pairs copied exactly from the file as it now stands): that " + "one call changes the file and what is published together, with no separate read or edit. To change several " + "files, or to rewrite most of the page, edit the files and publish them in the same response; if an edit " + "did not apply, correct it and publish again. If the file's text is no longer in this conversation, read " + "it first.");
   if (first) {
     if (!OPEN_PAGES)
@@ -25741,7 +25766,7 @@ function publish(args) {
     else if (openInBrowser(pageFile))
       lines.push("Opened it in the browser.");
     else
-      lines.push("There is no browser to open here, so the page was not opened; give the user the link.");
+      lines.push("This server can't open a browser here, so the page was not opened; give the user the link.");
   }
   return lines.join(`
 
@@ -25775,10 +25800,6 @@ function saveEdits(source, before, text, count) {
   return savedMessage(count);
 }
 async function actPreview(args) {
-  const extra = Object.keys(args).filter((key) => key !== "action" && key !== "file_path").sort();
-  if (extra.length) {
-    throw new Error(`preview takes only file_path — remove ${extra.join(", ")}.` + (extra.includes("files") ? " Preview renders the single page file; files published beside it are not loaded locally." : ""));
-  }
   if (!await previewReady())
     throw new Error(`preview isn't available here (${PREVIEW.reason}). Skip the look and publish.`);
   if (!args.file_path)
@@ -25802,10 +25823,14 @@ async function actPreview(args) {
     const { content, lang, cover } = unwrap(raw);
     writeFileSync2(wrapped, wrapPage(content, null, null, lang, cover));
   }
-  return runPreview(source, wrapped, out);
+  return runPreview(source, wrapped, out, args.widths, args.themes);
 }
-async function runPreview(source, wrapped, out) {
+async function runPreview(source, wrapped, out, widths, themes) {
   const args = [join5(SCRIPTS, "preview.mjs"), source, "--wrapped", wrapped, "--json", "--out", out];
+  if (Array.isArray(widths))
+    args.push("--widths", widths.filter((w) => typeof w === "number").join(","));
+  if (Array.isArray(themes))
+    args.push("--themes", themes.filter((t) => typeof t === "string").join(","));
   const run = await runScript(args, 240000);
   if (run.timedOut) {
     throw new Error("the preview ran for 4 minutes without finishing and was stopped; skip the look and publish");
@@ -25889,7 +25914,7 @@ function actOpen(args) {
 }
 var ACTIONS = {
   publish: (args) => withStoreLock(() => publish(args)),
-  quickstart: actQuickstart,
+  quickstart: (args, client) => actQuickstart(args, client),
   read: actRead,
   list: actList,
   open: actOpen,
@@ -25899,7 +25924,7 @@ var textResult = (text, isError = false) => ({
   content: [{ type: "text", text }],
   ...isError ? { isError: true } : {}
 });
-async function call(args) {
+async function call(args, client) {
   const problem = unknownParameter(args);
   if (problem)
     return textResult(problem, true);
@@ -25914,7 +25939,7 @@ async function call(args) {
     return textResult(`\`edits\` applies only to a publish of \`file_path\` — remove it from this "${action}" call.`, true);
   }
   try {
-    const result = await ACTIONS[action](args);
+    const result = await ACTIONS[action](args, client);
     return typeof result === "string" ? textResult(result) : result;
   } catch (error) {
     if (error instanceof Refusal)
@@ -25930,7 +25955,7 @@ async function callCheck(args) {
   if (action !== "preview")
     return textResult(`Unknown action ${repr(action)}.`, true);
   try {
-    const result = await actPreview({ file_path: args.file_path });
+    const result = await actPreview({ file_path: args.file_path, widths: args.widths, themes: args.themes });
     return typeof result === "string" ? textResult(result) : result;
   } catch (error) {
     return textResult(`preview failed: ${error.message}`, true);
@@ -25948,13 +25973,14 @@ serveStdio(() => {
       ...PREVIEW_SWITCH && await previewOffered() ? [checkTool()] : []
     ]
   }));
-  server.setRequestHandler("tools/call", async (request) => {
+  server.setRequestHandler("tools/call", async (request, ctx) => {
     const args = request.params.arguments ?? {};
     const name = request.params.name;
     if (name !== "Artifact" && !(name === "ArtifactCheck" && PREVIEW_SWITCH)) {
       throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
-    return server.projectCallToolResult(await (name === "Artifact" ? call(args) : callCheck(args)), undefined);
+    const result = name === "Artifact" ? call(args, clientName(server, ctx)) : callCheck(args);
+    return server.projectCallToolResult(await result, undefined);
   });
   return server;
 });

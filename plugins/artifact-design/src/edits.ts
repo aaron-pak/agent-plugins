@@ -115,7 +115,7 @@ export function savedMessage(
   const lead = `Published — the page now has ${one ? "the edit" : `the ${edits} edits`}, but the file at file_path does not`;
   if (failure === "write_failed") {
     return (
-      `${lead}: writing it back failed, and the file may be partly written. read it before anything else, restore it ` +
+      `${lead}: writing it back failed, and the file may be partly written. Read it before anything else, restore it ` +
       `to the published text (the published page, ${one ? "the edit" : "the edits"} included), and only then publish it ` +
       "again; publishing it as it is could put damaged content on the page."
     );

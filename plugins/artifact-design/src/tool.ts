@@ -9,14 +9,8 @@ import CODEX_LEAD_TEXT from "./text/codex-lead.md" with { type: "text" };
 import CODEX_REST_TEXT from "./text/codex-rest.md" with { type: "text" };
 
 export const INSTRUCTIONS =
-  "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, " +
-  "tools, mockups) as local files. Its full name carries a server prefix " +
-  "(mcp__plugin_artifact-design_artifact__Artifact in Claude Code, mcp__artifact__Artifact in Codex), and " +
-  '"Artifact" in its description, in quickstart\'s result and in the skills means this tool; ' +
-  '"ArtifactCheck" means its ArtifactCheck tool, where Playwright is installed. ' +
-  'Before writing a new artifact, call Artifact with action "quickstart"; then write the page ' +
-  "to a file and publish it with Artifact in the same message, which wraps it in the page " +
-  "skeleton. Give the user the published link.";
+  "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, tools, " +
+  'mockups) as local files; before writing a new one, call it with action "quickstart".';
 
 // text/description.md is Claude Code's Artifact tool description (2.1.300), less what only claude.ai
 // can do: runtime capabilities, the shared database, watching, pinning, the asset store, and Artifact
@@ -26,28 +20,37 @@ const text = (file: string) => file.replace(/\n$/, "");
 
 // Claude Code's ArtifactCheck tool (2.1.300) with its preview on: an add-on to the Artifact tool that
 // Claude Code defers behind tool search. Its verify action reads what claude.ai viewers' browsers
-// reported, so only preview is here.
+// reported, so only preview is here, and the description leaves out the preview sentence on runtime
+// capabilities, which a page here doesn't have.
 const CHECK_DESCRIPTION =
-  "Check a page before publishing it with the `Artifact` tool.\n" +
-  '**Preview**: `action: "preview"` with a `file_path` (one .html page, before or after publishing) renders that ' +
-  "one page file locally the way publish wraps it, in light and dark themes at desktop and phone widths (1280 and " +
-  "390px), and returns the screenshots (each shows at most the top 1568px of the page) with a mechanical checklist " +
-  "of layout and load problems (horizontal overflow, clipped content, text split by a grid or flex parent, SVG text " +
-  "too small for a phone, theme-only color variables, blocked or local-only loads, diagram and console errors), so " +
-  "you can see the page and fix what they show before publishing. It publishes nothing, and files published beside " +
-  "the page are not loaded.";
+  "Check a page before publishing it with the `Artifact` tool.\n\n" +
+  '**Preview**: `action: "preview"` with a `file_path` renders that one page file locally the way publish wraps it, ' +
+  "in light and dark themes at desktop and phone widths, and returns the screenshots with a mechanical checklist of " +
+  "layout and load problems, so you can see the page and fix what they show before publishing. It uploads nothing " +
+  "and needs no artifact URL.";
+// Claude Code's text for the preview action, with this preview's two further checks.
+const PREVIEW_ACTION =
+  "'preview' renders a local page file before you publish it \u2014 pass `file_path` (one .html file; files " +
+  "published beside it are not loaded), optionally `widths` (viewport widths in px, default 1280 and 390) and " +
+  "`themes` ('light', 'dark', default both) \u2014 and returns a screenshot per width and theme (each shows at most " +
+  "the top 1568 px of the page) plus a checklist of layout and load problems (horizontal overflow, clipped content, " +
+  "text split by a grid or flex parent, SVG text too small for a phone, theme-only color variables, blocked or " +
+  "local-only loads, diagram and console errors). Nothing is uploaded.";
 
-// Codex shows at most 1,000 bytes of an MCP tool's description (codex-rs/tools/src/mcp_tool.rs)
-// and drops every description from an input schema over 5,000 bytes (tools/src/json_schema/
-// compaction.rs), so a Codex client gets this shorter text: the lead, the first-call rule, the
-// Calls list and the contract essentials. quickstart returns the full guidance.
+// Codex drops every description from an input schema over 5,000 bytes (tools/src/json_schema.rs),
+// and cuts an Agent Plugins server's tool descriptions at 1,000 bytes (tools/src/mcp_tool.rs), so a
+// Codex client gets this shorter text: the lead, the first-call rule, the Calls list and the
+// contract essentials. quickstart returns the full guidance. The plugin's Codex manifest isn't in the
+// Agent Plugins format, so the 1,000-byte cut doesn't apply to it, but the text stays within it.
 const CODEX_LEAD = text(CODEX_LEAD_TEXT);
 const CODEX_REST = text(CODEX_REST_TEXT);
 
-// Claude Code cuts an MCP tool's description at 2048 characters (CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH)
-// but passes its input schema whole, so the description keeps its first paragraph and the rest follows,
-// in order, as the input schema's description. Claude Code also defers MCP tools behind tool search
-// unless they ask to load up front; its own Artifact tool is always loaded.
+// Claude Code cuts an MCP tool's description at 4,096 characters (2,048 before 2.1.296;
+// CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH) but passes its input schema whole, so the description keeps
+// the paragraphs that fit and the rest follows, in order, as the input schema's description. Claude
+// Code also defers MCP tools behind tool search unless they ask to load up front; its own Artifact
+// tool is always loaded.
+const DESCRIPTION_ROOM = 4096;
 const FIRST_CALL =
   ' When the person wants something new made, Claude\'s first call is `action: "quickstart"`, before' +
   " loading a skill or writing a file (see **New artifacts**).";
@@ -199,27 +202,47 @@ export function tool(client: string | undefined, setting: Setting): Tool {
       inputSchema: { description: fill(CODEX_REST), ...schema(true) },
     };
   }
-  const full = describe(setting);
-  const split = full.indexOf("\n\n");
-  const lead = split === -1 ? full : full.slice(0, split);
-  const rest = split === -1 ? "" : full.slice(split + 2);
+  const paragraphs = describe(setting).split("\n\n");
+  let count = 1;
+  while (count < paragraphs.length && upFront(paragraphs.slice(0, count + 1)).length <= DESCRIPTION_ROOM) count++;
   return {
     name: "Artifact",
-    description: lead + FIRST_CALL + " The rest of this description is the `description` of the tool's input schema.",
-    inputSchema: { description: rest, ...schema() },
+    description: upFront(paragraphs.slice(0, count)),
+    inputSchema: { description: paragraphs.slice(count).join("\n\n"), ...schema() },
     _meta: { "anthropic/alwaysLoad": true },
   };
 }
 
-const isCodex = (client: string | undefined) => (client ?? "").toLowerCase().includes("codex");
+const upFront = (paragraphs: string[]) =>
+  paragraphs.join("\n\n") +
+  FIRST_CALL +
+  " The rest of this description is the `description` of the tool's input schema.";
+
+export const isCodex = (client: string | undefined) => (client ?? "").toLowerCase().includes("codex");
 
 /** The ArtifactCheck tool's input schema. */
 export function checkSchema(): ObjectSchema {
   return {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["preview"], description: "'preview'. Omitting it means 'preview'." },
-      file_path: { type: "string", description: "The absolute path of the .html page file." },
+      action: { type: "string", enum: ["preview"], description: `Omitting it means 'preview'. ${PREVIEW_ACTION}` },
+      file_path: { type: "string", description: "preview: the absolute path of the .html page file." },
+      widths: {
+        type: "array",
+        items: { type: "integer", minimum: 320, maximum: 2560 },
+        minItems: 1,
+        maxItems: 3,
+        description: "preview only: viewport widths to render at, in CSS pixels (default 1280 and 390; at most 3).",
+      },
+      themes: {
+        type: "array",
+        items: { type: "string", enum: ["light", "dark"] },
+        minItems: 1,
+        maxItems: 2,
+        description:
+          "preview only: color themes to render, 'light' and/or 'dark' (default both) \u2014 each sets the page's " +
+          "data-theme attribute and the emulated prefers-color-scheme together.",
+      },
     },
     additionalProperties: false,
   };
