@@ -104,7 +104,7 @@ export function missMessage(miss: Miss, edits: Edit[], text: string, room: numbe
 /** The line a publish with edits adds once it has saved them to the file, or says why it couldn't. */
 export function savedMessage(
   edits: number,
-  failure?: "write_failed" | "changed_during_publish" | "hard_linked",
+  failure?: "write_failed" | "not_writable" | "changed_during_publish" | "hard_linked",
 ): string {
   const one = edits === 1;
   if (failure === undefined) {
@@ -121,7 +121,7 @@ export function savedMessage(
     );
   }
   return (
-    `${lead} (${failure === "changed_during_publish" ? "it changed on disk while the publish ran, so it was left as it is" : "it has other names on disk (a hard link), so it was left as it is"}). ` +
+    `${lead} (${{ changed_during_publish: "it changed on disk while the publish ran", hard_linked: "it has other names on disk (a hard link)", not_writable: "it can't be written" }[failure]}, so it was left as it is). ` +
     `Apply the same ${one ? "edit" : "edits"} to that file with Edit before you publish it again` +
     `${failure === "hard_linked" ? ", and publish it without `edits` while it has other names" : ""}; publishing it as it is would revert ${one ? "it" : "them"}.`
   );

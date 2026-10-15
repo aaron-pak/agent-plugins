@@ -41,10 +41,12 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 - `ARTIFACTS_DIR`: where published artifacts go, one folder each (default `~/artifacts`). A relative path is taken from the folder the server starts in.
 - `ARTIFACT_OPEN=0`: don't open a first publish in the browser; the publish result then says the page was not opened.
-- `ARTIFACT_PREVIEW=0`: leave out the `preview` action. Without it, `preview` is offered only when Playwright and a Chromium (Playwright's, or an installed Chrome, Chromium or Edge, or Brave on macOS) are found when the server starts.
+- `ARTIFACT_PREVIEW=0`: leave out the `preview` action. Without it, `preview` is offered only when Playwright and a Chromium are found: Playwright's own, or an installed Chrome or Chromium (also Edge on macOS and Windows, and Brave on macOS). Playwright isn't bundled, so install it once, globally: with Chrome installed, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g playwright` is enough. Each start lists the answer its last start found and checks again for the next one, and when preview is off the server says why on its stderr, which Claude Code keeps in its MCP logs (`claude --debug`).
 - `ARTIFACT_PREVIEW_CA`: a PEM CA certificate for previews behind a TLS-inspecting proxy.
 
 Claude Code passes its own environment to the server, so set them in your shell or in Claude Code's `env` setting. Codex starts plugin MCP servers with only a fixed list of variables (`HOME`, `PATH`, `TMPDIR`, `LANG` and a few others), so none of these reach the server under Codex, which always uses the defaults. Page files the model writes go to its scratchpad when Claude Code lists one, and otherwise to a private folder of the session's own under `artifact-drafts-<uid>` in the system temp directory (`artifact-drafts` on Windows), so they stay out of your project. That folder is outside the project, so writing there gets Claude Code's usual check: auto mode's reviewer approves it without asking, while the other permission modes ask before each page. Codex's sandbox already lets it write to the temp directory in a project you've trusted.
+
+In a Claude Code session that has its own Artifact tool (signed in to claude.ai, where artifacts are on), that tool publishes to claude.ai and the plugin's adds nothing: Claude Code then lists two `Artifact` tools and both sets of skills, and the model uses its own. Turn the plugin off there, or start Claude Code with `CLAUDE_CODE_ARTIFACT=0` to keep pages local with the plugin.
 
 Publishing asks too. Claude Code asks before the plugin's `Artifact` tool runs, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
 

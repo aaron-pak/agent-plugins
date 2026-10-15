@@ -25,8 +25,23 @@
 // scripts/build.ts bundles it into mcp/server.mjs, which runs on Node.
 
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  ftruncateSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,7 +71,8 @@ import {
   unwrap,
   wrap,
 } from "./publish.ts";
-import { makeDrafts } from "./drafts.ts";
+import { DRAFTS_ROOT, draftsRootIsOwn, makeDrafts } from "./drafts.ts";
+import { partsBelow } from "./paths.ts";
 import { applyEdits, editsOf, missMessage, savedMessage, type Edit } from "./edits.ts";
 import {
   STORE,
@@ -123,12 +139,11 @@ const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
 
 const PREVIEW = { ok: false, reason: "the preview check has not finished", checked: false };
 
-// The last check's answer, kept in the temp folder so that tools/list can answer at once instead
-// of making Claude Code start its first turn without the tool. The key records the runtime, the
-// search path, Playwright's browser folder and preview.mjs it was checked with; the answer is used
-// even when the key no longer matches (after an update to the plugin, say), and this start's check
-// replaces it for the next start.
-const PREVIEW_CACHE = join(tmpdir(), `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
+// The last check's answer, kept in this user's own drafts folder so that tools/list can answer at
+// once instead of making Claude Code start its first turn without the tool. Each setup (runtime,
+// search path, Playwright's browser folder and preview.mjs) keeps its own answer; a setup with none
+// yet (after an update to the plugin, say) takes the newest one, and this start's check adds its own
+// for the next start.
 const previewKey = (() => {
   try {
     const script = statSync(join(SCRIPTS, "preview.mjs"));
@@ -143,15 +158,56 @@ const previewKey = (() => {
     return null;
   }
 })();
-const CACHED = ((): { ok: boolean; current: boolean } | null => {
-  if (!PREVIEW_SWITCH || previewKey === null) return null;
+const PREVIEW_CACHE =
+  previewKey === null
+    ? null
+    : join(DRAFTS_ROOT, `preview-${createHash("sha256").update(previewKey).digest("hex").slice(0, 16)}.json`);
+const isPreviewCache = (name: string) => /^preview-[0-9a-f]{16}\.json$/.test(name);
+
+/** A cached answer: a regular file of this user's in their own drafts folder, or null. */
+function readCached(path: string): { ok: boolean; mtimeMs: number } | null {
   try {
-    const cached = JSON.parse(readFileSync(PREVIEW_CACHE, "utf8")) as { key?: unknown; ok?: unknown };
-    return typeof cached.ok === "boolean" ? { ok: cached.ok, current: cached.key === previewKey } : null;
+    const info = lstatSync(path);
+    if (!info.isFile() || (process.getuid && info.uid !== process.getuid())) return null;
+    const cached = JSON.parse(readFileSync(path, "utf8")) as { ok?: unknown };
+    return typeof cached.ok === "boolean" ? { ok: cached.ok, mtimeMs: info.mtimeMs } : null;
   } catch {
     return null;
   }
+}
+
+const CACHED = ((): { ok: boolean; current: boolean } | null => {
+  if (!PREVIEW_SWITCH || PREVIEW_CACHE === null || !draftsRootIsOwn()) return null;
+  const own = readCached(PREVIEW_CACHE);
+  if (own) return { ok: own.ok, current: true };
+  let newest: { ok: boolean; mtimeMs: number } | null = null;
+  try {
+    for (const name of readdirSync(DRAFTS_ROOT)) {
+      if (!isPreviewCache(name)) continue;
+      const cached = readCached(join(DRAFTS_ROOT, name));
+      if (cached && (!newest || cached.mtimeMs > newest.mtimeMs)) newest = cached;
+    }
+  } catch {
+    return null;
+  }
+  return newest && { ok: newest.ok, current: false };
 })();
+
+/** Keep this start's answer for the next start, written whole, and drop answers a month old. */
+function saveCached(ok: boolean): void {
+  if (PREVIEW_CACHE === null || !draftsRootIsOwn()) return;
+  try {
+    const temp = `${PREVIEW_CACHE}.${process.pid}.tmp`;
+    writeFileSync(temp, JSON.stringify({ ok }), { mode: 0o600, flag: "wx" });
+    renameSync(temp, PREVIEW_CACHE);
+    for (const name of readdirSync(DRAFTS_ROOT)) {
+      const path = join(DRAFTS_ROOT, name);
+      if (isPreviewCache(name) && Date.now() - lstatSync(path).mtimeMs > 30 * 86_400_000) rmSync(path, { force: true });
+    }
+  } catch {
+    // the next start checks again
+  }
+}
 
 /** Whether preview can run here: Playwright and a Chromium (preview.mjs --check). */
 const previewCheck = (async () => {
@@ -163,13 +219,8 @@ const previewCheck = (async () => {
     const run = await runScript([join(SCRIPTS, "preview.mjs"), "--check"], 30_000);
     const found = JSON.parse(lastLine(run.stdout)) as { ok?: unknown; reason?: unknown };
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
-    if (previewKey !== null && (!CACHED?.current || CACHED.ok !== PREVIEW.ok)) {
-      try {
-        writeFileSync(PREVIEW_CACHE, JSON.stringify({ key: previewKey, ok: PREVIEW.ok }), { mode: 0o600 });
-      } catch {
-        // the next start checks again
-      }
-    }
+    if (!PREVIEW.ok) console.error(`artifact: no preview here: ${String(PREVIEW.reason)}`);
+    if (!CACHED?.current || CACHED.ok !== PREVIEW.ok) saveCached(PREVIEW.ok);
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${(error as Error).message})` });
   } finally {
@@ -278,20 +329,21 @@ function publish(args: Args): string {
           "without edits). Nothing was published.",
       );
     }
+    if (partsBelow(STORE, source)) {
+      throw new Refusal(
+        `No edits were applied and nothing was published: ${source} is a file inside the artifacts folder ` +
+          `${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` +
+          "Edit this file and publish it without edits.",
+      );
+    }
     edits = parsed;
   }
   const bytes = readFileSync(source);
   let raw: string;
   try {
-    raw = readSource(source);
+    raw = readSource(source, bytes);
   } catch (error) {
-    if (edits) {
-      throw new Refusal(
-        "No edits were applied and nothing was published: the file at file_path is not a text file, and `edits` " +
-          "works only on text files (JSON, HTML, CSS, JavaScript, Markdown, CSV, XML, SVG and plain text); publish " +
-          "it without edits.",
-      );
-    }
+    if (edits) throw new Refusal(`No edits were applied and nothing was published: ${(error as Error).message}`);
     throw new Error(`file_path: ${(error as Error).message}`);
   }
   if (edits) {
@@ -455,10 +507,20 @@ function saveEdits(source: string, before: Buffer, text: string, count: number):
     return savedMessage(count, "changed_during_publish");
   }
   const bom = before[0] === 0xef && before[1] === 0xbb && before[2] === 0xbf ? "\uFEFF" : "";
+  let fd: number;
   try {
-    writeFileSync(source, bom + text);
+    fd = openSync(source, "r+"); // opening doesn't truncate, so a file that can't be written stays whole
+  } catch {
+    return savedMessage(count, "not_writable");
+  }
+  try {
+    const data = Buffer.from(bom + text, "utf8");
+    writeSync(fd, data, 0, data.length, 0);
+    ftruncateSync(fd, data.length);
   } catch {
     return savedMessage(count, "write_failed");
+  } finally {
+    closeSync(fd);
   }
   return savedMessage(count);
 }

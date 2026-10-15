@@ -106,7 +106,11 @@ export function loadIndex(repair = false): [Index, string | null] {
       if (
         entries.every(
           ([slug, entry]) =>
-            isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && "page" in entry,
+            isSlug(slug) &&
+            !!entry &&
+            typeof entry === "object" &&
+            !Array.isArray(entry) &&
+            ["index.html", "index.md"].includes((entry as { page?: unknown }).page as string),
         )
       ) {
         return [new Map(entries as [string, Entry][]), null];

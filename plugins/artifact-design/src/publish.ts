@@ -110,8 +110,7 @@ function invalidUtf8At(data: Uint8Array, from: number): number {
 
 /** The page file's text, as UTF-8 (a byte-order mark is dropped). Like the Artifact tool, a file
  * in another encoding is refused rather than published garbled. */
-export function readSource(path: string): string {
-  const data = readFileSync(path);
+export function readSource(path: string, data: Buffer = readFileSync(path)): string {
   const bom = data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf ? 3 : 0;
   try {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data.subarray(bom));

@@ -2,8 +2,23 @@
 
 // plugins/artifact-design/src/server.ts
 import { execFile } from "node:child_process";
-import { existsSync as existsSync2, mkdirSync as mkdirSync3, mkdtempSync as mkdtempSync2, readFileSync as readFileSync3, rmSync as rmSync2, statSync as statSync3, writeFileSync as writeFileSync2 } from "node:fs";
-import { tmpdir as tmpdir2 } from "node:os";
+import { createHash } from "node:crypto";
+import {
+  closeSync as closeSync2,
+  existsSync as existsSync2,
+  ftruncateSync,
+  lstatSync as lstatSync3,
+  mkdirSync as mkdirSync3,
+  mkdtempSync as mkdtempSync2,
+  openSync as openSync2,
+  readFileSync as readFileSync3,
+  readdirSync as readdirSync3,
+  renameSync as renameSync2,
+  rmSync as rmSync2,
+  statSync as statSync3,
+  writeFileSync as writeFileSync2,
+  writeSync as writeSync2
+} from "node:fs";
 import { basename as basename3, dirname as dirname3, extname, join as join5 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
@@ -24553,8 +24568,7 @@ function invalidUtf8At(data, from) {
   }
   return -1;
 }
-function readSource(path) {
-  const data = readFileSync(path);
+function readSource(path, data = readFileSync(path)) {
   const bom = data[0] === 239 && data[1] === 187 && data[2] === 191 ? 3 : 0;
   try {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data.subarray(bom));
@@ -24732,6 +24746,41 @@ function makeDrafts() {
   }
 }
 
+// plugins/artifact-design/src/paths.ts
+import { realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join as join3, relative, resolve, sep } from "node:path";
+function resolvePath(path) {
+  const absolute = resolve(expandUser(path));
+  try {
+    return realpathSync.native(absolute);
+  } catch {
+    const parent = dirname(absolute);
+    return parent === absolute ? absolute : join3(resolvePath(parent), basename(absolute));
+  }
+}
+function expandUser(path) {
+  return path === "~" || path.startsWith("~/") || path.startsWith("~\\") ? homedir() + path.slice(1) : path;
+}
+function fileUri(path) {
+  const quote = (text) => Array.from(new TextEncoder().encode(text), (byte) => {
+    const ch = String.fromCharCode(byte);
+    return /[A-Za-z0-9_.~\-/]/.test(ch) ? ch : "%" + byte.toString(16).toUpperCase().padStart(2, "0");
+  }).join("");
+  if (process.platform === "win32") {
+    const posix = path.replaceAll("\\", "/");
+    const drive = /^[A-Za-z]:/.exec(posix);
+    return drive ? `file:///${drive[0]}${quote(posix.slice(2))}` : `file:${quote(posix)}`;
+  }
+  return "file://" + quote(path);
+}
+function partsBelow(folder, path) {
+  const rel = relative(folder, path);
+  if (!rel || rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel))
+    return null;
+  return rel.split(sep);
+}
+
 // plugins/artifact-design/src/edits.ts
 var MAX_CHARS = 65536;
 var MAX_WORK = 268435456;
@@ -24832,7 +24881,7 @@ function savedMessage(edits, failure) {
   if (failure === "write_failed") {
     return `${lead}: writing it back failed, and the file may be partly written. Read it before anything else, restore it ` + `to the published text (the published page, ${one ? "the edit" : "the edits"} included), and only then publish it ` + "again; publishing it as it is could put damaged content on the page.";
   }
-  return `${lead} (${failure === "changed_during_publish" ? "it changed on disk while the publish ran, so it was left as it is" : "it has other names on disk (a hard link), so it was left as it is"}). ` + `Apply the same ${one ? "edit" : "edits"} to that file with Edit before you publish it again` + `${failure === "hard_linked" ? ", and publish it without `edits` while it has other names" : ""}; publishing it as it is would revert ${one ? "it" : "them"}.`;
+  return `${lead} (${{ changed_during_publish: "it changed on disk while the publish ran", hard_linked: "it has other names on disk (a hard link)", not_writable: "it can't be written" }[failure]}, so it was left as it is). ` + `Apply the same ${one ? "edit" : "edits"} to that file with Edit before you publish it again` + `${failure === "hard_linked" ? ", and publish it without `edits` while it has other names" : ""}; publishing it as it is would revert ${one ? "it" : "them"}.`;
 }
 
 // plugins/artifact-design/src/store.ts
@@ -24853,43 +24902,6 @@ import {
 import { homedir as homedir2 } from "node:os";
 import { basename as basename2, dirname as dirname2, isAbsolute as isAbsolute2, join as join4 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
-
-// plugins/artifact-design/src/paths.ts
-import { realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join as join3, relative, resolve, sep } from "node:path";
-function resolvePath(path) {
-  const absolute = resolve(expandUser(path));
-  try {
-    return realpathSync.native(absolute);
-  } catch {
-    const parent = dirname(absolute);
-    return parent === absolute ? absolute : join3(resolvePath(parent), basename(absolute));
-  }
-}
-function expandUser(path) {
-  return path === "~" || path.startsWith("~/") || path.startsWith("~\\") ? homedir() + path.slice(1) : path;
-}
-function fileUri(path) {
-  const quote = (text) => Array.from(new TextEncoder().encode(text), (byte) => {
-    const ch = String.fromCharCode(byte);
-    return /[A-Za-z0-9_.~\-/]/.test(ch) ? ch : "%" + byte.toString(16).toUpperCase().padStart(2, "0");
-  }).join("");
-  if (process.platform === "win32") {
-    const posix = path.replaceAll("\\", "/");
-    const drive = /^[A-Za-z]:/.exec(posix);
-    return drive ? `file:///${drive[0]}${quote(posix.slice(2))}` : `file:${quote(posix)}`;
-  }
-  return "file://" + quote(path);
-}
-function partsBelow(folder, path) {
-  const rel = relative(folder, path);
-  if (!rel || rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel))
-    return null;
-  return rel.split(sep);
-}
-
-// plugins/artifact-design/src/store.ts
 var STORE = resolvePath(process.env.ARTIFACTS_DIR || join4(homedir2(), "artifacts"));
 var INDEX = join4(STORE, "index.json");
 function repr(value) {
@@ -24947,7 +24959,7 @@ function loadIndex(repair = false) {
     const parsed = text !== null ? JSON.parse(text) : null;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const entries = Object.entries(parsed);
-      if (entries.every(([slug, entry]) => isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && ("page" in entry))) {
+      if (entries.every(([slug, entry]) => isSlug(slug) && !!entry && typeof entry === "object" && !Array.isArray(entry) && ["index.html", "index.md"].includes(entry.page))) {
         return [new Map(entries), null];
       }
     }
@@ -25380,7 +25392,6 @@ function runScript(args, timeout) {
 }
 var lastLine = (text) => text.trim().split(/\r?\n/).at(-1) ?? "";
 var PREVIEW = { ok: false, reason: "the preview check has not finished", checked: false };
-var PREVIEW_CACHE = join5(tmpdir2(), `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
 var previewKey = (() => {
   try {
     const script = statSync3(join5(SCRIPTS, "preview.mjs"));
@@ -25395,16 +25406,53 @@ var previewKey = (() => {
     return null;
   }
 })();
-var CACHED = (() => {
-  if (!PREVIEW_SWITCH || previewKey === null)
-    return null;
+var PREVIEW_CACHE = previewKey === null ? null : join5(DRAFTS_ROOT, `preview-${createHash("sha256").update(previewKey).digest("hex").slice(0, 16)}.json`);
+var isPreviewCache = (name) => /^preview-[0-9a-f]{16}\.json$/.test(name);
+function readCached(path) {
   try {
-    const cached = JSON.parse(readFileSync3(PREVIEW_CACHE, "utf8"));
-    return typeof cached.ok === "boolean" ? { ok: cached.ok, current: cached.key === previewKey } : null;
+    const info = lstatSync3(path);
+    if (!info.isFile() || process.getuid && info.uid !== process.getuid())
+      return null;
+    const cached = JSON.parse(readFileSync3(path, "utf8"));
+    return typeof cached.ok === "boolean" ? { ok: cached.ok, mtimeMs: info.mtimeMs } : null;
   } catch {
     return null;
   }
+}
+var CACHED = (() => {
+  if (!PREVIEW_SWITCH || PREVIEW_CACHE === null || !draftsRootIsOwn())
+    return null;
+  const own = readCached(PREVIEW_CACHE);
+  if (own)
+    return { ok: own.ok, current: true };
+  let newest = null;
+  try {
+    for (const name of readdirSync3(DRAFTS_ROOT)) {
+      if (!isPreviewCache(name))
+        continue;
+      const cached = readCached(join5(DRAFTS_ROOT, name));
+      if (cached && (!newest || cached.mtimeMs > newest.mtimeMs))
+        newest = cached;
+    }
+  } catch {
+    return null;
+  }
+  return newest && { ok: newest.ok, current: false };
 })();
+function saveCached(ok) {
+  if (PREVIEW_CACHE === null || !draftsRootIsOwn())
+    return;
+  try {
+    const temp = `${PREVIEW_CACHE}.${process.pid}.tmp`;
+    writeFileSync2(temp, JSON.stringify({ ok }), { mode: 384, flag: "wx" });
+    renameSync2(temp, PREVIEW_CACHE);
+    for (const name of readdirSync3(DRAFTS_ROOT)) {
+      const path = join5(DRAFTS_ROOT, name);
+      if (isPreviewCache(name) && Date.now() - lstatSync3(path).mtimeMs > 30 * 86400000)
+        rmSync2(path, { force: true });
+    }
+  } catch {}
+}
 var previewCheck = (async () => {
   try {
     if (!PREVIEW_SWITCH) {
@@ -25414,11 +25462,10 @@ var previewCheck = (async () => {
     const run = await runScript([join5(SCRIPTS, "preview.mjs"), "--check"], 30000);
     const found = JSON.parse(lastLine(run.stdout));
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
-    if (previewKey !== null && (!CACHED?.current || CACHED.ok !== PREVIEW.ok)) {
-      try {
-        writeFileSync2(PREVIEW_CACHE, JSON.stringify({ key: previewKey, ok: PREVIEW.ok }), { mode: 384 });
-      } catch {}
-    }
+    if (!PREVIEW.ok)
+      console.error(`artifact: no preview here: ${String(PREVIEW.reason)}`);
+    if (!CACHED?.current || CACHED.ok !== PREVIEW.ok)
+      saveCached(PREVIEW.ok);
   } catch (error) {
     Object.assign(PREVIEW, { ok: false, reason: `the preview check failed (${error.message})` });
   } finally {
@@ -25490,16 +25537,18 @@ function publish(args) {
     if (args.files !== undefined) {
       throw new Refusal("`edits` changes only the file at `file_path`: not with `files` (publish the other files in a call " + "without edits). Nothing was published.");
     }
+    if (partsBelow(STORE, source)) {
+      throw new Refusal(`No edits were applied and nothing was published: ${source} is a file inside the artifacts folder ` + `${STORE}, and \`edits\` changes a page's source file. Publish the source file with edits instead, or ` + "Edit this file and publish it without edits.");
+    }
     edits = parsed;
   }
   const bytes = readFileSync3(source);
   let raw;
   try {
-    raw = readSource(source);
+    raw = readSource(source, bytes);
   } catch (error) {
-    if (edits) {
-      throw new Refusal("No edits were applied and nothing was published: the file at file_path is not a text file, and `edits` " + "works only on text files (JSON, HTML, CSS, JavaScript, Markdown, CSV, XML, SVG and plain text); publish " + "it without edits.");
-    }
+    if (edits)
+      throw new Refusal(`No edits were applied and nothing was published: ${error.message}`);
     throw new Error(`file_path: ${error.message}`);
   }
   if (edits) {
@@ -25644,10 +25693,20 @@ function saveEdits(source, before, text, count) {
     return savedMessage(count, "changed_during_publish");
   }
   const bom = before[0] === 239 && before[1] === 187 && before[2] === 191 ? "\uFEFF" : "";
+  let fd;
   try {
-    writeFileSync2(source, bom + text);
+    fd = openSync2(source, "r+");
+  } catch {
+    return savedMessage(count, "not_writable");
+  }
+  try {
+    const data = Buffer.from(bom + text, "utf8");
+    writeSync2(fd, data, 0, data.length, 0);
+    ftruncateSync(fd, data.length);
   } catch {
     return savedMessage(count, "write_failed");
+  } finally {
+    closeSync2(fd);
   }
   return savedMessage(count);
 }

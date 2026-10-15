@@ -76,5 +76,10 @@ describe("messages", () => {
     expect(savedMessage(2, "changed_during_publish")).toStartWith(
       "Published — the page now has the 2 edits, but the file at file_path does not (it changed on disk",
     );
+    expect(savedMessage(1, "not_writable")).toBe(
+      "Published — the page now has the edit, but the file at file_path does not (it can't be written, so it was " +
+        "left as it is). Apply the same edit to that file with Edit before you publish it again; publishing it as " +
+        "it is would revert it.",
+    );
   });
 });

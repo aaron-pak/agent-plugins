@@ -11,6 +11,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -112,6 +113,16 @@ describe("initialize era", () => {
     expect(tool._meta).toBeUndefined();
     await server.close();
   });
+
+  test("keeps the compact tool within Codex's limits with long paths, preview and opening", async () => {
+    const long = join(TEMP, "Library", "Application Support", "Some Long Folder Name For Pages", "artifacts");
+    const temp = mkdtempSync(join(TEMP, "private-var-folders-xx-yyyyyyyyyyyyyyyyyyyy-T-"));
+    const server = await legacy("codex-mcp-client", long, { ARTIFACT_OPEN: "1", ARTIFACT_PREVIEW: "1", TMPDIR: temp });
+    const [tool] = (await server.request("tools/list")).result.tools;
+    expect(Buffer.byteLength(tool.description, "utf8")).toBeLessThanOrEqual(1000);
+    expect(Buffer.byteLength(JSON.stringify(tool.inputSchema), "utf8")).toBeLessThanOrEqual(5000);
+    await server.close();
+  }, 60_000);
 });
 
 describe("2026-07-28 era", () => {
@@ -180,6 +191,19 @@ describe("Artifact tool", () => {
     });
     expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
     expect(existsSync(join(STORE, "team-notes", ".versions", "3.html"))).toBe(false);
+
+    const stored = join(STORE, "team-notes", "index.html");
+    const inStore = await server.call({ file_path: stored, edits: [{ old_str: "Final", new_str: "Twice" }] });
+    expect(inStore.text).toStartWith("No edits were applied and nothing was published: ");
+    expect(inStore.text).toContain("inside the artifacts folder");
+    expect(readFileSync(stored, "utf8")).toContain("<h1>Final</h1>");
+
+    const latin = join(TEMP, "latin.html");
+    writeFileSync(latin, Buffer.from("<title>Caf\xe9</title>\n", "latin1"));
+    const notUtf8 = await server.call({ file_path: latin, edits: [{ old_str: "Caf", new_str: "Cafe" }] });
+    expect(notUtf8.text).toStartWith(
+      "No edits were applied and nothing was published: the source file is not valid UTF-8",
+    );
 
     const withFiles = await server.call({ file_path: source, files: [], edits: [{ old_str: "Final", new_str: "X" }] });
     expect(withFiles.text).toStartWith("`edits` changes only the file at `file_path`");
@@ -251,36 +275,65 @@ const canPreview = (() => {
 })();
 
 describe("preview", () => {
-  test("lists it from the last check's answer, kept in the temp folder", async () => {
+  // The answers sit in this user's drafts folder in the temp directory, one file per setup.
+  const answers = (temp: string) => {
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    return readdirSync(folder)
+      .filter((name) => /^preview-[0-9a-f]{16}\.json$/.test(name))
+      .map((name) => JSON.parse(readFileSync(join(folder, name), "utf8")) as { ok: boolean });
+  };
+  const waitFor = async (done: () => boolean) => {
+    for (let tries = 0; !done() && tries < 300; tries++) await Bun.sleep(100);
+  };
+
+  test("lists it from the last check's answer, kept in the user's drafts folder", async () => {
     const temp = mkdtempSync(join(TEMP, "check-"));
     const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
     const first = await legacy("claude-code", STORE, env);
     const listed = (await first.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    await waitFor(() => answers(temp).length > 0);
     await first.close();
-    const cache = readdirSync(temp).find((name) => name.startsWith("artifact-design-preview-"));
-    expect(cache).toBeDefined();
-    expect(JSON.parse(readFileSync(join(temp, cache!), "utf8")).ok).toBe(listed.includes("preview"));
+    expect(answers(temp)).toEqual([{ ok: listed.includes("preview") }]);
     const second = await legacy("claude-code", STORE, env);
     expect((await second.request("tools/list")).result.tools[0].inputSchema.properties.action.enum).toEqual(listed);
     await second.close();
   }, 60_000);
 
-  test("lists it from an answer kept for another setup, then keeps this start's", async () => {
+  test("lists it from another setup's answer until this setup has its own", async () => {
     const temp = mkdtempSync(join(TEMP, "stale-"));
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    mkdirSync(folder, { mode: 0o700 });
+    writeFileSync(join(folder, "preview-0123456789abcdef.json"), JSON.stringify({ ok: !canPreview }));
     const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
-    const cache = join(temp, `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
-    writeFileSync(cache, JSON.stringify({ key: "an older plugin", ok: !canPreview }));
     const server = await legacy("claude-code", STORE, env);
     const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
     expect(listed.includes("preview")).toBe(!canPreview);
-    let kept = JSON.parse(readFileSync(cache, "utf8"));
-    for (let tries = 0; kept.key === "an older plugin" && tries < 300; tries++) {
-      await Bun.sleep(100);
-      kept = JSON.parse(readFileSync(cache, "utf8"));
-    }
+    await waitFor(() => answers(temp).length > 1);
     await server.close();
-    expect(kept.key).not.toBe("an older plugin");
-    expect(kept.ok).toBe(canPreview);
+    expect(
+      answers(temp)
+        .map((answer) => answer.ok)
+        .sort(),
+    ).toEqual([false, true]);
+    // The other setup's answer stays, and this setup now lists from its own.
+    const again = await legacy("claude-code", STORE, env);
+    const relisted = (await again.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    expect(relisted.includes("preview")).toBe(canPreview);
+    await again.close();
+  }, 60_000);
+
+  test("ignores an answer that isn't a file of this user's own folder", async () => {
+    const temp = mkdtempSync(join(TEMP, "planted-"));
+    const folder = join(temp, `artifact-drafts-${process.getuid?.() ?? "user"}`);
+    const elsewhere = join(temp, "elsewhere.json");
+    writeFileSync(elsewhere, JSON.stringify({ ok: !canPreview }));
+    mkdirSync(folder, { mode: 0o700 });
+    symlinkSync(elsewhere, join(folder, "preview-0123456789abcdef.json"));
+    const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1", TMPDIR: temp });
+    const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    expect(listed.includes("preview")).toBe(canPreview);
+    await server.close();
+    expect(JSON.parse(readFileSync(elsewhere, "utf8"))).toEqual({ ok: !canPreview });
   }, 60_000);
 
   test.skipIf(!canPreview)(
