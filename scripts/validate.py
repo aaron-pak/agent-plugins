@@ -147,7 +147,7 @@ def check_plugin(entry):
             servers = manifest.get("mcpServers")
             if servers is not None and not isinstance(servers, dict):
                 error(f"{where}/{manifest_path}", "mcpServers should be an object of servers")
-            elif servers:
+            elif servers is not None:
                 codex_servers = servers
     else:
         manifest_path = Path("plugin.json")

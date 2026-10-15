@@ -173,6 +173,7 @@ const MAX_BASE64 = 1398100;
 // here loads them (src/publish.ts). The page's Mermaid runtime loads from jsDelivr too.
 const here = dirname(fileURLToPath(import.meta.url));
 const MERMAID_SRC = readFileSync(join(here, "mermaid-runtime.html"), "utf8").match(/src="([^"]+)"/)[1];
+const CDN_MS = 8000;
 const SCRIPT_HOSTS = ["https://cdnjs.cloudflare.com/", "https://cdn.jsdelivr.net/npm/", "https://unpkg.com/", "https://cdn.tailwindcss.com/", "https://code.jquery.com/"];
 const PREVIEW_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/npm/ https://unpkg.com https://cdn.tailwindcss.com https://code.jquery.com"
   + "; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' data: blob:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self' blob:; form-action 'self'; frame-src 'self' blob: data:; object-src 'none'; webrtc 'block'; base-uri 'self'";
@@ -662,14 +663,14 @@ function measuredFindings(m) {
 }
 
 // What Claude Code's preview lets a page load: the page itself, its Mermaid runtime, data:
-// and blob: URLs, and Google Fonts stylesheets and font files, all as plain GETs.
+// and blob: URLs, and Google Fonts stylesheets and font files, all as plain GETs. Requests to the
+// script CDNs go through fetchFromCdn instead.
 function allowed(url, method, hasBody, pageHref) {
   if (!(method === "GET" || method === "HEAD") || hasBody) return false;
   if (url === pageHref || url === MERMAID_SRC) return true;
   try {
     const u = new URL(url);
     if (u.protocol === "data:" || u.protocol === "blob:" || u.href === "about:blank") return true;
-    if (SCRIPT_HOSTS.some((host) => u.href.startsWith(host))) return true;
     return FONT_ORIGINS.has(u.origin) && FONT_PATHS.some((prefix) => u.pathname.startsWith(prefix));
   } catch {
     return false;
@@ -760,6 +761,8 @@ function blockedFindings(list, pageHref) {
       out.push(["load", `the page opened a JavaScript dialog (${clip(b.url, 16)}) on load; build any confirmation into the page instead`]);
     } else if (b.type === "download") {
       out.push(["load", `the page starts a download (${clip(b.url || "unnamed", 60)}) on load — refused in preview`]);
+    } else if (b.type === "cdn") {
+      out.push(["load", `${clip(b.url, 120)} didn't load in preview (${clip(b.reason, 80)}); the published page loads it where the network allows`]);
     } else if (b.url.startsWith("file:")) {
       out.push(["local_ref", `${clip(b.url, 120)} is a local file outside the artifact — publish it with the page (files) and reference it relatively`]);
     } else if (FONT_ORIGINS.has(originOf(b.url))) {
@@ -801,6 +804,17 @@ if (browser) {
       await context.route("**/*", (route, request) => {
         const url = request.url();
         if (allowed(url, request.method(), request.postDataBuffer() !== null, href)) return route.continue();
+        if (request.method() === "GET" && SCRIPT_HOSTS.some((host) => url.startsWith(host))) {
+          // A CDN script loads as it would on the published page, but a network that is down or
+          // hangs is reported rather than left to stall the render.
+          return route.fetch({ timeout: CDN_MS }).then(
+            (response) => route.fulfill({ response }),
+            (error) => {
+              if (blocked.length < 64) blocked.push({ url: url.slice(0, 512), type: "cdn", reason: String(error.message).split("\n")[0].replace(/^route\.fetch: /, "") });
+              return route.abort("failed");
+            },
+          );
+        }
         if (blocked.length < 64) blocked.push({ url: url.slice(0, 512), type: request.resourceType() });
         return route.abort("blockedbyclient");
       });
@@ -884,7 +898,7 @@ if (browser) {
           dropped++;
           continue;
         }
-        add("csp", `${clip(where, 100)} is blocked by the artifact content policy (${clip(v.directive, 24)}) — only the page contract's script CDNs and Google Fonts load from outside`);
+        add("csp", `${clip(where, 100)} is blocked by the artifact content policy (${clip(v.directive, 24)}) — only scripts from the page contract's CDNs (jsDelivr under /npm/) and Google Fonts load from outside`);
       }
       for (const type of dialogs) add("load", `the page opened a JavaScript dialog (${type}) on load; build any confirmation into the page instead`);
       for (const [kind, text] of blockedFindings(blocked, href)) add(kind, text);

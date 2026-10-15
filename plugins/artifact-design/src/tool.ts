@@ -37,7 +37,7 @@ const PREVIEW_ACTION =
   "text split by a grid or flex parent, SVG text too small for a phone, theme-only color variables, blocked or " +
   "local-only loads, diagram and console errors). Nothing is uploaded.";
 
-// Codex drops every description from an input schema over 5,000 bytes (tools/src/json_schema.rs),
+// Codex drops every description from an input schema over 5,000 bytes (tools/src/json_schema/compaction.rs),
 // and cuts an Agent Plugins server's tool descriptions at 1,000 bytes (tools/src/mcp_tool.rs), so a
 // Codex client gets this shorter text: the lead, the first-call rule, the Calls list and the
 // contract essentials. quickstart returns the full guidance. The plugin's Codex manifest isn't in the
@@ -47,7 +47,8 @@ const CODEX_REST = text(CODEX_REST_TEXT);
 
 // Claude Code cuts an MCP tool's description at 4,096 characters (2,048 before 2.1.296;
 // CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH) but passes its input schema whole, so the description keeps
-// the paragraphs that fit and the rest follows, in order, as the input schema's description. Claude
+// the paragraphs that fit and the rest follows, in order, as the input schema's description. The
+// first-call rule follows the first paragraph, so that it fits within 2,048 characters too. Claude
 // Code also defers MCP tools behind tool search unless they ask to load up front; its own Artifact
 // tool is always loaded.
 const DESCRIPTION_ROOM = 4096;
@@ -213,10 +214,9 @@ export function tool(client: string | undefined, setting: Setting): Tool {
   };
 }
 
-const upFront = (paragraphs: string[]) =>
-  paragraphs.join("\n\n") +
-  FIRST_CALL +
-  " The rest of this description is the `description` of the tool's input schema.";
+const upFront = ([first, ...more]: string[]) =>
+  [first + FIRST_CALL, ...more].join("\n\n") +
+  "\n\nThe rest of this description is the `description` of the tool's input schema.";
 
 export const isCodex = (client: string | undefined) => (client ?? "").toLowerCase().includes("codex");
 

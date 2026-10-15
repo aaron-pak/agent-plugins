@@ -25406,9 +25406,9 @@ function tool(client, setting) {
     _meta: { "anthropic/alwaysLoad": true }
   };
 }
-var upFront = (paragraphs) => paragraphs.join(`
+var upFront = ([first, ...more]) => [first + FIRST_CALL, ...more].join(`
 
-`) + FIRST_CALL + " The rest of this description is the `description` of the tool's input schema.";
+`) + "\n\nThe rest of this description is the `description` of the tool's input schema.";
 var isCodex = (client) => (client ?? "").toLowerCase().includes("codex");
 function checkSchema() {
   return {
@@ -25595,7 +25595,7 @@ async function actQuickstart(args, client) {
 
 ## Process`);
   if (!(PREVIEW_SWITCH && await previewOffered())) {
-    guidance = guidance.replace("one `ArtifactCheck` preview, or else one screenshot", () => "one screenshot");
+    guidance = guidance.replace("one `ArtifactCheck` preview, or else one screenshot of the local file; if the session offers none of these, " + "skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors " + "that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing " + "it covers needs a check of your own.", () => "one screenshot of the local file; if the session offers no way, skip the look.");
   }
   const codex = isCodex(client);
   const onlyPlain = args.intent !== undefined && args.intent !== null && args.intent !== "other" ? `Every artifact here is a plain HTML page, so make this one as a plain page.
@@ -25947,8 +25947,19 @@ async function call(args, client) {
     return textResult(`${action} failed: ${error.message}`, true);
   }
 }
+function badPreviewOption(args) {
+  const { widths, themes } = args;
+  const ok = (list, max, item) => list === undefined || Array.isArray(list) && list.length >= 1 && list.length <= max && list.every(item);
+  if (!ok(widths, 3, (w) => Number.isInteger(w) && w >= 320 && w <= 2560)) {
+    return "`widths` takes one to three whole numbers of CSS pixels from 320 to 2560. Nothing was rendered.";
+  }
+  if (!ok(themes, 2, (t) => t === "light" || t === "dark")) {
+    return "`themes` takes 'light', 'dark' or both. Nothing was rendered.";
+  }
+  return null;
+}
 async function callCheck(args) {
-  const problem = unknownParameter(args, true);
+  const problem = unknownParameter(args, true) ?? badPreviewOption(args);
   if (problem)
     return textResult(problem, true);
   const action = args.action ?? "preview";

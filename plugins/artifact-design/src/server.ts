@@ -301,7 +301,13 @@ async function actQuickstart(args: Args, client?: string): Promise<string> {
     .replace("\n\n## Process", () => "\n\n\n\n## Process");
   // Name ArtifactCheck only where it is listed.
   if (!(PREVIEW_SWITCH && (await previewOffered()))) {
-    guidance = guidance.replace("one `ArtifactCheck` preview, or else one screenshot", () => "one screenshot");
+    guidance = guidance.replace(
+      "one `ArtifactCheck` preview, or else one screenshot of the local file; if the session offers none of these, " +
+        "skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors " +
+        "that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing " +
+        "it covers needs a check of your own.",
+      () => "one screenshot of the local file; if the session offers no way, skip the look.",
+    );
   }
   const codex = isCodex(client);
   const onlyPlain =
@@ -719,8 +725,22 @@ async function call(args: Args, client?: string): Promise<CallToolResult> {
   }
 }
 
+/** A refusal for widths or themes outside what ArtifactCheck's schema allows, or null. */
+function badPreviewOption(args: Args): string | null {
+  const { widths, themes } = args;
+  const ok = (list: unknown, max: number, item: (value: unknown) => boolean) =>
+    list === undefined || (Array.isArray(list) && list.length >= 1 && list.length <= max && list.every(item));
+  if (!ok(widths, 3, (w) => Number.isInteger(w) && (w as number) >= 320 && (w as number) <= 2560)) {
+    return "`widths` takes one to three whole numbers of CSS pixels from 320 to 2560. Nothing was rendered.";
+  }
+  if (!ok(themes, 2, (t) => t === "light" || t === "dark")) {
+    return "`themes` takes 'light', 'dark' or both. Nothing was rendered.";
+  }
+  return null;
+}
+
 async function callCheck(args: Args): Promise<CallToolResult> {
-  const problem = unknownParameter(args, true);
+  const problem = unknownParameter(args, true) ?? badPreviewOption(args);
   if (problem) return textResult(problem, true);
   const action = args.action ?? "preview";
   if (action !== "preview") return textResult(`Unknown action ${repr(action)}.`, true);

@@ -10,7 +10,20 @@
       "command": "node",
       "args": ["mcp/server.mjs"],
       "cwd": ".",
-      "env_vars": ["ARTIFACTS_DIR", "ARTIFACT_OPEN", "ARTIFACT_PREVIEW", "ARTIFACT_PREVIEW_CA", "DISPLAY", "WAYLAND_DISPLAY"],
+      "env_vars": [
+        "ARTIFACTS_DIR",
+        "ARTIFACT_OPEN",
+        "ARTIFACT_PREVIEW",
+        "ARTIFACT_PREVIEW_CA",
+        "PLAYWRIGHT_BROWSERS_PATH",
+        "XDG_CACHE_HOME",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XAUTHORITY",
+        "XDG_RUNTIME_DIR",
+        "XDG_CURRENT_DESKTOP",
+        "DBUS_SESSION_BUS_ADDRESS"
+      ],
       "omit_tools_from": ["deferred", "code_mode"]
     }
   }

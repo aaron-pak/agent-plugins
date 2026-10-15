@@ -389,6 +389,10 @@ describe("preview", () => {
     expect(redirect.isError).toBe(true);
     const files = await server.call({ file_path: page, files: {} }, "ArtifactCheck");
     expect(files.text).toStartWith("Unknown parameter `files`");
+    const narrow = await server.call({ file_path: page, widths: [100] }, "ArtifactCheck");
+    expect(narrow.text).toStartWith("`widths` takes one to three whole numbers");
+    const blue = await server.call({ file_path: page, themes: ["blue"] }, "ArtifactCheck");
+    expect(blue.text).toStartWith("`themes` takes 'light', 'dark' or both");
     const verify = await server.call({ action: "verify" }, "ArtifactCheck");
     expect(verify.text).toBe("Unknown action 'verify'.");
     if (!canPreview) {
@@ -404,6 +408,8 @@ describe("preview", () => {
     for (const intent of ["other", "document", "slides", "design"]) {
       const text = (await off.call({ action: "quickstart", intent })).text;
       expect(text).not.toContain("ArtifactCheck");
+      expect(text).not.toContain("The preview renders");
+      expect(text).toContain("one screenshot of the local file; if the session offers no way, skip the look.");
       expect(text).not.toContain("Skill tool");
       expect(text).toContain("In this text, Claude means you.");
       expect(text).not.toMatch(NATIVE_ONLY);
@@ -428,7 +434,7 @@ describe("preview", () => {
       expect(result.text).toStartWith("Previewed look.html");
       expect(result.isError).toBe(false);
       expect(result.images).toBe(4);
-      const narrow = await server.call({ file_path: page, widths: [800, 99999], themes: ["dark"] }, "ArtifactCheck");
+      const narrow = await server.call({ file_path: page, widths: [800, 2560], themes: ["dark"] }, "ArtifactCheck");
       expect(narrow.text).toStartWith("Previewed look.html");
       expect(narrow.text).toContain("at 800/2560 px in dark");
       expect(narrow.images).toBe(2);
