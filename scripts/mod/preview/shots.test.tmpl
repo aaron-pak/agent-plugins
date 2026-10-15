@@ -1,0 +1,296 @@
+// Written by `bun run mod preview` into a copy of the mod, one file per scenario, and run with
+// `claude plugin test`: drives the mod through a session's events and prints every tree its
+// AbovePrompt hook draws (a Client's drawing inlined) as one @@SHOT JSON line per frame.
+import { mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+import type { On, RenderElement, RenderPropsOf, SessionMeasureInput } from 'claude-code'
+
+const CONFIG: {
+  plugin: string
+  command: string
+  styles: (string | null)[]
+  scenarios: string[]
+  widths: number[]
+  animateAt: number
+  surfaces: ('terminal' | 'desktop')[]
+} = __CONFIG__
+const PLUGIN = CONFIG.plugin
+const STYLES = CONFIG.styles
+const WIDTHS = CONFIG.widths
+const SURFACES = CONFIG.surfaces
+const T0 = 10_000_000
+
+type Surface = 'terminal' | 'desktop'
+
+function band(columns: number, isWorking: boolean): RenderPropsOf['AbovePrompt'] {
+  return { hasSurvey: false, isWorking, maxRows: 12, bodyColumns: columns, scroll: { offset: 0, bodyRows: 12 }, view: {} }
+}
+
+function measured(percent: number, usd: number, five: number): SessionMeasureInput {
+  return {
+    context: { tokens: percent * 2000, window: 200_000, percent },
+    rateLimits: [{ kind: 'five_hour', percentUsed: five, resetsAt: new Date(T0 + 130 * 60_000).toISOString() }],
+    cost: { usd },
+    changed: ['context', 'cost', 'rateLimits'],
+  }
+}
+
+type World = { clock: ReturnType<typeof mock.clock>; hold: (tool: string) => void; release: () => void }
+
+function world(on: On): World {
+  mock.store(on)
+  const clock = mock.clock(on, { now: T0 })
+  let held: string | null = null
+  let waiting: Array<() => void> = []
+  let created = 0
+  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('session.usage', () => ({
+    value: { startedAt: T0 - 47 * 60_000, context: { window: 200_000 }, rateLimits: [], cost: { usd: 0 } },
+  }))
+  on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
+  on('session.repo', () => ({ value: { root: '/Users/aaron/projects/agent-plugins', remote: null, internal: false, name: null } }))
+  on('process.run', ($, e) => ({
+    value: {
+      exitCode: 0,
+      stdout: e.argv.includes('rev-parse') ? 'claude/first-mod\n' : ' M hooks/band.tsx\n M hooks/register.tsx\n?? notes.md\n',
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }))
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('tool.call', async ($, e) => {
+    if (held !== null && e.tool === held) {
+      await new Promise<void>(resolve => waiting.push(resolve))
+    }
+    if (e.tool === 'Bash' && String(e.command).includes('fail')) {
+      return { result: { stdout: '', stderr: 'boom' }, isError: true, text: 'boom' }
+    }
+
+    return e.tool === 'TaskCreate'
+      ? { result: { task: { id: String((created += 1)), subject: String(e.subject) } } }
+      : { result: { ok: true } }
+  })
+
+  return {
+    clock,
+    hold: tool => {
+      held = tool
+    },
+    release: () => {
+      held = null
+      const all = waiting
+      waiting = []
+      for (const resolve of all) resolve()
+    },
+  }
+}
+
+async function begin($: Engine, percent = 42, usd = 0.31, five = 23): Promise<void> {
+  await $.session.start({ cwd: '/Users/aaron/projects/agent-plugins', surface: 'terminal', isInteractive: true })
+  await $.session.measure(measured(percent, usd, five))
+}
+
+async function todos($: Engine): Promise<void> {
+  const subjects = ['Read the band', 'Find the glitch', 'Draw Clawd in SVG', 'Lay out the meters', 'Write tests', 'Try both surfaces', 'Ship it']
+  for (const subject of subjects) {
+    await $.tool.call({ tool: 'TaskCreate', subject, description: '', activeForm: `${subject.replace(/^(\w+)/, '$1ing')}` })
+  }
+  for (const id of ['1', '2', '3']) {
+    await $.tool.call({ tool: 'TaskUpdate', taskId: id, status: 'completed' })
+  }
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '4', status: 'in_progress' })
+}
+
+async function turn($: Engine, reason: 'answer' | 'error' = 'answer'): Promise<void> {
+  await $.prompt.submit({ text: 'tidy up the band', wait: false, origin: { kind: 'composer' } })
+  for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Read', file_path: `/w/f${i}.ts` })
+  await $.tool.call({ tool: 'Edit', file_path: '/w/hooks/band.tsx', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Edit', file_path: '/w/hooks/register.tsx', old_string: 'a', new_string: 'b' })
+  await $.turn.complete({ answer: 'Done.', durationMs: 41_000, isAborted: false, turnId: 't1', reason })
+}
+
+async function inline(ui: { drawn: (scope?: { in: string }) => Promise<RenderElement> }, node: unknown): Promise<unknown> {
+  if (node === null || typeof node !== 'object') return node
+  const el = node as { type?: string; props?: { key?: string }; children?: unknown[] }
+  if (el.type === 'Client') {
+    let drawn: unknown
+    try {
+      drawn = await ui.drawn({ in: String(el.props?.key) })
+    } catch (error) {
+      drawn = { type: 'Fault', props: { message: String(error) } }
+    }
+    return { ...el, children: [drawn] }
+  }
+  if (Array.isArray(el.children)) {
+    return { ...el, children: await Promise.all(el.children.map(child => inline(ui, child))) }
+  }
+  return el
+}
+
+type Shot = { scenario: string; style: string | null; surface: Surface; columns: number; frame: number; ms: number }
+
+async function dump(
+  ui: Awaited<ReturnType<Engine['ui']['mount']>>,
+  shot: Shot,
+): Promise<void> {
+  let tree: unknown
+  try {
+    tree = await inline(ui, await ui.drawn())
+  } catch (error) {
+    tree = { type: 'Fault', props: { message: String(error) } }
+  }
+  console.log('@@SHOT ' + JSON.stringify({ ...shot, tree }))
+}
+
+type Scenario = {
+  name: string
+  isWorking: boolean
+  setup: ($: Engine, w: World) => Promise<void>
+  // Frames to capture: [advanceMs, ...] applied in order to the frame clock and the mock clock.
+  frames: number[]
+  pet?: boolean
+}
+
+const STILL = [0]
+const ANIM = Array.from({ length: 24 }, (_, i) => (i === 0 ? 0 : 125))
+
+const SCENARIOS: Scenario[] = [
+  { name: 'fresh', isWorking: false, frames: ANIM, setup: async $ => begin($, 3, 0.02, 4) },
+  {
+    name: 'idle',
+    isWorking: false,
+    frames: ANIM,
+    setup: async ($, w) => {
+      await begin($)
+      await turn($)
+      await w.clock.advance(20_000)
+    },
+  },
+  {
+    name: 'cheer',
+    isWorking: false,
+    frames: ANIM,
+    setup: async $ => {
+      await begin($)
+      await turn($)
+    },
+  },
+  {
+    name: 'working',
+    isWorking: true,
+    frames: ANIM,
+    setup: async ($, w) => {
+      await begin($)
+      await $.prompt.submit({ text: 'tidy up the band', wait: false, origin: { kind: 'composer' } })
+      await todos($)
+      w.hold('Edit')
+      void $.tool.call({ tool: 'Edit', file_path: '/w/hooks/register.tsx', old_string: 'a', new_string: 'b' }).catch(() => undefined)
+      await w.clock.settle()
+    },
+  },
+  {
+    name: 'reading',
+    isWorking: true,
+    frames: STILL,
+    setup: async ($, w) => {
+      await begin($)
+      await $.prompt.submit({ text: 'look around', wait: false, origin: { kind: 'composer' } })
+      w.hold('Read')
+      void $.tool.call({ tool: 'Read', file_path: '/w/hooks/clawd.tsx' }).catch(() => undefined)
+      await w.clock.settle()
+    },
+  },
+  {
+    name: 'thinking',
+    isWorking: true,
+    frames: ANIM,
+    setup: async $ => {
+      await begin($)
+      await $.prompt.submit({ text: 'think about it', wait: false, origin: { kind: 'composer' } })
+    },
+  },
+  {
+    name: 'oops',
+    isWorking: true,
+    frames: ANIM,
+    setup: async $ => {
+      await begin($)
+      await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
+      await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+    },
+  },
+  {
+    name: 'high',
+    isWorking: false,
+    frames: ANIM,
+    setup: async ($, w) => {
+      await begin($, 86, 1.94, 81)
+      await turn($)
+      await w.clock.advance(20_000)
+    },
+  },
+  {
+    name: 'nap',
+    isWorking: false,
+    frames: ANIM,
+    setup: async ($, w) => {
+      await begin($)
+      await turn($)
+      await w.clock.advance(5 * 60_000)
+    },
+  },
+  { name: 'pet', isWorking: false, frames: ANIM, pet: true, setup: async $ => begin($) },
+]
+
+for (const scenario of SCENARIOS.filter(s => CONFIG.scenarios.includes(s.name))) {
+  test(`preview ${scenario.name}`, { timeoutMs: 600_000 }, async ($, on) => {
+    const w = world(on)
+    await scenario.setup($, w)
+    for (const style of STYLES) {
+      if (style !== null) {
+        await $.command.run({
+          command: CONFIG.command,
+          args: style,
+          origin: { kind: 'composer' },
+          presentation: { isFullscreen: false, columns: 100 },
+        })
+      }
+      for (const surface of SURFACES) {
+        for (const columns of WIDTHS) {
+          // Animations only at one width, to keep the dump small.
+          const frames = columns === CONFIG.animateAt ? scenario.frames : STILL
+          const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band(columns, scenario.isWorking) })
+          const clients = await ui.findAll({ type: 'Client' })
+          for (const client of clients) {
+            const key = (client as { key?: string }).key
+            await ui.resize({ columns, rows: 6, ...(key === undefined ? {} : { in: key }) })
+          }
+          if (scenario.pet) {
+            for (const client of clients) {
+              const key = (client as { key?: string }).key
+              await ui.pointer({ type: 'down', x: 5, y: 1, button: 'left', ...(key === undefined ? {} : { in: key }) })
+              await ui.pointer({ type: 'up', x: 5, y: 1, button: 'left', ...(key === undefined ? {} : { in: key }) })
+            }
+          }
+          let ms = 0
+          for (let frame = 0; frame < frames.length; frame++) {
+            const step = frames[frame] ?? 0
+            if (step > 0) {
+              ms += step
+              if (clients.length > 0) await ui.advance(step)
+              await w.clock.advance(step)
+            }
+            await dump(ui, { scenario: scenario.name, style, surface, columns, frame, ms })
+          }
+          await ui.unmount()
+        }
+      }
+    }
+    w.release()
+  })
+}

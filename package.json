@@ -10,7 +10,8 @@
     "fmt": "oxfmt plugins/artifact-design/src plugins/artifact-design/tests scripts",
     "lint": "oxfmt --check plugins/artifact-design/src plugins/artifact-design/tests scripts && oxlint plugins/artifact-design/src plugins/artifact-design/tests scripts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "test": "bun test plugins/artifact-design/tests"
+    "test": "bun test plugins/artifact-design/tests",
+    "mod": "bun scripts/mod/cli.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
@@ -19,9 +20,13 @@
   "devDependencies": {
     "@types/bun": "1.4.2",
     "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
     "acorn": "8.18.0",
+    "ink": "8.0.0",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
+    "playwright-core": "1.56.1",
+    "react": "19.2.0",
     "typescript": "7.0.2"
   }
 }
