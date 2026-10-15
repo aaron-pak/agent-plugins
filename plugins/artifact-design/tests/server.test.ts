@@ -265,6 +265,24 @@ describe("preview", () => {
     await second.close();
   }, 60_000);
 
+  test("lists it from an answer kept for another setup, then keeps this start's", async () => {
+    const temp = mkdtempSync(join(TEMP, "stale-"));
+    const env = { ARTIFACT_PREVIEW: "1", TMPDIR: temp };
+    const cache = join(temp, `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
+    writeFileSync(cache, JSON.stringify({ key: "an older plugin", ok: !canPreview }));
+    const server = await legacy("claude-code", STORE, env);
+    const listed = (await server.request("tools/list")).result.tools[0].inputSchema.properties.action.enum;
+    expect(listed.includes("preview")).toBe(!canPreview);
+    let kept = JSON.parse(readFileSync(cache, "utf8"));
+    for (let tries = 0; kept.key === "an older plugin" && tries < 300; tries++) {
+      await Bun.sleep(100);
+      kept = JSON.parse(readFileSync(cache, "utf8"));
+    }
+    await server.close();
+    expect(kept.key).not.toBe("an older plugin");
+    expect(kept.ok).toBe(canPreview);
+  }, 60_000);
+
   test.skipIf(!canPreview)(
     "renders a page as publish wraps it and returns its captures",
     async () => {

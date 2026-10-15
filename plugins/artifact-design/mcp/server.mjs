@@ -25400,7 +25400,7 @@ var CACHED = (() => {
     return null;
   try {
     const cached = JSON.parse(readFileSync3(PREVIEW_CACHE, "utf8"));
-    return cached.key === previewKey && typeof cached.ok === "boolean" ? { ok: cached.ok } : null;
+    return typeof cached.ok === "boolean" ? { ok: cached.ok, current: cached.key === previewKey } : null;
   } catch {
     return null;
   }
@@ -25414,7 +25414,7 @@ var previewCheck = (async () => {
     const run = await runScript([join5(SCRIPTS, "preview.mjs"), "--check"], 30000);
     const found = JSON.parse(lastLine(run.stdout));
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
-    if (previewKey !== null && CACHED?.ok !== PREVIEW.ok) {
+    if (previewKey !== null && (!CACHED?.current || CACHED.ok !== PREVIEW.ok)) {
       try {
         writeFileSync2(PREVIEW_CACHE, JSON.stringify({ key: previewKey, ok: PREVIEW.ok }), { mode: 384 });
       } catch {}

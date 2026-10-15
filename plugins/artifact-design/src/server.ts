@@ -124,8 +124,10 @@ const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
 const PREVIEW = { ok: false, reason: "the preview check has not finished", checked: false };
 
 // The last check's answer, kept in the temp folder so that tools/list can answer at once instead
-// of making Claude Code start its first turn without the tool. It holds while the runtime, the
-// search path, Playwright's browser folder and preview.mjs stay the same.
+// of making Claude Code start its first turn without the tool. The key records the runtime, the
+// search path, Playwright's browser folder and preview.mjs it was checked with; the answer is used
+// even when the key no longer matches (after an update to the plugin, say), and this start's check
+// replaces it for the next start.
 const PREVIEW_CACHE = join(tmpdir(), `artifact-design-preview-${process.getuid?.() ?? "user"}.json`);
 const previewKey = (() => {
   try {
@@ -141,11 +143,11 @@ const previewKey = (() => {
     return null;
   }
 })();
-const CACHED = ((): { ok: boolean } | null => {
+const CACHED = ((): { ok: boolean; current: boolean } | null => {
   if (!PREVIEW_SWITCH || previewKey === null) return null;
   try {
     const cached = JSON.parse(readFileSync(PREVIEW_CACHE, "utf8")) as { key?: unknown; ok?: unknown };
-    return cached.key === previewKey && typeof cached.ok === "boolean" ? { ok: cached.ok } : null;
+    return typeof cached.ok === "boolean" ? { ok: cached.ok, current: cached.key === previewKey } : null;
   } catch {
     return null;
   }
@@ -161,7 +163,7 @@ const previewCheck = (async () => {
     const run = await runScript([join(SCRIPTS, "preview.mjs"), "--check"], 30_000);
     const found = JSON.parse(lastLine(run.stdout)) as { ok?: unknown; reason?: unknown };
     Object.assign(PREVIEW, { ok: !!found.ok, reason: found.reason ?? null });
-    if (previewKey !== null && CACHED?.ok !== PREVIEW.ok) {
+    if (previewKey !== null && (!CACHED?.current || CACHED.ok !== PREVIEW.ok)) {
       try {
         writeFileSync(PREVIEW_CACHE, JSON.stringify({ key: previewKey, ok: PREVIEW.ok }), { mode: 0o600 });
       } catch {
