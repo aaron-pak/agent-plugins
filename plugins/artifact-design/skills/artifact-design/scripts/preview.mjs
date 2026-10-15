@@ -714,7 +714,7 @@ const stillOnPage = (url) => {
   }
 };
 const navigatedAway = (url, pageHref) =>
-  new Error(`the page navigated itself to ${describeDestination(url, pageHref)}; preview renders only this file and the published viewer blocks navigation`);
+  new Error(`the page navigated itself to ${describeDestination(url, pageHref)}; preview renders only this file`);
 
 const shots = [];
 const cspSeen = new Set();
@@ -744,13 +744,13 @@ function blockedFindings(list, pageHref) {
       const where = originOf(b.url) === origin && new URL(b.url).pathname === new URL(pageHref).pathname
         ? "this page again"
         : inside ? `another page of this artifact: ${clip(decode(b.url.slice(base.length)) || "./", 60)}` : describeWindow(b.url);
-      out.push(["load", `the page opens a new window (${where}) on load — blocked in preview; the published viewer allows pop-ups only from a click`]);
+      out.push(["load", `the page opens a new window (${where}) on load — blocked in preview; open windows only from a click`]);
     } else if (b.type === "dialog") {
-      out.push(["load", `the page opened a JavaScript dialog (${clip(b.url, 16)}) on load; the published viewer never shows one`]);
+      out.push(["load", `the page opened a JavaScript dialog (${clip(b.url, 16)}) on load; build any confirmation into the page instead`]);
     } else if (b.type === "download") {
-      out.push(["load", `the page starts a download (${clip(b.url || "unnamed", 60)}) on load — refused in preview; the published viewer blocks downloads too`]);
+      out.push(["load", `the page starts a download (${clip(b.url || "unnamed", 60)}) on load — refused in preview`]);
     } else if (b.url.startsWith("file:")) {
-      out.push(["local_ref", `${clip(b.url, 120)} is another local file — it loads on this machine only and will not exist once published`]);
+      out.push(["local_ref", `${clip(b.url, 120)} is a local file outside the artifact — publish it with the page (files) and reference it relatively`]);
     } else if (FONT_ORIGINS.has(originOf(b.url))) {
       out.push(["load", `${clip(b.url, 120)} is not loaded in preview, which takes only stylesheets and font files from that origin (${clip(b.type || "request", 16)}); the published page may load it`]);
     } else {
@@ -875,7 +875,7 @@ if (browser) {
         }
         add("csp", `${clip(where, 100)} is blocked by the artifact content policy (${clip(v.directive, 24)}) — only Google Fonts loads from outside`);
       }
-      for (const type of dialogs) add("load", `the page opened a JavaScript dialog (${type}) on load; the published viewer never shows one`);
+      for (const type of dialogs) add("load", `the page opened a JavaScript dialog (${type}) on load; build any confirmation into the page instead`);
       for (const [kind, text] of blockedFindings(blocked, href)) add(kind, text);
       if (errors.length) {
         const listed = errors.slice(0, 5).map((e) => clip(e, 160));
