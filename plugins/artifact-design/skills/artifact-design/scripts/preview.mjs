@@ -808,7 +808,10 @@ if (browser) {
           // A CDN script loads as it would on the published page, but a network that is down or
           // hangs is reported rather than left to stall the render.
           return route.fetch({ timeout: CDN_MS }).then(
-            (response) => route.fulfill({ response }),
+            (response) => {
+              if (response.status() >= 400 && blocked.length < 64) blocked.push({ url: url.slice(0, 512), type: "cdn", reason: `HTTP ${response.status()}` });
+              return route.fulfill({ response });
+            },
             (error) => {
               if (blocked.length < 64) blocked.push({ url: url.slice(0, 512), type: "cdn", reason: String(error.message).split("\n")[0].replace(/^route\.fetch: /, "") });
               return route.abort("failed");
