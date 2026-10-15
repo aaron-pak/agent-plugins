@@ -1,7 +1,7 @@
 // Publishing a page: escaping, the page's name, the skeleton round trip, and the tool's size limits.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +18,8 @@ import {
   usesMermaid,
   wrap,
 } from "../src/publish.ts";
-import { tool, unknownParameter } from "../src/tool.ts";
+import { INSTRUCTIONS, checkTool, tool, unknownParameter } from "../src/tool.ts";
+import { NATIVE_ONLY } from "./native-only.ts";
 
 describe("html", () => {
   test("escape matches the Artifact tool's", () => {
@@ -151,25 +152,36 @@ describe("tool", () => {
     opens: true,
   };
 
-  for (const preview of [false, true]) {
-    test(`stays within Codex's limits (preview ${preview})`, () => {
-      const codex = tool(preview, "codex-mcp-client", setting);
-      expect(Buffer.byteLength(codex.description!, "utf8")).toBeLessThanOrEqual(1000);
-      expect(Buffer.byteLength(JSON.stringify(codex.inputSchema), "utf8")).toBeLessThanOrEqual(5000);
-    });
+  test("stays within Codex's limits", () => {
+    for (const listed of [tool("codex-mcp-client", setting), checkTool()]) {
+      expect(Buffer.byteLength(listed.description!, "utf8")).toBeLessThanOrEqual(1000);
+      expect(Buffer.byteLength(JSON.stringify(listed.inputSchema), "utf8")).toBeLessThanOrEqual(5000);
+    }
+  });
 
-    test(`keeps Claude Code's description whole (preview ${preview})`, () => {
-      const claude = tool(preview, "claude-code", setting);
-      expect(claude.description!.length).toBeLessThanOrEqual(2048);
-      expect(claude.inputSchema.description).toContain("**Calls**");
-      expect(claude._meta).toEqual({ "anthropic/alwaysLoad": true });
-    });
-  }
+  test("keeps Claude Code's description whole", () => {
+    const claude = tool("claude-code", setting);
+    expect(claude.description!.length).toBeLessThanOrEqual(4096);
+    expect(claude.description).toContain("**Before writing the file, Claude must load the `artifact-design` skill**");
+    expect(claude.inputSchema.description).toContain("**Calls**");
+    expect(claude._meta).toEqual({ "anthropic/alwaysLoad": true });
+  });
 
-  test("refuses parameters only claude.ai's tool takes", () => {
-    expect(unknownParameter({ action: "publish", capabilities: {} }, false)).toStartWith(
-      "Unknown parameter `capabilities`: runtime capabilities exist only on claude.ai.",
+  test("names no tool, type or service the plugin lacks", () => {
+    const texts = [tool("claude-code", setting), tool("codex-mcp-client", setting), checkTool()].map((listed) =>
+      JSON.stringify(listed),
     );
-    expect(unknownParameter({ action: "list" }, false)).toBeNull();
+    const skills = ["skills/artifact-design", "skills/artifact-diagramming", "codex-skills/dataviz"].map((skill) =>
+      readFileSync(join(import.meta.dir, "..", skill, "SKILL.md"), "utf8"),
+    );
+    for (const text of [...texts, INSTRUCTIONS, ...skills]) expect(text).not.toMatch(NATIVE_ONLY);
+  });
+
+  test("refuses parameters it doesn't take, saying what to do instead", () => {
+    expect(unknownParameter({ action: "publish", capabilities: {} })).toStartWith(
+      "Unknown parameter `capabilities`: a page here is static HTML.",
+    );
+    expect(unknownParameter({ action: "list" })).toBeNull();
+    expect(unknownParameter({ file_path: "/a.html", files: {} }, true)).toStartWith("Unknown parameter `files`.");
   });
 });

@@ -347,9 +347,8 @@ export const FULL_DOCUMENT_NOTE =
   "The file was a full HTML document; it was published inside the skeleton as it is. " +
   "Publishing adds the skeleton, so write only the page content next time.";
 export const OWN_FILES_FETCH_NOTE =
-  "The page fetch()es its own files. claude.ai serves them, but a browser refuses fetch() " +
-  "over file://, so the page opened from this machine can't load them, and preview " +
-  "doesn't serve them either.";
+  "The page fetch()es its own files, but a browser refuses fetch() over file://, so the page " +
+  "opened from this machine can't load them: put the data the script reads inline.";
 
 export function fetchesOwnFiles(content: string): boolean {
   return /fetch\(\s*[`'"](?![a-z]+:)/.test(content);

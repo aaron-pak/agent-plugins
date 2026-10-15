@@ -4,7 +4,7 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 
 Current plugins:
 
-- `artifact-design` (`artifact-design`, `artifact-diagramming` and `dataviz`, plus an `artifact` MCP server)
+- `artifact-design` (`artifact-design`, `artifact-diagramming` and, in Codex, `dataviz`, plus an `artifact` MCP server)
 - `eli5`
 - `frontend-skill`
 - `implement-with-notes`
@@ -33,7 +33,7 @@ codex plugin marketplace add aaron-pak/agent-plugins
 codex plugin add eli5@agent-plugins
 ```
 
-Codex installs plugins for the user and records them in `~/.codex/config.toml`. Pull new commits with `codex plugin marketplace upgrade agent-plugins`, which also refreshes installed plugins. Codex shows every plugin as `1.0.0` and has no auto-update. Remove one with `codex plugin remove eli5@agent-plugins`.
+Codex installs plugins for the user and records them in `~/.codex/config.toml`. Pull new commits with `codex plugin marketplace upgrade agent-plugins`, which also refreshes installed plugins. Codex shows a plugin without a version as `1.0.0` or `local` and has no auto-update. Remove one with `codex plugin remove eli5@agent-plugins`.
 
 ### The `artifact` server
 
@@ -41,14 +41,21 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 - `ARTIFACTS_DIR`: where published artifacts go, one folder each (default `~/artifacts`). A relative path is taken from the folder the server starts in.
 - `ARTIFACT_OPEN=0`: don't open a first publish in the browser; the publish result then says the page was not opened.
-- `ARTIFACT_PREVIEW=0`: leave out the `preview` action. Without it, `preview` is offered only when Playwright and a Chromium are found: Playwright's own, or an installed Chrome or Chromium (also Edge on macOS and Windows, and Brave on macOS). Playwright isn't bundled, so install it once, globally: with Chrome installed, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g playwright` is enough. Each start lists the answer its last start found and checks again for the next one, and when preview is off the server says why on its stderr, which Claude Code keeps in its MCP logs (`claude --debug`).
+- `ARTIFACT_PREVIEW=0`: leave out the `ArtifactCheck` tool, which previews a page before publishing. Without it, `ArtifactCheck` is offered only when Playwright and a Chromium are found: Playwright's own, or an installed Chrome or Chromium (also Edge on macOS and Windows, and Brave on macOS). Playwright isn't bundled, so install it once, globally: with Chrome installed, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g playwright` is enough. Each start lists the answer its last start found and checks again for the next one, and when preview is off the server says why on its stderr, which Claude Code keeps in its MCP logs (`claude --debug`).
 - `ARTIFACT_PREVIEW_CA`: a PEM CA certificate for previews behind a TLS-inspecting proxy.
 
-Claude Code passes its own environment to the server, so set them in your shell or in Claude Code's `env` setting. Codex starts plugin MCP servers with only a fixed list of variables (`HOME`, `PATH`, `TMPDIR`, `LANG` and a few others), so none of these reach the server under Codex, which always uses the defaults. Page files the model writes go to its scratchpad when Claude Code lists one, and otherwise to a private folder of the session's own under `artifact-drafts-<uid>` in the system temp directory (`artifact-drafts` on Windows), so they stay out of your project. That folder is outside the project, so writing there gets Claude Code's usual check: auto mode's reviewer approves it without asking, while the other permission modes ask before each page. Codex's sandbox already lets it write to the temp directory in a project you've trusted.
+Claude Code passes its own environment to the server, so set them in your shell or in Claude Code's `env` setting. Codex starts plugin MCP servers with only a fixed list of variables (`HOME`, `PATH`, `TMPDIR`, `LANG` and a few others) plus those the plugin names, and `artifact-design` names these four, `PLAYWRIGHT_BROWSERS_PATH` and the desktop variables a browser needs on Linux (`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `XDG_RUNTIME_DIR` and a few more), so set them in the shell you start Codex from. Page files the model writes go to a private folder of the session's own under `artifact-drafts-<uid>` in the system temp directory (`artifact-drafts` on Windows), so they stay out of your project. That folder is outside the project, so writing there gets Claude Code's usual check: auto mode's reviewer approves it without asking, while the other permission modes ask before each page. Codex's sandbox already lets it write to the temp directory in a project you've trusted.
 
-In a Claude Code session that has its own Artifact tool (signed in to claude.ai, where artifacts are on), that tool publishes to claude.ai and the plugin's adds nothing: Claude Code then lists two `Artifact` tools and both sets of skills, and the model uses its own. Turn the plugin off there, or start Claude Code with `CLAUDE_CODE_ARTIFACT=0` to keep pages local with the plugin.
+In a Claude Code session that has its own Artifact tool (signed in to claude.ai, where artifacts are on), that tool publishes to claude.ai and the plugin's adds nothing: Claude Code then lists two `Artifact` tools and both sets of skills, while the plugin's text assumes its tool is the only one. Turn the plugin off there, or start Claude Code with `CLAUDE_CODE_ARTIFACT=0` to keep pages local with the plugin.
 
-Publishing asks too. Claude Code asks before the plugin's `Artifact` tool runs, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
+Codex keeps plugin MCP tools out of the model's sight until it searches for them, so it wouldn't think of the `Artifact` tool unless you named the plugin. `artifact-design` asks Codex to load the tool up front instead (`omit_tools_from` in its `.codex-plugin/plugin.json`). If a Codex release stops honoring that, this line in `~/.codex/config.toml` does the same:
+
+```toml
+[features.code_mode]
+direct_only_tool_namespaces = ["mcp__artifact"]
+```
+
+Publishing asks too. Claude Code asks before the plugin's `Artifact` and `ArtifactCheck` tools run, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
 
 ## Global instructions
 
@@ -89,7 +96,7 @@ The session reloads the mod when its files change, so edits show up without a re
 
 ## Credits
 
-The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-design`, `artifact-diagramming`, and `dataviz` skills, its Markdown page template and its highlight.js runtime, captured from Claude Code 2.1.300. Its `artifact` MCP server stands in for Claude Code's Artifact tool and `ArtifactCheck`. `artifact-diagramming` and `dataviz` are unchanged; [`UPSTREAM.md`](plugins/artifact-design/UPSTREAM.md) lists every change to `artifact-design` and every way the server differs from the Artifact tool. The server's bundles include [marked](https://github.com/markedjs/marked), [Zod](https://github.com/colinhacks/zod) and the [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), all under the MIT license, and the highlight.js runtime keeps its BSD license notice.
+The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-design`, `artifact-diagramming`, and `dataviz` skills, its Markdown page template and its highlight.js runtime, captured from Claude Code 2.1.300. Its `artifact` MCP server stands in for Claude Code's Artifact tool and `ArtifactCheck`. `artifact-diagramming` and `dataviz` are unchanged except for one sentence each about claude.ai-only features, and only Codex gets `dataviz` (from `codex-skills/`), since Claude Code always has its own; [`UPSTREAM.md`](plugins/artifact-design/UPSTREAM.md) lists every change to `artifact-design` and every way the server differs from the Artifact tool. The server's bundles include [marked](https://github.com/markedjs/marked), [Zod](https://github.com/colinhacks/zod) and the [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), all under the MIT license, and the highlight.js runtime keeps its BSD license notice.
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.
 

@@ -1,8 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "artifact-design",
-  "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with an Artifact MCP tool that publishes and previews them on this machine. From Anthropic's Claude Code.",
-  "author": {
-    "name": "Anthropic"
-  }
-}

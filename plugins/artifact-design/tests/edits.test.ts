@@ -59,7 +59,7 @@ describe("messages", () => {
       "No edits were applied and nothing was published: edits[0] old_str does not occur in the file. The file's current text follows; copy old_str from it exactly and send the publish again.\n\na b",
     );
     expect(missMessage(miss, edits, "a b", 10)).toEndWith(
-      "The file is too long to show here: Read the file at file_path, copy old_str from it exactly and send the publish again.",
+      "The file is too long to show here: read the file at file_path, copy old_str from it exactly and send the publish again.",
     );
   });
 
@@ -78,7 +78,7 @@ describe("messages", () => {
     );
     expect(savedMessage(1, "not_writable")).toBe(
       "Published — the page now has the edit, but the file at file_path does not (it can't be written, so it was " +
-        "left as it is). Apply the same edit to that file with Edit before you publish it again; publishing it as " +
+        "left as it is). Apply the same edit to that file before you publish it again; publishing it as " +
         "it is would revert it.",
     );
   });

@@ -45,13 +45,13 @@ def frontmatter(path):
     return None
 
 
-def check_skills(plugin_dir, where):
-    skills_dir = plugin_dir / "skills"
+def check_skills(plugin_dir, where, folder="skills"):
+    skills_dir = plugin_dir / folder
     skill_dirs = sorted(p for p in skills_dir.iterdir() if p.is_dir()) if skills_dir.is_dir() else []
     if skills_dir.is_dir() and not skill_dirs:
-        error(where, "skills/ has no skill directories")
+        error(where, f"{folder}/ has no skill directories")
     for skill_dir in skill_dirs:
-        skill_where = f"{where}/skills/{skill_dir.name}"
+        skill_where = f"{where}/{folder}/{skill_dir.name}"
         skill_md = skill_dir / "SKILL.md"
         if not skill_md.is_file():
             error(skill_where, "missing SKILL.md")
@@ -67,9 +67,28 @@ def check_skills(plugin_dir, where):
     return bool(skill_dirs)
 
 
-def check_mcp(plugin_dir, where):
+def check_mcp(plugin_dir, where, codex_servers=None, codex_manifest=False):
+    """Compare the Claude Code servers with Codex's: mcp.json, or the mcpServers in .codex-plugin/plugin.json."""
     agent_plugins = plugin_dir / "mcp.json"
     claude_code = plugin_dir / ".mcp.json"
+    if codex_manifest and codex_servers is None:
+        # Without mcpServers in its manifest, Codex reads .mcp.json, as Claude Code does.
+        if agent_plugins.exists():
+            error(where, "has mcp.json beside .codex-plugin/plugin.json; Codex reads .mcp.json or the manifest's mcpServers")
+        return claude_code.exists()
+    if codex_servers is not None:
+        if agent_plugins.exists():
+            error(where, "has mcp.json beside .codex-plugin/plugin.json; Codex reads only the manifest's mcpServers")
+        if not claude_code.exists():
+            error(where, ".codex-plugin/plugin.json has mcpServers but there is no .mcp.json (Claude Code)")
+            return True
+        c = load_json(claude_code)
+        if c is None:
+            return True
+        codex_label, claude_servers = ".codex-plugin/plugin.json mcpServers", set(c.get("mcpServers", {}))
+        if set(codex_servers) != claude_servers:
+            error(where, f"{codex_label} {sorted(codex_servers)} differ from .mcp.json servers {sorted(claude_servers)}")
+        return True
     if not agent_plugins.exists() and not claude_code.exists():
         return False
     if agent_plugins.exists() != claude_code.exists():
@@ -114,21 +133,49 @@ def check_plugin(entry):
         if config is not None and not isinstance(config.get("hooks"), dict):
             error(f"{where}/hooks/hooks.json", "has no hooks object")
 
-    manifest = load_json(plugin_dir / "plugin.json")
-    if manifest is not None:
-        if manifest.get("$schema") != SCHEMA:
+    codex_servers = None
+    if (plugin_dir / ".codex-plugin" / "plugin.json").exists():
+        # Codex's own manifest, for settings the Agent Plugins format can't carry. Codex reads a root
+        # plugin.json first, so the two can't sit side by side.
+        if (plugin_dir / "plugin.json").exists():
+            error(where, "has both plugin.json and .codex-plugin/plugin.json; Codex would read only plugin.json")
+        manifest_path = Path(".codex-plugin") / "plugin.json"
+        manifest = load_json(plugin_dir / manifest_path)
+        if manifest is not None:
+            # Codex reads skills/ and, for skills Claude Code already has built in, codex-skills/.
+            skills = manifest.get("skills")
+            skills = [skills] if isinstance(skills, str) else skills
+            if skills is not None and not (
+                isinstance(skills, list) and skills and skills[0] in ("./skills/", "./skills") and set(skills[1:]) <= {"./codex-skills/"}
+            ):
+                error(f"{where}/{manifest_path}", "skills should be ./skills/, then optionally ./codex-skills/")
+            elif skills and "./codex-skills/" in skills:
+                check_skills(plugin_dir, where, "codex-skills")
+            elif (plugin_dir / "codex-skills").exists():
+                error(f"{where}/{manifest_path}", "codex-skills/ exists but skills doesn't list ./codex-skills/")
+            servers = manifest.get("mcpServers")
+            if servers is not None and not isinstance(servers, dict):
+                error(f"{where}/{manifest_path}", "mcpServers should be an object of servers")
+            elif servers is not None:
+                codex_servers = servers
+    else:
+        manifest_path = Path("plugin.json")
+        manifest = load_json(plugin_dir / manifest_path)
+        if manifest is not None and manifest.get("$schema") != SCHEMA:
             error(f"{where}/plugin.json", f"$schema should be {SCHEMA}")
+    if manifest is not None:
+        where_manifest = f"{where}/{manifest_path}"
         if manifest.get("name") != name:
-            error(f"{where}/plugin.json", f"name {manifest.get('name')!r} does not match the marketplace entry {name!r}")
+            error(where_manifest, f"name {manifest.get('name')!r} does not match the marketplace entry {name!r}")
         if manifest.get("description") != entry.get("description"):
-            error(f"{where}/plugin.json", "description does not match the marketplace entry")
+            error(where_manifest, "description does not match the marketplace entry")
         if "version" in manifest:
-            error(f"{where}/plugin.json", "version is set; leave it unset so the Git commit decides")
+            error(where_manifest, "version is set; leave it unset so the Git commit decides")
         if not manifest.get("author", {}).get("name"):
-            error(f"{where}/plugin.json", "author.name is missing")
+            error(where_manifest, "author.name is missing")
 
     has_skills = check_skills(plugin_dir, where)
-    has_mcp = check_mcp(plugin_dir, where)
+    has_mcp = check_mcp(plugin_dir, where, codex_servers, (plugin_dir / ".codex-plugin" / "plugin.json").exists())
     if not has_skills and not has_mcp:
         error(where, "has neither skills/ nor mcp.json")
 

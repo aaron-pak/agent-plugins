@@ -229,6 +229,27 @@ function withDescription(skill: string, description: string): string {
 
 const body = (skill: string) => skill.replace(/^---\n[\s\S]*?\n---\n/, "").trimStart();
 
+/** Sentences each verbatim copy leaves out because they name what only claude.ai has (see UPSTREAM.md). */
+const CLAUDE_AI_ONLY: Record<string, string[]> = {
+  "skills/artifact-diagramming/SKILL.md": [
+    " An artifact made from an Artifact type draws its diagrams the way the type's instructions, and the reference " +
+      "pages they name, say to; these mechanics apply there only where those say nothing about diagrams.",
+  ],
+  "codex-skills/dataviz/SKILL.md": [
+    " When the destination is a first-party document connector (host-designated, never self-described) that " +
+      "renders live charts, hand it the rows (inline, or as an uploaded data file the chart cites) rather than a " +
+      "rendered PNG/SVG \u2014 a picture of a chart loses hover, data inspection and per-value comments.",
+  ],
+};
+
+function withoutClaudeAiOnly(path: string, text: string): string {
+  for (const sentence of CLAUDE_AI_ONLY[path] ?? []) {
+    if (!text.includes(sentence)) console.log(`  note      ${path} no longer has: ${sentence.trim().slice(0, 60)}…`);
+    text = text.replace(sentence, "");
+  }
+  return text;
+}
+
 /** Each verbatim copy's path in the plugin, and how to make it from a release's bundle. */
 const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => string }[] = [
   {
@@ -242,7 +263,7 @@ const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => strin
   },
   {
     // Claude Code lists dataviz by its own description and loads the body of its SKILL.md.
-    path: "skills/dataviz/SKILL.md",
+    path: "codex-skills/dataviz/SKILL.md",
     from: (bundle, current) => {
       const description = cook(literalWith(bundle, "brand-neutral placeholder palette").literal);
       const skill = only(
@@ -264,7 +285,7 @@ const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => strin
     "references/palette.md",
     "scripts/validate_palette.js",
     "scripts/validate_palette.py",
-  ].map((file) => ({ path: `skills/dataviz/${file}`, from: (bundle: Bundle) => skillFile(bundle, file) })),
+  ].map((file) => ({ path: `codex-skills/dataviz/${file}`, from: (bundle: Bundle) => skillFile(bundle, file) })),
   {
     path: "skills/artifact-design/scripts/markdown-template.html",
     from: (bundle) => only(bundle, "Markdown template", (_name, text) => text.startsWith("<!--\nname: plan\n"))[1],
@@ -386,7 +407,7 @@ function main(): number {
   for (const { path, from } of VERBATIM) {
     const file = join(plugin, path);
     const current = existsSync(file) ? readFileSync(file, "utf8") : "";
-    const expected = from(after, current);
+    const expected = withoutClaudeAiOnly(path, from(after, current));
     if (current === expected) {
       console.log(`  same      ${path}`);
       continue;

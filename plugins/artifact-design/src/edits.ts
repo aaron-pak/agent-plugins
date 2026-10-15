@@ -79,7 +79,7 @@ function why(miss: Miss, edits: number, chars: number): string {
     case "malformed":
       return `edits[${miss.edit}] has a NUL character in new_str, or a broken character (an unpaired surrogate) in old_str or new_str`;
     case "too_large":
-      return `old_str and new_str add up to more than ${MAX_CHARS} characters over all the edits; make a change that large with Edit and publish without edits`;
+      return `old_str and new_str add up to more than ${MAX_CHARS} characters over all the edits; make a change that large by editing the file, and publish without edits`;
     case "too_much_work":
       return `${edits} edits on a file of ${chars} characters is more than one publish call will apply; send at most ${Math.max(1, Math.floor(MAX_WORK / Math.max(1, chars)))} edits per call for a file this size, over as many calls as the change needs`;
     case "not_found":
@@ -98,7 +98,7 @@ export function missMessage(miss: Miss, edits: Edit[], text: string, room: numbe
   if (miss.reason !== "not_found" && miss.reason !== "ambiguous") return head;
   const withText = `${head} The file's current text follows; copy old_str from it exactly and send the publish again.\n\n${text}`;
   if (withText.length <= room) return withText;
-  return `${head} The file is too long to show here: Read the file at file_path, copy old_str from it exactly and send the publish again.`;
+  return `${head} The file is too long to show here: read the file at file_path, copy old_str from it exactly and send the publish again.`;
 }
 
 /** The line a publish with edits adds once it has saved them to the file, or says why it couldn't. */
@@ -122,7 +122,7 @@ export function savedMessage(
   }
   return (
     `${lead} (${{ changed_during_publish: "it changed on disk while the publish ran", hard_linked: "it has other names on disk (a hard link)", not_writable: "it can't be written" }[failure]}, so it was left as it is). ` +
-    `Apply the same ${one ? "edit" : "edits"} to that file with Edit before you publish it again` +
+    `Apply the same ${one ? "edit" : "edits"} to that file before you publish it again` +
     `${failure === "hard_linked" ? ", and publish it without `edits` while it has other names" : ""}; publishing it as it is would revert ${one ? "it" : "them"}.`
   );
 }
