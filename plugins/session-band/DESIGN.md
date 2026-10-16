@@ -650,6 +650,10 @@ naps, without blinks, taps or hops.
   work after it, and the hello's for its minute.
 - **The lively hearth's petted turn holds its first frame 500 ms**, since a pet shows between ticks
   and every frame stays a tick. The beach's spin does the same.
+- **The beach heart can land one frame off.** On about a third of pets in the Mac app, the heart's
+  first frame after moving out of its parking spot sits up to 15 px from his shoulder, then snaps
+  beside him (one frame, about 33 ms). Keeping its scale while parked (`preserveAspectRatio="none"`)
+  did not help; the hearth's heart does not walk, so it never shows.
 - **The desktop heart shows at once.** The band's hover has no delay, so a pointer crossing the
   picture on its way to the prompt flashes the heart. Its pop plays unseen as its picture loads with
   his, so on show it beats softly rather than popping. The hover never reaches the plugin.
