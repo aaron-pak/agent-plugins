@@ -3,7 +3,7 @@
   "name": "verification",
   "description": "Create a project-local verification skill that drives an app the way a user does, and keep it and its feature map accurate with periodic audits. From Lauren Tan's pstack.",
   "author": {
-    "name": "Aaron Pak"
+    "name": "Lauren Tan"
   },
   "license": "MIT"
 }

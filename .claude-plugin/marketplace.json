@@ -10,12 +10,7 @@
     {
       "name": "artifact-design",
       "source": "./plugins/artifact-design",
-      "description": "Design guidance for HTML artifacts: reports, explainers, dashboards, mockups."
-    },
-    {
-      "name": "context-meter",
-      "source": "./plugins/context-meter",
-      "description": "An animated Clawd walks a context track above the prompt, with a toast when context runs high and /meter for the details. Claude Code only."
+      "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with Artifact and ArtifactCheck MCP tools that publish and preview them on this machine. From Anthropic's Claude Code."
     },
     {
       "name": "eli5",
@@ -31,6 +26,11 @@
       "name": "implement-with-notes",
       "source": "./plugins/implement-with-notes",
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
+    },
+    {
+      "name": "pstack",
+      "source": "./plugins/pstack",
+      "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
     },
     {
       "name": "session-band",
