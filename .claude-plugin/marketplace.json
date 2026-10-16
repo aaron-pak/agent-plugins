@@ -33,6 +33,11 @@
       "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
     },
     {
+      "name": "session-band",
+      "source": "./plugins/session-band",
+      "description": "Clawd above the prompt with your session at a glance. Two looks: tide (the default) puts him on a little beach where the tide rises as context fills; hearth sets him beside three calm lines. Switch with /band or in /config. /band still keeps either look calm, and /band lively brings the motion back. Works in the terminal and the desktop Code tab. Claude Code only."
+    },
+    {
       "name": "session-manager",
       "source": "./plugins/session-manager",
       "description": "Let a Claude Code session start, message, stop and wake separate, full Claude Code sessions. Claude Code only."
