@@ -51,6 +51,15 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
+      - name: Test each mod
+        run: |
+          status=0
+          for mod in plugins/*/; do
+            [ -f "$mod/hooks/hooks.json" ] || continue
+            bun run mod test "$mod" || status=1
+          done
+          exit $status
+
       # --strict fails on warnings. The one warning allowed is a missing version: a mod's
       # .claude-plugin/plugin.json leaves it unset on purpose, like every manifest here.
       - name: Validate the marketplace and each plugin with Claude Code
