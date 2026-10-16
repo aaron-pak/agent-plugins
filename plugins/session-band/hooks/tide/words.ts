@@ -63,13 +63,13 @@ function command(text: string, least: number, tone?: Piece['tone']): Piece {
 function quote(known: Pick<Info, 'oopsWhat' | 'oopsName' | 'oopsCommand'>, open: string, close: string, tone?: Piece['tone']): Words {
   const what = known.oopsWhat ?? ''
   const named = known.oopsName
-  const plain = (text: string): Piece => (tone === undefined ? { text } : { text, tone })
+  const toned = (text: string): Piece => (tone === undefined ? { text } : { text, tone })
   const at = named === null || named === '' ? -1 : what.endsWith(` ${named}`) ? what.length - named.length : what.indexOf(` ${named} `) + 1
   if (named !== null && at > 0) {
-    return [plain(`${open}${what.slice(0, at)}`), name(named, NAME_LEAST, tone), plain(`${what.slice(at + named.length)}${close}`)]
+    return [toned(`${open}${what.slice(0, at)}`), name(named, NAME_LEAST, tone), toned(`${what.slice(at + named.length)}${close}`)]
   }
 
-  return [plain(open), known.oopsCommand ? command(what, NAME_LEAST, tone) : name(what, NAME_LEAST, tone, 'quote'), plain(close)]
+  return [toned(open), known.oopsCommand ? command(what, NAME_LEAST, tone) : name(what, NAME_LEAST, tone, 'quote'), toned(close)]
 }
 
 /**
@@ -78,14 +78,14 @@ function quote(known: Pick<Info, 'oopsWhat' | 'oopsName' | 'oopsCommand'>, open:
  * words down to its first ('"Search for ink…"'), so a quote never ends on "web" or "for".
  */
 function quotes(known: Pick<Info, 'oopsWhat' | 'oopsName' | 'oopsCommand' | 'oopsNoun'>, open: string, close: string, tone?: Piece['tone']): Words[] {
-  const plain = (text: string): Piece => (tone === undefined ? { text } : { text, tone })
+  const toned = (text: string): Piece => (tone === undefined ? { text } : { text, tone })
   // Another server's tool keeps its server whole, and what it did is cut after two words at least
   // ('"Use GitHub: create pull…"'); narrower, the server's tool in words, not an order nobody gave
   // ('A GitHub tool failed', 'An Asana tool failed').
   const server = known.oopsNoun === null && known.oopsName === null && !known.oopsCommand ? /^Use ([^:]+): (.+)$/u.exec(known.oopsWhat ?? '') : null
   if (server !== null) {
     const [, owner = '', action = ''] = server
-    return [[plain(`${open}Use ${owner}: `), name(action, NAME_LEAST, tone, 'quote'), plain(close)], [plain(`${article(owner)} ${owner} tool`)]]
+    return [[toned(`${open}Use ${owner}: `), name(action, NAME_LEAST, tone, 'quote'), toned(close)], [toned(`${article(owner)} ${owner} tool`)]]
   }
   const search = known.oopsNoun === WEB_SEARCH ? /^Search the web for (.+)$/u.exec(known.oopsWhat ?? '') : null
   const query = search?.[1]
@@ -94,8 +94,8 @@ function quotes(known: Pick<Info, 'oopsWhat' | 'oopsName' | 'oopsCommand' | 'oop
   }
 
   return [
-    [plain(`${open}Search for `), said(query, WHOLE, tone), plain(close)],
-    [plain(`${open}Search for `), said(query, QUERY_LEAST, tone), plain(close)],
+    [toned(`${open}Search for `), said(query, WHOLE, tone), toned(close)],
+    [toned(`${open}Search for `), said(query, QUERY_LEAST, tone), toned(close)],
   ]
 }
 
@@ -490,7 +490,7 @@ function dedupe(forms: Words[]): Words[] {
     })
 }
 
-/** The words as plain text, for an alt text or a test. */
+/** The words as plain text, for the tests. */
 export function plain(words: Words): string {
   return words.map(piece => piece.text).join('')
 }

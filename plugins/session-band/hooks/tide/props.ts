@@ -1,8 +1,8 @@
-// The tide's props: the facts, with every line of words already written (moved here from its
-// register.tsx, unchanged), and the desktop scene it last handed out.
+// The tide's props: the facts, with every line of words already written, and the desktop scene it
+// last handed out.
 
-import { NAP_AFTER_MS } from '../facts'
-import { SPLASH_MS, carriedPhase, dioramaWidth, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
+import { NAP_AFTER_MS, SPLASH_MS } from '../facts'
+import { carriedPhase, dioramaWidth, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
 import type { Scene } from './desk'
 import type { Motion } from '../../types'
 import type { BandProps, Info } from './types'
@@ -45,12 +45,11 @@ export function bandProps(
     turnPercent: pct(known.turnPercent),
     isWorking,
     isHigh,
-    isStill: motion === 'still' || known.isStill,
+    isStill: motion === 'still' || known.isCalm,
     doing: isWorking && known.activity !== null ? known.activity.kind : null,
     turnWorked: known.turnWorked,
     woke: known.woke,
     idleMs: known.lastActiveAt === null ? null : now - known.lastActiveAt,
-    napAfterMs: NAP_AFTER_MS,
     cheers: known.cheers,
     sinceCheerMs: known.cheeredAt === null ? null : now - known.cheeredAt,
     cheerPercent: pct(known.cheerPercent),

@@ -1,28 +1,27 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
-import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, SPIN, pixelHeart } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, SPIN, pixelHeart } from '../clawd'
 import { BODY, EYE, curled, pose, spin } from './band'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
-import { SPLASH_MS, SPLASH_RUSH_MS } from '../facts'
+import { NAP_AFTER_MS, SPLASH_MS } from '../facts'
 
 // The beach on the desktop: a tiny SVG diorama (sand, a shell, slow waves and
 // Clawd built from the very cells the terminal draws him with) beside the
 // band's three lines, laid out with Box and Text.
 //
 // The desktop has no frame clock: everything that moves is CSS inside the
-// Svg's sandboxed frame, and a new `source` reloads that frame and restarts
-// every animation. So the source is built only from slow, visible state (the
-// loop he is in, where the tide stands in 5% steps, still or not, and a
-// moment while it plays), and stays byte-identical across the redraws a turn
-// makes as tools start and finish. Nothing in it counts time.
+// diorama's image, and a new `source` restarts every animation in it. So the
+// source is built only from slow, visible state (the loop he is in, where the
+// tide stands in 5% steps, still or not, and a moment while it plays), and
+// stays byte-identical across the redraws a turn makes as tools start and
+// finish. Nothing in it counts time.
 
 type Desktop = Elements['desktop']
 
-/** How long a moment plays: a finished turn's spin, a splash. The hooks module redraws once each ends. */
+/** How long a cheer plays (a splash plays SPLASH_MS); the hooks module redraws once each ends. */
 export const CHEER_MS = 4_500
-export { SPLASH_MS, SPLASH_RUSH_MS }
 
 // The diorama in units of one Clawd pixel's width (3 CSS px): 64 wide on a band of 48 columns or
 // more, down to 40 on the narrowest (see dioramaWidth). The frame is 64 px tall, as tall as the
@@ -63,25 +62,21 @@ type Mood = 'idle' | 'high' | 'read' | 'work' | 'nap'
 type Moment = 'cheer' | 'splash' | 'wake' | 'hello' | null
 
 /**
- * The slow state the diorama is drawn from; nothing else reaches the Svg source. `from` is where
- * he stands as this frame opens, in pixels out on the sand from his home by the shell: where the
- * last frame had him (see positionAt). A moment (a cheer, a splash) plays there, and then he walks
- * to where his new loop starts; a nap walks him home to sleep. So a new frame never jumps him back
- * to a starting spot. Null when there is no last frame to go on: the loop's own start (for a nap,
- * home by the shell). `wave`: which failure a splash is for (the session's count), so a new
- * failure while one splash plays (once its first rush is over) is a new source and splashes him
- * again.
- */
-/**
- * A frame of the beach. `from`: where the last frame had Clawd as this one opens (see leadOf).
- * `phase`: when this frame carries on the very walk the last one had him on (the same loop, the
- * same sand to roam: a stride of the tide far out to sea, a reading while he potters), how many
- * seconds into that loop it opens, so he goes on with his step the way he was heading, with no
- * walk back to the loop's start (see carriedPhase). `curled`: a nap that takes over from one
- * already curled up on screen (still, or at another width), so he sleeps on from its first frame,
- * never standing up to lie down again (see isCurledAt). `doze`: with it, how many seconds into their
- * loop the z's were in that frame (see dozeAt), so they drift on where they were: never a "zzZ"
- * dropped back to one small z.
+ * A frame of the beach: the slow state the diorama is drawn from, and nothing else reaches the Svg
+ * source. `from`: where he stands as this frame opens, in pixels out on the sand from his home by
+ * the shell, where the last frame had him (see positionAt and leadOf). A moment (a cheer, a splash)
+ * plays there, and then he walks to where his new loop starts; a nap walks him home to sleep. So a
+ * new frame never jumps him back to a starting spot. Null when there is no last frame to go on: the
+ * loop's own start (for a nap, home by the shell). `wave`: which failure a splash is for (the
+ * session's count), so a new failure while one splash plays (once its first rush is over) is a new
+ * source and splashes him again. `phase`: when this frame carries on the very walk the last one had
+ * him on (the same loop, the same sand to roam: a stride of the tide far out to sea, a reading while
+ * he potters), how many seconds into that loop it opens, so he goes on with his step the way he was
+ * heading, with no walk back to the loop's start (see carriedPhase). `curled`: a nap that takes over
+ * from one already curled up on screen (still, or at another width), so he sleeps on from its first
+ * frame, never standing up to lie down again (see isCurledAt). `doze`: with it, how many seconds
+ * into their loop the z's were in that frame (see dozeAt), so they drift on where they were: never a
+ * "zzZ" dropped back to one small z.
  */
 export type Scene = {
   mood: Mood
@@ -120,9 +115,6 @@ const SURGE_S = 2.4
 /** When the splash's last drop has fallen back into the sea, in seconds from the splash's start. */
 const DROPS_END_S = 2.2
 
-/** Pixels to a column of the band, in the budget: a little under the 7.8 px measured in a desktop preview, so a fit is a fit. */
-const CELL_PX = 7.6
-
 /**
  * How wide the diorama is beside a band of `columns`, in units: 64 from 48 columns, 40 on the
  * narrowest, two units (6 px) narrower a column between, so the words' room (7.6 px a column)
@@ -153,19 +145,18 @@ function deskRoom(columns: number): number {
 }
 
 /** Draws the desktop band; `scene` is the one the hooks module settled on (sceneOf, with where a nap begins). */
-export function desktopBand(el: Desktop, props: BandProps, scene: Scene = sceneOf(props)): RenderElement {
+export function desktopBand(el: Desktop, props: BandProps, scene: Scene): RenderElement {
   const { Box, Text, Svg } = el
   const room = deskRoom(props.columns)
   const lines = linesFor(props).map(forms => fitLine(forms, room, PIXELS))
-  const now = scene
 
   return (
     <Box flexDirection="row" alignItems="center">
       <Box key="beach" position="relative" flexShrink={0}>
-        <Svg source={diorama(now)} alt={altFor(now, props.percent !== null)} width={now.width * U} height={FRAME_PX} />
+        <Svg source={diorama(scene)} alt={altFor(scene, props.percent !== null)} width={scene.width * U} height={FRAME_PX} />
         {/* Parked below the band and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
         <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
-          <Svg source={petHeart(now)} alt="" width={now.width * U} height={FRAME_PX} />
+          <Svg source={petHeart(scene)} alt="" width={scene.width * U} height={FRAME_PX} />
         </Box>
       </Box>
       <Box flexDirection="column" marginLeft={2} flexGrow={1} flexShrink={1} minWidth={0}>
@@ -182,7 +173,7 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene = sceneO
 }
 
 function isNapping(props: BandProps): boolean {
-  return !props.isWorking && props.idleMs !== null && props.idleMs >= props.napAfterMs
+  return !props.isWorking && props.idleMs !== null && props.idleMs >= NAP_AFTER_MS
 }
 
 function within(ms: number | null, limit: number): boolean {
@@ -914,8 +905,6 @@ function pct(fraction: number): string {
 
 // ── The diorama ────────────────────────────────────────────────────────────────
 
-// The source has two parts: a still frame (what a person who prefers reduced motion sees, and
-// what `/band still` draws), and the motion, which only plays where no one asked for less.
 // Where the water starts, and where he stands when the loop starts (by the shell for a nap, at the
 // water's edge when the tide is high), and how far he may roam from there.
 function layout(scene: Scene): { shore: number; start: number; roam: number; span: number } {
@@ -931,12 +920,13 @@ function layout(scene: Scene): { shore: number; start: number; roam: number; spa
 /**
  * Petting him on the desktop: a heart beside him, drawn over the diorama while a pointer rests on
  * the beach. The diorama is an image (an interactive frame blanks for a frame or two each time its
- * source changes), and an image takes no hover, so the heart is a picture of its own, the
- * diorama's size, parked below the band until its hover lays it over him. Both images run on the page's one clock from the
- * same render, so the heart walks his walk step for step: the loop and the lead to it, held where a
- * still frame holds him, handed over from his walk home to its place over him as he curls up.
+ * source changes), and an image takes no hover, so the heart is a picture of its own, the diorama's
+ * size, parked below the band until its hover lays it over him. Both images run on the page's one
+ * clock from the same render, so the heart walks his walk step for step: the loop and the lead to
+ * it, held where a still frame holds him, handed over from his walk home to its place over him as he
+ * curls up.
  */
-export function petHeart(scene: Scene): string {
+function petHeart(scene: Scene): string {
   const base = ['.heart{transform-box:fill-box;transform-origin:center}']
   const motion: string[] = []
   let drawn: string
@@ -977,8 +967,8 @@ export function petHeart(scene: Scene): string {
     const at = scene.moment === 'cheer' ? CHEER_HEART : WALK_HEART
     drawn = `<g transform="translate(${start} ${TOP})"><g class="walk">${heart(...at)}</g></g>`
   }
-  // A slow, soft beat: a heart shown on hover is already up (the pop it was drawn with played out
-  // unseen), so it beats rather than sitting still. Never faded, as every heart here.
+  // A slow, soft beat, so the heart a hover shows is alive rather than sitting still; it shows at
+  // once, with no pop (only the nap's hand-over scales one in). Never faded, as every heart here.
   motion.push('.heart{animation:beat 1.6s ease-in-out infinite}@keyframes beat{0%,50%,100%{transform:scale(1)}20%{transform:scale(1.14)}}')
   const css = scene.still ? base.join('') : `${base.join('')}@media (prefers-reduced-motion:no-preference){${motion.join('')}}`
 
@@ -989,6 +979,8 @@ export function petHeart(scene: Scene): string {
   ].join('')
 }
 
+// The source has two parts: a still frame (what a person who prefers reduced motion sees, and
+// what `/band still` draws), and the motion, which only plays where no one asked for less.
 function diorama(scene: Scene): string {
   const { mood, still } = scene
   const { start, roam } = layout(scene)
@@ -1192,7 +1184,7 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     return `<circle class="drop drop${i}" cx="${round(by + i * 1.5)}" cy="${GROUND - 1}" r=".95" fill="${i % 2 === 0 ? SEA : DROP}"/>`
   })
 
-  return { water, spray: `<g class="spray">${drops.join('')}</g>` }
+  return { water, spray: drops.join('') }
 }
 
 // How long each moment plays before the loop takes over, in seconds.
@@ -1229,7 +1221,7 @@ function beatsOf(kind: Exclude<Moment, null>): Beat[] {
 function sparkles(length: number, base: string[], motion: string[]): string {
   const from = SPIN.length * 0.2
   // Held in the still frame; where motion plays, each pops up in turn and shrinks away.
-  base.push('.spark{opacity:1}.star{transform-box:fill-box;transform-origin:center}')
+  base.push('.star{transform-box:fill-box;transform-origin:center}')
   ;[0, 1, 2].forEach(i => {
     const at = from + i * 0.12
     const scale = (n: number) => `transform:scale(${n})`

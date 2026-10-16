@@ -56,7 +56,7 @@ export function panelMost(columns: number): number {
   return Math.min(80, 68 + Math.max(0, Math.floor((columns - 100) / 4)))
 }
 
-export function needs({ line, least }: Form, m: Measure): number {
+function needs({ line, least }: Form, m: Measure): number {
   const text = line.squeeze === undefined ? '' : rowText(line.squeeze)
   // The shortest cut the squeezed part may take, measured as the surface draws it (cells, or pixels).
   const fewest = line.isQuote === true ? quoteLeast(text, least) : line.isSaid === true ? saidLeast(text, least) : line.isCommand === true ? commandLeast(text, least) : nameLeast(text, least)

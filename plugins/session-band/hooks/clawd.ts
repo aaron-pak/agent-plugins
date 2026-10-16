@@ -3,7 +3,8 @@
 // desktops (which draw him from the same cells) and the tests. His marks too
 // (the pet's heart, the nap's z), so one Clawd answers one gesture the same way
 // in either look. And how many terminal cells a text takes, so every fit is
-// measured the way a terminal draws it, never by String.length.
+// measured the way a terminal draws it, never by String.length. The terminal
+// bands' dice and the desktops' pixels to a cell are shared here too.
 
 export type Eyes = 'open' | 'left' | 'right' | 'closed' | 'wink'
 export type Arms = 'down' | 'up' | 'one-up'
@@ -102,6 +103,13 @@ export function pixelHeart(x: number, y: number, w: number, h: number): string {
   return `<path d="${runs.join('')}"/>`
 }
 
+/** A tiny deterministic dice for both terminal bands, so a frame is a function of the tick: 0 to `sides` - 1. */
+export function dice(seed: number, sides: number): number {
+  const n = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0
+
+  return ((n ^ (n >>> 13)) >>> 0) % Math.max(1, sides)
+}
+
 /** How many terminal cells a text takes: wide (East Asian) characters and emoji two, combining marks none. */
 export function cells(text: string): number {
   const codes = [...text].map(char => char.codePointAt(0) ?? 0)
@@ -136,6 +144,12 @@ export function textPx(text: string, isBold: boolean): number {
 
   return px
 }
+
+/**
+ * Pixels to a cell of the band in both desktops' budgets (a column, a margin, a figure's box): a
+ * little under the 7.8 px measured in a desktop preview, so a fit is a fit.
+ */
+export const CELL_PX = 7.6
 
 /** Little words a cut of words a person wrote never ends on before its ellipsis: "Review the…" reads unfinished. */
 const LITTLE = new Set(['a', 'an', 'and', 'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'the', 'to', 'why', 'with'])

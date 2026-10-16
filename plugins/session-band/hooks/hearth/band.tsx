@@ -1,7 +1,7 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
 import type { BandProps, Doing } from './types'
-import { APPLE_EYES, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, cells, cut } from '../clawd'
+import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, cells, cut, dice } from '../clawd'
 import { NAP_AFTER_MS } from '../facts'
 import type { Arms, Eyes, Feet } from '../clawd'
 import { ACCENT, DIM, SPACE, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
@@ -439,13 +439,6 @@ function notice(live: Live, before: Shown | null): void {
   }
 }
 
-// A tiny deterministic dice, so a frame is a function of the tick.
-function dice(seed: number, sides: number): number {
-  const n = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0
-
-  return ((n ^ (n >>> 13)) >>> 0) % sides
-}
-
 function later(tick: number): number {
   const [low, high] = GLANCE_EVERY
 
@@ -790,7 +783,7 @@ function appleSprite(pose: Pose): Row[] {
       { text: '▖', color: BODY },
     ],
     [{ text: ' ' }, { text: '       ', backgroundColor: BODY }],
-    [{ text: pose.feet === 'both' ? ' ▘▘   ▝▝' : pose.feet === 'left' ? ' ▘▘' : '      ▝▝', color: BODY }],
+    [{ text: APPLE_FEET[pose.feet], color: BODY }],
   ]
 }
 

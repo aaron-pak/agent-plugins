@@ -2025,8 +2025,8 @@ function parseDesk(source: string): Parsed {
   for (const m of motion.matchAll(/@keyframes ([\w-]+)\{((?:[^{}]*\{[^}]*\})*)\}/gu)) {
     frames.set(m[1] ?? '', [...(m[2] ?? '').matchAll(/([\d.,%]+)\{([^}]*)\}/gu)].flatMap(stop => (stop[1] ?? '').split(',').map(at => [Number(at.replace('%', '')) / 100, stop[2] ?? ''] as [number, string])))
   }
-  const runsOf = (classes: readonly string[]): Run[] => {
-    const list = new RegExp(`(?:^|\\})\\.${classes[0]}\\{animation:([^}]*)\\}`, 'u').exec(motion)?.[1]
+  const runsOf = (className: string): Run[] => {
+    const list = new RegExp(`(?:^|\\})\\.${className}\\{animation:([^}]*)\\}`, 'u').exec(motion)?.[1]
     return (list ?? '').split(',').filter(entry => entry.trim() !== '').map(entry => {
       const [name = '', length = '', , delay = '', count = '', fill = ''] = entry.trim().split(' ')
       return { name, period: Number(length.replace('s', '')), wait: Number(delay.replace('s', '')), count: count === 'infinite' ? Infinity : Number(count), fill }
@@ -2035,8 +2035,8 @@ function parseDesk(source: string): Parsed {
   const names = [...new Set([...source.matchAll(/<g class="pose p-([\w-]+)">/gu)].map(m => m[1] ?? ''))]
   const parsed: Parsed = {
     frames,
-    walk: runsOf(['walk']),
-    poses: names.map(name => ({ name, runs: runsOf([`p-${name}`, 'pose']), still: [...motion.matchAll(new RegExp(`\\.p-${name}\\{opacity:(\\d)\\}`, 'gu'))].at(-1)?.[1] ?? '0' })),
+    walk: runsOf('walk'),
+    poses: names.map(name => ({ name, runs: runsOf(`p-${name}`), still: [...motion.matchAll(new RegExp(`\\.p-${name}\\{opacity:(\\d)\\}`, 'gu'))].at(-1)?.[1] ?? '0' })),
   }
   PARSED.set(source, parsed)
   return parsed
@@ -2896,7 +2896,7 @@ test('desktop: still, a cheer is one frame: arms up and the sparkles held; where
   const still = (await look()).svg?.source ?? ''
   expect(still).not.toContain('@keyframes')
   expect(still).toContain('.pose{opacity:0}.p-up{opacity:1}')
-  expect(still).toContain('.spark{opacity:1}')
+  expect(still).toContain('class="spark"')
   expect(still).not.toContain('spin0')
   await clock.advance(5000)
   expect((await look()).svg?.source).not.toContain('class="spark"')

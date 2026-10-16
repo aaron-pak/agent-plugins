@@ -73,11 +73,8 @@ export type Info = {
   branch: string | null
   dirty: number | null
   percent: number | null
-  tokens: number | null
-  window: number | null
   usd: number | null
   limit: Limit | null
-  startedAt: number | null
   lastActiveAt: number | null
   /**
    * What the band says Claude is doing: the latest tool still running (null when none is). Tools
@@ -91,9 +88,9 @@ export type Info = {
   slip: Activity | null
   /** The last tool of this turn that failed, until the turn ends: the hearth terminal holds its hiccup a second, whatever starts next. */
   lastSlip: Activity | null
-  /** A failure whose hiccup has yet to have its second on the hearth desktop's third line. */
+  /** A failure whose hiccup has yet to have its second on the hearth's third line, on both surfaces. */
   slipDue: Activity | null
-  /** When the hearth desktop's hiccup went up: Clawd flinches with it. */
+  /** When the hearth's hiccup went up: the desktop's Clawd flinches with it. */
   flinchAt: number | null
   /**
    * The hiccup now up came while Clawd still flinched from the last one: its flinch is drawn under
@@ -104,7 +101,7 @@ export type Info = {
   isTurnOpen: boolean
   /** When the last tool finished: a pause shorter than three quarters of a second is no pause. */
   toolEndedAt: number | null
-  /** The hearth desktop's third line while Claude works. */
+  /** The hearth's third line while Claude works, on both surfaces. */
   held: Held
   lastTurn: LastTurn | null
   todos: Todo[]
@@ -134,7 +131,7 @@ export type Info = {
   workedAt: number | null
   /** This turn began while Clawd napped: the tide desktop wakes him gently. */
   woke: boolean
-  /** What the tide desktop's words show, held by the hooks module (the desktop has no frame clock). */
+  /** What the beach's words show, on both surfaces, held by the hooks module (the desktop has no frame clock). */
   desk: DeskShown
   /** When the last answered turn finished, and the context fill then. */
   cheeredAt: number | null

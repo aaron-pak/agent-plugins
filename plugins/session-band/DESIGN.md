@@ -71,7 +71,8 @@ rule on purpose, change its test and this page with it.
 - **A look outside the options** (a hand-edited `cozy`) reads as unset, which is the beach.
 - **Older builds** stored a `style` (only `still` meant still), made a motion once (`migrateMotion`).
   Someone whose style was `hearth` or `still` (the still hearth) lands on the beach and hears it
-  once, in a toast: "The beach is the new look. /band hearth to switch back." `whole()` fills in older `$.state` facts.
+  once, in a toast: "The beach is the new look. /band hearth to switch back." `whole()` fills in
+  older `$.state` facts.
 - **The toast** comes once per crossing of `warnAt`, rounded, in the look's own voice: "High tide:
   context is 86% full. Try /compact soon." or "Context is 86% full. Run /compact when you're
   ready." Toasts keep to the replies' 60 cells too, since the host shows them under the plugin's
@@ -163,7 +164,7 @@ changing the look, the motion or the reload path.
 
 `hooks/register.tsx` holds every hook. They write one set of facts (`Info` in `types/index.d.ts`) to
 `$.state`, and the `ui.render` hook for `AbovePrompt` draws whichever look is on. Each look reads the
-facts through a view that hands it exactly what its code was built to read (`tideInfo()`,
+facts through a view that hands it exactly what its code reads, and nothing more (`tideInfo()`,
 `hearthInfo()`). The pure rules live in `hooks/facts.ts`, which never touches the engine.
 
 | Hook | What it does |
@@ -179,18 +180,18 @@ facts through a view that hands it exactly what its code was built to read (`tid
 | `ui.render` (`AbovePrompt`) | Draws the look; steps aside while Claude Code shows a survey there. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
-percent, tokens and window; the cost and the limit shown; when the session started and was last
-active; the tools running (`running`, in start order, at most 32) and the one the band names
-(`activity`, the latest still running); the todos (at most 256); the last turn and how it ended
-(`answer`, `stopped` for Esc or a refusal, `error`); the turn's tools and files (`turnTools`,
-`turnTodoTools`, `turnFiles`); the cheer and failure counts; `isCalm`, `isAppleTerminal`,
-`isTurnOpen`, `greetedAt`, `isWarned`, `unsavedMotion`; and `beat`, bumped when a moment ends with
-nothing else to say so, which makes the desktop redraw. The hearth adds its failure (`slip`,
-`lastSlip`, `slipDue`), its flinch and its held line (`held`). The tide adds the turn's start
-(`turnAt`, `turnPercent`), whether the turn changed something (`turnWorked`, `workedAt`), `woke`,
-its shown tool (`desk`), the cheer's time and tide, and the failure's words and tide (`oopsWhat`,
-`oopsName`, `oopsNoun`, `oopsPercent`, `splashAt`, `waves`). Both held lines, `held` and `desk`,
-also carry the todos they show beside their step (`todos`, `todosAt`).
+percent; the cost and the limit shown; when the session was last active; the tools running
+(`running`, in start order, at most 32) and the one the band names (`activity`, the latest still
+running); the todos (at most 256); the last turn and how it ended (`answer`, `stopped` for Esc or a
+refusal, `error`); the turn's tools and files (`turnTools`, `turnTodoTools`, `turnFiles`); the cheer
+and failure counts; `isCalm`, `isAppleTerminal`, `isTurnOpen`, `greetedAt`, `isWarned`,
+`unsavedMotion`; and `beat`, bumped when a moment ends with nothing else to say so, which makes the
+desktop redraw. The hearth adds its failure (`slip`, `lastSlip`, `slipDue`), its flinch and its held
+line (`held`). The tide adds the turn's start (`turnAt`, `turnPercent`), whether the turn changed
+something (`turnWorked`, `workedAt`), `woke`, its shown tool (`desk`), the cheer's time and tide,
+and the failure's words and tide (`oopsWhat`, `oopsName`, `oopsNoun`, `oopsPercent`, `splashAt`,
+`waves`). Both held lines, `held` and `desk`, also carry the todos they show beside their step
+(`todos`, `todosAt`).
 
 Rules the facts keep:
 
@@ -454,11 +455,11 @@ Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 
 192 px. The words use the terminal's chains measured in pixels (`PIXELS`), with the room from
 `bodyColumns` less the diorama and three cells of slack (`deskRoom`).
 
-The `Svg` restarts every animation whenever its source changes, so the source
-is built only from slow state, a `Scene`: the mood, the tide in 5% steps, still or not, a moment
-while it plays, where he stands as it opens (`from`), the width, and for a splash which failure it
-is (`wave`). The alt text comes from the Scene too: what is drawn ("Clawd strolls on the sand",
-"Clawd stands on the sand" when still), then the tide in words, never a number.
+The `Svg` restarts every animation whenever its source changes, so the source is built only from
+slow state, a `Scene`: the mood, the tide in 5% steps, still or not, a moment while it plays, where
+he stands as it opens (`from`), the width, and for a splash which failure it is (`wave`). The alt
+text comes from the Scene too: what is drawn ("Clawd strolls on the sand", "Clawd stands on the
+sand" when still), then the tide in words, never a number.
 
 - A turn changes loop at most once, from reading to work. The tide holds through a turn at
   `turnPercent`, moving in 15-point strides, and holds still while a moment plays. No times go in.
@@ -475,9 +476,10 @@ is (`wave`). The alt text comes from the Scene too: what is drawn ("Clawd stroll
   activation keeps the frame on screen; the hearth clears it (`scene.forget()`). Several desktops
   keep one memory per width (`desktopScenes()`), and only the widest writes the kept copy.
 - **Petting is a second picture:** the heart (`petHeart`) is its own image, the diorama's size,
-  always mounted but parked below the band, and moved over it by the band's own hover. It carries his walk's keyframes and delays, so on
-  the page's one clock it walks his walk step for step; in a cheer it stands up and right, clear of
-  the sparkle by his claw, and from a nap's walk home it is handed over to its place over him.
+  always mounted but parked below the band, and moved over it by the band's own hover. It carries
+  his walk's keyframes and delays, so on the page's one clock it walks his walk step for step; in a
+  cheer it stands up and right, clear of the sparkle by his claw, and from a nap's walk home it is
+  handed over to its place over him.
 
 ## The hearth (opt-out)
 
@@ -532,11 +534,11 @@ On the desktop, Clawd is a 96 × 64 px `Svg` drawn from his pixel form and anima
 beside three Box/Text lines, with the meters as rounded Svg pills. The words sit in a panel of
 `columns - 14` cells, at most the terminal's panel (`panelMost`: 68 at 100 columns, up to 80);
 under 16 cells (30 columns) Clawd has the band alone, and a band the host gives no width gets a
-100-column panel. Forms are
-measured at the widest of Inter, DejaVu Sans and Liberation Sans, against the panel as a page with
-7.2 px cells would lay it out, so a line keeps a cell or more to spare; a name that must be cut is
-cut with an ellipsis (`cutToFit`). The alt text is a full sentence: "Clawd rests.", "Clawd taps
-along as Claude works.", or when still "Clawd sits quietly while Claude works."
+100-column panel. Forms are measured at the widest of Inter, DejaVu Sans and Liberation Sans,
+against the panel as a page with 7.2 px cells would lay it out, so a line keeps a cell or more to
+spare; a name that must be cut is cut with an ellipsis (`cutToFit`). The alt text is a full
+sentence: "Clawd rests.", "Clawd taps along as Claude works.", or when still "Clawd sits quietly
+while Claude works."
 
 ### What each moment looks like
 
@@ -569,11 +571,11 @@ On the terminal his pose and line 3 move together, so the held line goes up on a
 ticks once the frame has been up a whole tick (`Between`, from `isSettled`); a landing turn and a
 turn's start show at once. A turn that lands mid-flinch ends the flinch as his cheer starts, as the
 beach's cheer ends its splash, so his arms go up on the frame "Done" comes in on; a glance or flinch
-he began less than a tick before keeps that tick first (`canLand`). The desktop's Svg is built from slow state alone (one `work` mode for
-every tool, plus the cheer, hello, flinch, bead and calm), so a tool starting or finishing hands the
-page the same Svg. The bead comes only in a quiet stretch, never beside a raised claw, blink or
-glance, in the theme's blue (`ide`). Calm is one pose per moment: he still cheers, flinches and
-naps, without blinks, taps or hops.
+he began less than a tick before keeps that tick first (`canLand`). The desktop's Svg is built from
+slow state alone (one `work` mode for every tool, plus the cheer, hello, flinch, bead and calm), so
+a tool starting or finishing hands the page the same Svg. The bead comes only in a quiet stretch,
+never beside a raised claw, blink or glance, in the theme's blue (`ide`). Calm is one pose per
+moment: he still cheers, flinches and naps, without blinks, taps or hops.
 
 ## Key decisions and why
 
@@ -590,8 +592,10 @@ naps, without blinks, taps or hops.
   below the band where nothing of it shows, and `hover: { top: 0 }` lays it over him. Measured in the
   Mac app: an absolute Box that is itself revealed (`display: none` to `flex`) is drawn as a floating
   card with its own fill and border above the band; any revealed picture starts its clock over, so a
-  beach heart fell out of step with his walk; and a heart parked above or to the side fell out of step
-  too. Parked below, it held step through a whole turn, with no card and no blank frame. Its `alt` is empty: it is always mounted, so a screen reader would otherwise read out a heart no one can see, and his own picture's alt already says what he is doing.
+  beach heart fell out of step with his walk; and a heart parked above or to the side fell out of
+  step too. Parked below, it held step through a whole turn, with no card and no blank frame. Its
+  `alt` is empty: it is always mounted, so a screen reader would otherwise read out a heart no one
+  can see, and his own picture's alt already says what he is doing.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
   The todos shown beside a step are held there too, so one hold serves all four views.
@@ -618,8 +622,9 @@ naps, without blinks, taps or hops.
   cube has no tan between the sand's 180 and 137, nor a blue between the sea's 67 and 24, so the damp
   strip and the ripples are darker than a free choice would make them, in truecolor too. Clawd and
   the words use theme keys, which are the host's to round (see "Known gaps").
-- **The hearth's Svg classes start with `hh-`** in case a host ever draws it inline. The tide's
-  Svgs draw only as images, and a prefix would change every tide source for no gain.
+- **The hearth's Svg classes start with `hh-`** only in case a host ever draws it inline: both
+  looks' Svgs draw as images, whose classes never meet the page's. A prefix on the tide's would
+  change every tide source for no gain.
 
 ## Known gaps
 
@@ -654,8 +659,8 @@ naps, without blinks, taps or hops.
   beside him (one frame, about 33 ms). Keeping its scale while parked (`preserveAspectRatio="none"`)
   did not help; the hearth's heart does not walk, so it never shows.
 - **The desktop heart shows at once.** The band's hover has no delay, so a pointer crossing the
-  picture on its way to the prompt flashes the heart. Its pop plays unseen as its picture loads with
-  his, so on show it beats softly rather than popping. The hover never reaches the plugin.
+  picture on its way to the prompt flashes the heart. It has no pop to play on show, only its soft
+  beat. The hover never reaches the plugin.
 - **The narrowest nudge** at 36 to 41 desktop columns (38 and 39 on the terminal) is "86% try
   /compact", without its dot.
 - **`/config`'s quoted reason** brings down the capital of a one-word name it opens on ("Okta").
@@ -704,7 +709,8 @@ naps, without blinks, taps or hops.
 - `hooks/look.ts`: the look and `/band`: `parseBand`, `lookNow`, `migrateMotion`, `replyFor`,
   `offReply`, `troubleReply`, the toasts, and `REPLY_MOST`, the most a reply may hold.
 - `hooks/clawd.ts`: Clawd's terminal cells, the shared palette (with `TERMINAL_HEART`, the heart
-  both terminal looks draw), `cells()`, `textPx()`, the cuts.
+  both terminal looks draw), the desktop hearts' `pixelHeart` and their parking spot (`PARKED`),
+  `cells()`, `textPx()` and the desktops' `CELL_PX`, the terminal bands' `dice`, and the cuts.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
 - `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text.

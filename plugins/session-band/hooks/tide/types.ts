@@ -17,32 +17,20 @@ export type Activity = { id: string; verb: string; target: string; kind: Activit
 export type { LastTurn, Limit } from '../../types'
 import type { LastTurn, Limit } from '../../types'
 
-/**
- * What the desktop's words show Claude doing: the running tool, held a second at least and through
- * short pauses, and when it went up.
- */
-export type DeskShown = { activity: Activity | null; shownAt: number }
-
-/** Everything the band knows about the session, kept in `$.state`. */
+/** The facts in `$.state` that the beach reads, and nothing more (see tideInfo). */
 export type Info = {
   model: string | null
   project: string | null
   branch: string | null
   dirty: number | null
   percent: number | null
-  tokens: number | null
-  window: number | null
   usd: number | null
   limit: Limit | null
   /** The context fill when the current (or last) turn began: the desktop holds its tide there while a turn runs. */
   turnPercent: number | null
-  startedAt: number | null
   lastActiveAt: number | null
+  /** What the words show Claude doing, on both surfaces: the facts' held step (see stepDesk). */
   activity: Activity | null
-  /** When the last tool finished: a pause shorter than three quarters of a second is no pause. */
-  toolEndedAt: number | null
-  /** The desktop has no frame clock, so the hooks module holds what its words show. */
-  desk: DeskShown
   /** This turn has changed something (an edit, a command): the desktop's Clawd potters rather than reads. */
   turnWorked: boolean
   /** This turn began while Clawd napped: the desktop wakes him gently. */
@@ -73,11 +61,9 @@ export type Info = {
   /** When this (or the last) turn's prompt was sent. */
   turnAt: number | null
   /** The person's prefersReducedMotion setting: the beach holds still. */
-  isStill: boolean
+  isCalm: boolean
   /** Apple's Terminal, where Claude Code draws a simpler Clawd. */
   isAppleTerminal: boolean
-  /** Bumped when a moment ends or a nap is due, so a surface with no frame clock (the desktop) redraws then. */
-  beat: number
 }
 
 /** How a run of text is colored; each surface maps it to theme keys (`clay` is Claude's own, `claude`). */
@@ -110,7 +96,7 @@ export type BandProps = {
   turnPercent: number | null
   isWorking: boolean
   isHigh: boolean
-  /** Nothing moves: the `still` style, or the person prefers reduced motion. */
+  /** Nothing moves: still motion, or the person prefers reduced motion. */
   isStill: boolean
   /** What the running tool asks of Clawd, while a tool runs. */
   doing: ActivityKind | null
@@ -120,7 +106,6 @@ export type BandProps = {
   woke: boolean
   /** Milliseconds since the session was last active. */
   idleMs: number | null
-  napAfterMs: number
   cheers: number
   /** Milliseconds since the last good turn finished, and the context fill then. */
   sinceCheerMs: number | null
@@ -141,7 +126,8 @@ export type BandProps = {
   /**
    * Milliseconds since this look came on screen (a /band or /config switch), or null when it has
    * been on all along. A one-off moment that began before it (a cheer, a splash, waking up) is over
-   * for the desktop's new frame, which never replays it.
+   * on both surfaces: the desktop's new frame never replays it, and the terminal neither spins that
+   * cheer nor carries that wave on.
    */
   shownForMs: number | null
   /**

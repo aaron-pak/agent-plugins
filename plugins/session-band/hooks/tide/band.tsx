@@ -1,9 +1,9 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
-import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART } from '../clawd'
+import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, dice } from '../clawd'
 import type { Arms, Eyes, Feet } from '../clawd'
 import { CELLS, fitLine } from './fit'
-import { SPLASH_MS } from '../facts'
+import { NAP_AFTER_MS, SPLASH_MS } from '../facts'
 import { hasRoom, isHeld, newPace, spend, switchedPace, tick } from '../pace'
 import type { Pace } from '../pace'
 import type { BandProps, Piece, Words } from './types'
@@ -735,7 +735,7 @@ function isNapping(live: Live): boolean {
     return false
   }
 
-  return props.idleMs + (live.tick - live.propsTick) * TICK_MS >= props.napAfterMs
+  return props.idleMs + (live.tick - live.propsTick) * TICK_MS >= NAP_AFTER_MS
 }
 
 function isMoment(live: Live): boolean {
@@ -789,13 +789,6 @@ function isGlancing(live: Live, mood: Mood): boolean {
   const t = since(live, live.glanceAt)
 
   return t >= 0 && t < GLANCE[mood] && live.glanceAt >= live.busyAt + SETTLE
-}
-
-// A tiny deterministic dice, so a frame is a function of the tick.
-function dice(seed: number, sides: number): number {
-  const n = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0
-
-  return ((n ^ (n >>> 13)) >>> 0) % Math.max(1, sides)
 }
 
 function later(tick: number, salt: number, [low, high]: Span): number {
@@ -995,12 +988,11 @@ function plan(live: Live, columns: number): void {
 type Mark = { row: number; col: number; cell: Cell; isLoose?: boolean; isAiry?: boolean }
 type Places = Mark[][]
 
-// Clawd's three rows for this tick, the marks around him, and the cheer's sparkles (chosen once per
-// cheer, see scene).
 /**
- * Clawd's rows and the marks beside him. `cheer`: the places his cheer's sparkles may go, while his
- * arms are up; `ahead`: the same places on the spin's last frame, drawn nowhere, so the crest can
- * start standing back for them a beat before his arms go up (see cheerRoom).
+ * Clawd's three rows for this tick and the marks around him. `cheer`: the places his cheer's
+ * sparkles may go while his arms are up (chosen once per cheer, see scene); `ahead`: the same places
+ * on the spin's last frame, drawn nowhere, so the crest can start standing back for them a beat
+ * before his arms go up (see cheerRoom).
  */
 function clawd(live: Live, beach: number): { rows: [Row, Row, Row]; marks: Places[]; cheer: Places | null; ahead?: Places } {
   const { props, x } = live

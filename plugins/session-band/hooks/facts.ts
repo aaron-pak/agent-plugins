@@ -25,11 +25,7 @@ export const LOOK_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearc
 export const TODO_TOOLS = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'])
 /** Bookkeeping, handing off and asking: a turn doing only these is still a turn of watching, not of changing things. */
 export const QUIET_TOOLS = new Set([
-  'TodoWrite',
-  'TaskCreate',
-  'TaskUpdate',
-  'TaskList',
-  'TaskGet',
+  ...TODO_TOOLS,
   'TaskOutput',
   'TaskStop',
   'BashOutput',
@@ -48,10 +44,10 @@ export const QUIET_TOOLS = new Set([
   'CronList',
 ])
 
-// The desktop has no frame clock, so the hooks module holds what its words show while Claude
+// The desktop has no frame clock, so the hooks module holds what the words show while Claude
 // works: a tool's words stay up at least a second, and a pause between tools shorter than three
 // quarters of a second is no pause, so a burst of quick tools reads as one calm stretch of work.
-// (The terminal's bands do the same on their own frame clocks.)
+// Both surfaces show this held step (the terminal's bands take it up on a tick of their own).
 export const HOLD_MS = 1000
 export const GAP_MS = 750
 /**
@@ -98,11 +94,8 @@ export const EMPTY: Info = {
   branch: null,
   dirty: null,
   percent: null,
-  tokens: null,
-  window: null,
   usd: null,
   limit: null,
-  startedAt: null,
   lastActiveAt: null,
   activity: null,
   running: [],
@@ -577,8 +570,6 @@ export function figures(usage: Figures | null): Partial<Info> {
 
   return {
     percent: usage?.context.percent ?? null,
-    tokens: usage?.context.tokens ?? null,
-    window: usage?.context.window ?? null,
     usd: usage?.cost?.usd ?? null,
     limit: limit === undefined ? null : { kind: limit.kind, percent: limit.percentUsed, resetsAt: limit.resetsAt ?? null },
   }

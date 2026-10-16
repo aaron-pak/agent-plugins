@@ -5,7 +5,6 @@ import { shownTodos } from '../facts'
 import type { Activity, Info } from './types'
 
 export function tideInfo(known: Facts): Info {
-  const desk = { activity: tideActivity(known.desk.activity), shownAt: known.desk.shownAt }
   const turn = known.lastTurn
 
   return {
@@ -16,18 +15,13 @@ export function tideInfo(known: Facts): Info {
     branch: known.branch,
     dirty: known.dirty,
     percent: known.percent,
-    tokens: known.tokens,
-    window: known.window,
     usd: known.usd,
     limit: known.limit,
     turnPercent: known.turnPercent,
-    startedAt: known.startedAt,
     lastActiveAt: known.lastActiveAt,
     // Both surfaces show the tool the facts' hold settled on (stepDesk), so they name the same tools,
     // however quick: the terminal's band only takes it up on a tick of its own clock.
-    activity: desk.activity,
-    toolEndedAt: known.toolEndedAt,
-    desk,
+    activity: tideActivity(known.desk.activity),
     // He potters once the turn has changed something and the words have moved on since it began (to
     // the edit itself, or past it): the picture and its words change together, never the potter under
     // a read the line still holds. Once the turn is written down as over (its words gone with it), he
@@ -51,9 +45,8 @@ export function tideInfo(known: Facts): Info {
     waves: known.waves,
     isSlipped: known.slip !== null,
     turnAt: known.turnAt,
-    isStill: known.isCalm,
+    isCalm: known.isCalm,
     isAppleTerminal: known.isAppleTerminal,
-    beat: known.beat,
   }
 }
 

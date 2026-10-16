@@ -161,7 +161,7 @@ export const register: Register = (on, options) => {
         lastActiveAt = before.lastActiveAt ?? now
 
         return {
-          ...(usage === undefined ? {} : { ...figures(usage), startedAt: usage.startedAt }),
+          ...(usage === undefined ? {} : figures(usage)),
           model: model ?? before.model,
           project: repo === undefined ? (before.project ?? basename(e.cwd)) : projectOf(repo, e.cwd),
           lastActiveAt,
@@ -340,7 +340,7 @@ export const register: Register = (on, options) => {
     if (isWave) {
       // The tide desktop's splash plays its seconds; one redraw as it ends settles the sea. (A failure
       // that rides along ends with its wave, whose redraw is already set.)
-      nudge($, SPLASH_MS + 100)
+      for (const ms of MOMENT_ENDS.splash) nudge($, ms)
     }
     napLater($, timers)
 
@@ -437,7 +437,6 @@ export const register: Register = (on, options) => {
       const now = await $.clock.now()
       await patch($, () => ({
         ...figures(null),
-        startedAt: now,
         lastActiveAt: now,
         lastTurn: null,
         todos: [],
@@ -799,10 +798,10 @@ function patch($: EngineInterface, change: (now: Info) => Partial<Info>): Promis
 }
 
 /**
- * A change, with both desktops' words stepped toward what is happening in the same write (the
- * hearth's held line and the tide's shown tool); when a hold runs out before anything else
- * happens, a timer looks again. Clawd flinches as a hearth hiccup goes up, and settles back (one
- * redraw) as the flinch ends.
+ * A change, with both looks' words stepped toward what is happening in the same write (the hearth's
+ * held line and the tide's shown tool, each shown on both surfaces); when a hold runs out before
+ * anything else happens, a timer looks again. The desktop's Clawd flinches as a hearth hiccup goes
+ * up, and settles back (one redraw) as the flinch ends.
  */
 async function settle($: EngineInterface, timers: Timers, time: number, change: (now: Info) => Partial<Info> = () => ({})): Promise<void> {
   let wakeIn = Infinity
@@ -829,7 +828,7 @@ async function settle($: EngineInterface, timers: Timers, time: number, change: 
     }
   })
   if (isFlinch) {
-    nudge($, FLINCH_MS + 10)
+    for (const ms of MOMENT_ENDS.flinch) nudge($, ms)
   }
   // One look again at a time: the last one's deadline is spent, whatever it was.
   letGo(timers)
@@ -989,7 +988,7 @@ async function prefersReducedMotion($: EngineInterface): Promise<boolean> {
 }
 
 // Apple's Terminal draws block glyphs on colored backgrounds badly; Claude Code
-// gives it a simpler Clawd, and so does the hearth.
+// gives it a simpler Clawd, and both looks draw that one there too.
 async function appleTerminal($: EngineInterface): Promise<boolean> {
   try {
     return (await $.env.get('TERM_PROGRAM')) === 'Apple_Terminal'

@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps } from './types'
-import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, pixelHeart, textPx } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, pixelHeart, textPx } from '../clawd'
 import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
 import { DIM, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
@@ -13,24 +13,23 @@ import type { Line, Measure, Row, Said, Seg } from './words'
 // the words, a nap coming on, a cheer settling back down) is written into his
 // stylesheet.
 //
-// A new Svg source reloads his sandboxed frame and starts every animation over,
-// so his source is built from slow state alone: whether a turn is under way
-// (one `work` mode for reading, editing, running and thinking alike), a cheer,
-// a hello, a flinch, a full context, calm. A tool starting or finishing hands
-// the page the very same Svg, and his motion carries on undisturbed.
+// He is a plain image, and a new Svg source restarts every animation in it, so
+// his source is built from slow state alone: whether a turn is under way (one
+// `work` mode for reading, editing, running and thinking alike), a cheer, a
+// hello, a flinch, a full context, calm. A tool starting or finishing hands the
+// page the very same Svg, and his motion carries on undisturbed.
 
 type Desk = Elements['desktop']
 
 /**
- * What the desktop draws: the band's props, whether this flinch came while the last still played (see
- * moodOf), and whether his picture wears the bead of sweat (`isSweating`; absent, as the context is
- * high). The hooks module holds a change of the bead a moment while Claude works, so a turn whose
- * last reading crosses the line as it lands reloads his frame once, for the cheer.
- */
-/**
  * What the desktop draws from: the band's props, and what only the hooks module knows (it remembers
- * the frames it handed out). `dozedS`: asleep, how far the z of the frame before had drifted (see
- * Mood); absent, the turn's ending says.
+ * the frames it handed out). `isFlinchAgain`: this flinch came while the last still played (see
+ * moodOf). `isFlinchKept`: the flinch's frame may stay up past its end while the turn runs, gone on
+ * into his taps. `isSweating`: whether his picture wears the bead of sweat (absent: as the context
+ * is high); the hooks module holds a change of the bead a moment while Claude works, so a turn whose
+ * last reading crosses the line as it lands gives his picture one new source, for the cheer.
+ * `dozedS`: asleep, how far the z of the frame before had drifted (see Mood); absent, the turn's
+ * ending says.
  */
 type DeskView = BandProps & { isFlinchAgain?: boolean; isFlinchKept?: boolean; isSweating?: boolean; dozedS?: number }
 
@@ -132,8 +131,6 @@ export function desk(els: Desk, view: DeskView): RenderElement {
 // in a desktop preview; the room they must fit is the panel as a page with
 // narrower cells still would lay it out. A line fits when it fits that budget.
 
-/** Pixels to a cell in the budget (the margins and the figures' boxes): a little under the desktop's, so a fit is a fit. */
-const CELL_PX = 7.6
 /** Under this many cells for the words' panel (as wide as the terminal's, see panelMost), Clawd keeps the band alone. */
 const PANEL_MIN = 16
 /** The narrowest cell a page is expected to draw (the desktop's measures 7.8 px): the room is counted at this. */
@@ -574,10 +571,10 @@ function clawdSvg(mood: Mood): string {
  * Petting him on the desktop: a heart beside him, or over his head as he sleeps, drawn over him
  * while a pointer rests on him. He is an image (an interactive frame blanks for a frame or two each
  * time its source changes), and an image takes no hover, so the heart is a picture of its own, his
- * size, parked below the band until its hover lays it over him. Shown, it is already up (its picture loaded with his), so it
- * beats softly rather than popping; held still under reduced motion and /band still.
+ * size, parked below the band until its hover lays it over him. It shows at once, with no pop, and
+ * beats softly; held still under reduced motion and /band still.
  */
-export function petHeart(mood: Mood): string {
+function petHeart(mood: Mood): string {
   const [hx, hy] = mood.mode === 'nap' ? NAP_HEART : PET_HEART
   const beat =
     `.${P}ht{transform-box:fill-box;transform-origin:center}` +
