@@ -473,8 +473,8 @@ is (`wave`). The alt text comes from the Scene too: what is drawn ("Clawd stroll
 - **The kept scene** goes to `$.state` from a `$.clock.after(0)` (a render cannot write), so a fresh
   activation keeps the frame on screen; the hearth clears it (`scene.forget()`). Several desktops
   keep one memory per width (`desktopScenes()`), and only the widest writes the kept copy.
-- **Petting is a second picture:** the heart (`petHeart`) is its own image, the diorama's size, laid
-  over it and revealed by the band's own hover. It carries his walk's keyframes and delays, so on
+- **Petting is a second picture:** the heart (`petHeart`) is its own image, the diorama's size,
+  always mounted but parked below the band, and moved over it by the band's own hover. It carries his walk's keyframes and delays, so on
   the page's one clock it walks his walk step for step; in a cheer it stands up and right, clear of
   the sparkle by his claw, and from a nap's walk home it is handed over to its place over him.
 
@@ -581,9 +581,14 @@ naps, without blinks, taps or hops.
 - **The desktop draws Clawd as an image, not an interactive frame.** An `isInteractive` Svg is a
   sandboxed frame that blanks for a frame or two (50 to 100 ms on the Mac app) each time its source
   changes, and the band changes it with every moment; an image swaps cleanly and still plays its CSS.
-  An image takes no `:hover`, so the pet is a heart picture revealed by the band's own Box hover
-  (`display: none` to `flex`, absolutely placed, inside a keyed Box): no wink, no raised arms, no
-  pause in his walk, which the frame used to give.
+  An image takes no `:hover`, so the pet is a heart picture the band's own Box hover moves onto him:
+  no wink, no raised arms, no pause in his walk, which the frame used to give.
+- **The heart is parked, not revealed.** It sits in an always-shown absolute Box at `top: PARKED`,
+  below the band where nothing of it shows, and `hover: { top: 0 }` lays it over him. Measured in the
+  Mac app: an absolute Box that is itself revealed (`display: none` to `flex`) is drawn as a floating
+  card with its own fill and border above the band; any revealed picture starts its clock over, so a
+  beach heart fell out of step with his walk; and a heart parked above or to the side fell out of step
+  too. Parked below, it held step through a whole turn, with no card and no blank frame.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
   The todos shown beside a step are held there too, so one hold serves all four views.

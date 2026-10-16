@@ -8,7 +8,7 @@ import { hearthInfo, slipAt } from '../hooks/hearth/view'
 import { REPLY_MOST, lookNow, migrateMotion, offReply, parseBand, replyFor, toastFor, troubleReply, upgradeToast } from '../hooks/look'
 import { bandProps as tideProps, desktopScenes, sceneMemory } from '../hooks/tide/props'
 import { SPLASH_MS, positionAt } from '../hooks/tide/desk'
-import { EYES, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
+import { EYES, PARKED, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
 import { tideInfo } from '../hooks/tide/view'
 import { CELLS, PIXELS, fitLine } from '../hooks/tide/fit'
 import { article, plain } from '../hooks/tide/words'
@@ -2900,8 +2900,10 @@ test('the hearth lets go of the beach’s kept scene once, then writes nothing m
 
 // The desktop draws Clawd as an image: an interactive frame blanks for a frame or two whenever its
 // source changes, and the band changes it with every moment. An image takes no hover, so the pet is
-// a heart of its own, drawn over him by the band's own hover.
-test('desktop: on either look Clawd is a plain image, and resting the pointer on him reveals a heart that beats, solid all the while', async ($, on) => {
+// a heart of its own, laid over him by the band's own hover. The desktop draws a revealed absolute
+// Box as a floating card above the band, and a revealed picture starts its clock over, so the heart
+// is never revealed: it is always mounted, parked below the band, and the hover moves it onto him.
+test('desktop: on either look Clawd is a plain image, and resting the pointer on him brings a parked heart over him that beats, solid all the while', async ($, on) => {
   world(on)
   await start($)
   for (const which of ['tide', 'hearth'] as const) {
@@ -2909,24 +2911,28 @@ test('desktop: on either look Clawd is a plain image, and resting the pointer on
     const desk = await mount($, 'desktop')
     const { tree } = await desk.look()
     const svgs: Node[] = []
-    const reveals: Node[] = []
-    const scopes: Node[] = []
+    const hidden: Node[] = []
+    const parked: { box: Node; inScope: boolean }[] = []
     const visit = (node: unknown, inScope: boolean) => {
       if (node === null || typeof node !== 'object') return
       const el = node as Node
       if (el.type === 'Svg') svgs.push(el)
+      if (el.type === 'Box' && el.props?.display === 'none') hidden.push(el)
       // The drawn tree carries a Box's hover beside its props.
-      const hover = (el as { hover?: { display?: string } }).hover
-      if (el.type === 'Box' && el.props?.display === 'none' && hover?.display === 'flex') reveals.push(el)
-      if (el.type === 'Box' && typeof el.props?.key === 'string' && !inScope) scopes.push(el)
+      const hover = (el as { hover?: { top?: number } }).hover
+      if (el.type === 'Box' && hover?.top !== undefined) parked.push({ box: el, inScope })
       for (const child of el.children ?? []) visit(child, inScope || (el.type === 'Box' && typeof el.props?.key === 'string'))
     }
     visit(tree, false)
     expect([which, svgs.filter(svg => svg.props?.isInteractive === true).length]).toEqual([which, 0])
-    // One heart, laid over him (absolute, so showing it moves nothing), inside his own hover scope.
-    expect([which, reveals.length, reveals[0]?.props?.position]).toEqual([which, 1, 'absolute'])
-    expect([which, scopes.some(scope => JSON.stringify(scope).includes('A heart for Clawd'))]).toEqual([which, true])
-    const heart = String((reveals[0]?.children?.[0] as Node | undefined)?.props?.source ?? '')
+    // Nothing is revealed (that would be a card above the band); one heart is parked below the band
+    // (absolute, so moving it moves nothing), inside his own hover scope, and the hover lays it at 0.
+    expect([which, hidden.length, parked.length]).toEqual([which, 0, 1])
+    const { box, inScope } = parked[0]!
+    expect([which, box.props?.position, box.props?.top, box.props?.left, (box as { hover?: unknown }).hover, inScope]).toEqual([which, 'absolute', PARKED, 0, { top: 0 }, true])
+    const svg = box.children?.[0] as Node | undefined
+    expect([which, svg?.type, svg?.props?.alt]).toEqual([which, 'Svg', 'A heart for Clawd'])
+    const heart = String(svg?.props?.source ?? '')
     expect([which, heart]).toEqual([which, expect.stringMatching(/^<svg /u)])
     // Never faded (a half-faded pink is a muddy mauve on the dark page), and no script.
     expect([which, /opacity/u.test(heart), heart.includes('<script')]).toEqual([which, false, false])

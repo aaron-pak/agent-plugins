@@ -240,7 +240,7 @@ function isClawd(node: Node): boolean {
   return node.type === 'Svg' && String(node.props?.source).includes('class="hh-hop"')
 }
 
-// The heart the band reveals over him when a pointer rests on him.
+// The heart the band lays over him when a pointer rests on him.
 function heartOf(tree: unknown): string {
   let found = ''
   walk(tree, node => {

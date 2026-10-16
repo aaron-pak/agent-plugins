@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps } from './types'
-import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, pixelHeart, textPx } from '../clawd'
+import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, pixelHeart, textPx } from '../clawd'
 import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
 import { DIM, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
@@ -73,10 +73,13 @@ const P = 'hh-'
 export function desk(els: Desk, view: DeskView): RenderElement {
   const { Box, Svg } = els
   const mood = moodOf(view)
+  // The heart is always mounted, parked below the band where nothing of it shows, and the band's own
+  // hover moves it onto him. Revealing it instead (display none to flex) would have the desktop draw it
+  // as a floating card above the band, and a revealed picture starts its clock over.
   const clawd = (
     <Box key="clawd" position="relative" flexShrink={0}>
       <Svg source={clawdSvg(mood)} alt={altOf(mood)} width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
-      <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }}>
+      <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
         <Svg source={petHeart(mood)} alt="A heart for Clawd" width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
       </Box>
     </Box>
@@ -570,7 +573,7 @@ function clawdSvg(mood: Mood): string {
  * Petting him on the desktop: a heart beside him, or over his head as he sleeps, drawn over him
  * while a pointer rests on him. He is an image (an interactive frame blanks for a frame or two each
  * time its source changes), and an image takes no hover, so the heart is a picture of its own, his
- * size, that the band shows on hover. Shown, it is already up (its picture loaded with his), so it
+ * size, parked below the band until its hover lays it over him. Shown, it is already up (its picture loaded with his), so it
  * beats softly rather than popping; held still under reduced motion and /band still.
  */
 export function petHeart(mood: Mood): string {

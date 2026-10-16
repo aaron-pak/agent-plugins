@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
-import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, SPIN, pixelHeart } from '../clawd'
+import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, SPIN, pixelHeart } from '../clawd'
 import { BODY, EYE, curled, pose, spin } from './band'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
@@ -163,7 +163,8 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene = sceneO
     <Box flexDirection="row" alignItems="center">
       <Box key="beach" position="relative" flexShrink={0}>
         <Svg source={diorama(now)} alt={altFor(now, props.percent !== null)} width={now.width * U} height={FRAME_PX} />
-        <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }}>
+        {/* Parked below the band and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
+        <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
           <Svg source={petHeart(now)} alt="A heart for Clawd" width={now.width * U} height={FRAME_PX} />
         </Box>
       </Box>
@@ -929,7 +930,7 @@ function layout(scene: Scene): { shore: number; start: number; roam: number; spa
  * Petting him on the desktop: a heart beside him, drawn over the diorama while a pointer rests on
  * the beach. The diorama is an image (an interactive frame blanks for a frame or two each time its
  * source changes), and an image takes no hover, so the heart is a picture of its own, the
- * diorama's size, that the band shows on hover. Both images run on the page's one clock from the
+ * diorama's size, parked below the band until its hover lays it over him. Both images run on the page's one clock from the
  * same render, so the heart walks his walk step for step: the loop and the lead to it, held where a
  * still frame holds him, handed over from his walk home to its place over him as he curls up.
  */

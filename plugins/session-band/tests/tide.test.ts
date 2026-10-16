@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
-import { SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
+import { PARKED, SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
 import { SAND, WET, layoutOf, resumeSplash } from '../hooks/tide/band'
 import { STRIDE_WAIT_MS } from '../hooks/tide/props'
 import { poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
@@ -202,7 +202,7 @@ async function band($: Engine, surface: Surface, props = BAND) {
       rows,
       tree,
       svg: svg === undefined ? null : { source: String(svg.props?.source), alt: String(svg.props?.alt) },
-      // The heart the band reveals over the beach when a pointer rests on it.
+      // The heart the band lays over the beach when a pointer rests on it.
       heart: String(find(tree, 'Svg').find(one => one.props?.alt === 'A heart for Clawd')?.props?.source ?? ''),
     }
   }
@@ -2135,10 +2135,10 @@ for (const isNamed of [false, true]) {
 }
 
 // The pet on the desktop: Clawd is an image (an interactive frame blanks as its source changes), so a
-// pointer resting on the beach reveals a second picture, the heart, laid over it. Both load in the
-// same render and run on the page's one clock, so the heart's walk must be his walk, step for step:
-// the loop, the lead into it, and a cheer's or a splash's.
-test('desktop: the heart a pet reveals walks his walk step for step, in his loops and through a cheer or a splash', { timeoutMs: 60_000 }, async ($, on) => {
+// pointer resting on the beach brings a second picture, the heart, over it from where it is parked.
+// Both load in the same render and run on the page's one clock, so the heart's walk must be his walk,
+// step for step: the loop, the lead into it, and a cheer's or a splash's.
+test('desktop: the heart a pet brings walks his walk step for step, in his loops and through a cheer or a splash', { timeoutMs: 60_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($)
   const frames: Array<{ label: string; source: string; heart: string }> = []
@@ -2177,19 +2177,21 @@ test('desktop: the heart a pet reveals walks his walk step for step, in his loop
   await ui.unmount()
 })
 
-test('desktop: resting the pointer on the beach reveals a heart over it; motion only where no one asked for less; no script', async ($, on) => {
+test('desktop: resting the pointer on the beach brings a parked heart over it; motion only where no one asked for less; no script', async ($, on) => {
   world(on)
   await start($)
   const { ui, look } = await band($, 'desktop')
   const { tree, svg, heart } = await look()
   const motion = '@media (prefers-reduced-motion:no-preference){'
 
-  // Laid over the beach (absolute, so showing it moves nothing), hidden until the band's own hover.
-  const reveal = find(tree, 'Box').find(box => box.props?.display === 'none')
-  expect(reveal?.props?.position).toBe('absolute')
+  // Parked below the band (absolute, so moving it moves nothing) until the band's own hover lays it
+  // over the beach; never revealed, which the desktop would draw as a card and restart his walk in.
+  expect(find(tree, 'Box').filter(box => box.props?.display === 'none')).toEqual([])
+  const parked = find(tree, 'Box').find(box => (box as { hover?: unknown }).hover !== undefined)
+  expect([parked?.props?.position, parked?.props?.top, parked?.props?.left]).toEqual(['absolute', PARKED, 0])
   // The drawn tree carries a Box's hover beside its props.
-  expect((reveal as { hover?: unknown } | undefined)?.hover).toEqual({ display: 'flex' })
-  expect(find(reveal, 'Svg')[0]?.props?.alt).toBe('A heart for Clawd')
+  expect((parked as { hover?: unknown } | undefined)?.hover).toEqual({ top: 0 })
+  expect(find(parked, 'Svg')[0]?.props?.alt).toBe('A heart for Clawd')
   for (const source of [svg?.source ?? '', heart]) {
     const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
     expect(css).toContain(motion)
