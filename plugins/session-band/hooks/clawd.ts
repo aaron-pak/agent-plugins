@@ -76,8 +76,6 @@ export const HEART_PINK = '#E9789B'
 export const TERMINAL_HEART = '#E37DA2'
 /** The nap's z's, on both desktops. */
 export const DOZE_SLATE = '#7E95B5'
-/** A pointer must rest on him this long before it counts as petting: one passing on its way to the composer does not. */
-export const HOVER_S = 0.15
 
 /**
  * The terminal's block heart as one Svg path: 8 pixels across and 4 down, each `w` by `h` units, its

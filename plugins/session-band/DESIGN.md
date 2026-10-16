@@ -373,7 +373,7 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | A tool failed | Eyes shut, arms up, the water rushing to his feet with spray, then sliding back. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s. Four drops swell out of the crest, leap and shrink away at full color, never fading, all back in the sea by 2.2 s (`DROPS_END_S`). Each failure is a new frame (`data-wave`); one in the first 1.25 s of the same turn rides along. |
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
 | Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". | He walks home, curls up, then "z Z Z". One source for the whole nap. |
-| Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A hover that rests 0.15 s: a wink and a pixel heart. |
+| Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A pointer resting on the beach: a pixel heart beside him that walks with him and beats softly; over his head as he sleeps. |
 | Still | Nothing moves on its own: a cheer is one held pose, a nap is curled at once, a splash is its peak frame. By the band's edge a pet during the cheer takes him home on the pet's own pose change. | No keyframes; reduced motion puts every animation under `prefers-reduced-motion: no-preference`. The frame holds him where the last one had him (`stillDx`). The alts say "Clawd stands on the sand" idle and "A wave splashes over Clawd's feet" for the held splash. |
 
 ### Narrow terminals
@@ -453,7 +453,7 @@ Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 
 192 px. The words use the terminal's chains measured in pixels (`PIXELS`), with the room from
 `bodyColumns` less the diorama and three cells of slack (`deskRoom`).
 
-The `Svg` reloads its frame, restarting every animation, whenever its source changes, so the source
+The `Svg` restarts every animation whenever its source changes, so the source
 is built only from slow state, a `Scene`: the mood, the tide in 5% steps, still or not, a moment
 while it plays, where he stands as it opens (`from`), the width, and for a splash which failure it
 is (`wave`). The alt text comes from the Scene too: what is drawn ("Clawd strolls on the sand",
@@ -473,8 +473,10 @@ is (`wave`). The alt text comes from the Scene too: what is drawn ("Clawd stroll
 - **The kept scene** goes to `$.state` from a `$.clock.after(0)` (a render cannot write), so a fresh
   activation keeps the frame on screen; the hearth clears it (`scene.forget()`). Several desktops
   keep one memory per width (`desktopScenes()`), and only the widest writes the kept copy.
-- **Petting is CSS:** a hover that rests 0.15 s (`HOVER_S`) shows the pet pose and the heart and
-  hides the sparkles and drops. Under the pointer his walk pauses; a moment plays on underneath.
+- **Petting is a second picture:** the heart (`petHeart`) is its own image, the diorama's size, laid
+  over it and revealed by the band's own hover. It carries his walk's keyframes and delays, so on
+  the page's one clock it walks his walk step for step; in a cheer it stands up and right, clear of
+  the sparkle by his claw, and from a nap's walk home it is handed over to its place over him.
 
 ## The hearth (opt-out)
 
@@ -548,7 +550,7 @@ along as Claude works.", or when still "Clawd sits quietly while Claude works."
 | Past `warnAt` | a blue bead slides down, every 8 s at work, 16 s idle | a blue drop; it waits 400 ms while Claude works | Getting full · /compact when you're ready |
 | Near a limit | | | Near the 5h limit · resets 4:57am ("At", "Over" past it) |
 | Idle 3 minutes | eyes closed, a dim z drifts up | eyes close 3 minutes after the Svg appears, a slate z | unchanged |
-| Petted | turns all the way around, winks with arms up and a pixel heart | a hover of 150 ms: a wink, a hop, the pixel heart; asleep, he sleeps on | unchanged |
+| Petted | turns all the way around, winks with arms up and a pixel heart | a pointer on him: the pixel heart beside him, beating softly; asleep, over his head | unchanged |
 
 A nap changes Clawd and not line 3, which keeps the last turn's line, the next todo, or before the
 first turn "Ready when you are". The hearth's words are its readout and Clawd carries the mood, so
@@ -576,6 +578,12 @@ naps, without blinks, taps or hops.
   desktop draws Box as a flex div and Text as a span in a proportional font, so block-character art
   shreds and spaces cannot align words; the words are laid out with flex, measured in pixels. The
   terminal keeps a `Client` per look, which owns its frame clock and draws exact cells.
+- **The desktop draws Clawd as an image, not an interactive frame.** An `isInteractive` Svg is a
+  sandboxed frame that blanks for a frame or two (50 to 100 ms on the Mac app) each time its source
+  changes, and the band changes it with every moment; an image swaps cleanly and still plays its CSS.
+  An image takes no `:hover`, so the pet is a heart picture revealed by the band's own Box hover
+  (`display: none` to `flex`, absolutely placed, inside a keyed Box): no wink, no raised arms, no
+  pause in his walk, which the frame used to give.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
   The todos shown beside a step are held there too, so one hold serves all four views.
@@ -603,7 +611,7 @@ naps, without blinks, taps or hops.
   strip and the ripples are darker than a free choice would make them, in truecolor too. Clawd and
   the words use theme keys, which are the host's to round (see "Known gaps").
 - **The hearth's Svg classes start with `hh-`** in case a host ever draws it inline. The tide's
-  Svg draws only in its sandboxed frame, and a prefix would change every tide source for no gain.
+  Svgs draw only as images, and a prefix would change every tide source for no gain.
 
 ## Known gaps
 
@@ -637,8 +645,9 @@ naps, without blinks, taps or hops.
   work after it, and the hello's for its minute.
 - **The lively hearth's petted turn holds its first frame 500 ms**, since a pet shows between ticks
   and every frame stays a tick. The beach's spin does the same.
-- **A pointer parked on him** pauses his walk, but the next frame opens where `positionAt` reads the
-  unpaused walk, up to about 10 px away. The hover never reaches the plugin.
+- **The desktop heart shows at once.** The band's hover has no delay, so a pointer crossing the
+  picture on its way to the prompt flashes the heart. Its pop plays unseen as its picture loads with
+  his, so on show it beats softly rather than popping. The hover never reaches the plugin.
 - **The narrowest nudge** at 36 to 41 desktop columns (38 and 39 on the terminal) is "86% try
   /compact", without its dot.
 - **The upgrade toast is for `hearth` only**; an older stored `still` gets the motion and no toast.
@@ -718,9 +727,9 @@ naps, without blinks, taps or hops.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
-  the Svg's CSS; films of a pet at every 250 ms of a cheer, the sparkles at every width from 34 to
-  60 at six tides, the one heart, the step home, a turn landing mid-splash, and his feet never on
-  damp sand.
+  the Svg's CSS (and the hover heart's walk against his); films of a pet at every 250 ms of a cheer,
+  the sparkles at every width from 34 to 60 at six tides, the one heart, the step home, a turn
+  landing mid-splash, and his feet never on damp sand.
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
   line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
   moment, the bead, calm, petting and the `hh-` classes.

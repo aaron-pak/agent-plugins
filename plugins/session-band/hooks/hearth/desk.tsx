@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps } from './types'
-import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, HOVER_S, pixelHeart, textPx } from '../clawd'
+import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, pixelHeart, textPx } from '../clawd'
 import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
 import { DIM, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
@@ -74,8 +74,11 @@ export function desk(els: Desk, view: DeskView): RenderElement {
   const { Box, Svg } = els
   const mood = moodOf(view)
   const clawd = (
-    <Box flexShrink={0}>
-      <Svg source={clawdSvg(mood)} alt={altOf(mood)} width={VIEW.width * SCALE} height={VIEW.height * SCALE} isInteractive />
+    <Box key="clawd" position="relative" flexShrink={0}>
+      <Svg source={clawdSvg(mood)} alt={altOf(mood)} width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
+      <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }}>
+        <Svg source={petHeart(mood)} alt="A heart for Clawd" width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
+      </Box>
     </Box>
   )
   const panel = Math.min(view.columns - 14, PANEL_MAX)
@@ -321,7 +324,7 @@ function pill(percent: number | null, width: number, color: string): string {
 
 // ── Clawd, in pixels ───────────────────────────────────────────────────────────
 
-type Eyes = 'open' | 'left' | 'right' | 'closed' | 'wink'
+type Eyes = 'open' | 'left' | 'right' | 'closed'
 type Arms = 'down' | 'up' | 'one-up'
 type Feet = 'both' | 'left' | 'right'
 type Pose = { eyes: Eyes; arms: Arms; feet: Feet }
@@ -352,7 +355,6 @@ type Mood = {
 }
 
 const REST: Pose = { eyes: 'open', arms: 'down', feet: 'both' }
-const PET: Pose = { eyes: 'wink', arms: 'up', feet: 'both' }
 
 // The moment, and nothing finer: every redraw within the same moment gives the same mood.
 function moodOf(view: DeskView): Mood {
@@ -499,14 +501,14 @@ const PARTS: Part[] = [
   { name: 'ra-u', fill: CLAY, rects: [[16, 2, 2, 2], [16, 4, 1, 2]], shows: p => p.arms !== 'down' },
   { name: 'ft-l', fill: CLAY, rects: [[3, 8, 1, 2], [5, 8, 1, 2]], shows: p => p.feet !== 'right' },
   { name: 'ft-r', fill: CLAY, rects: [[13, 8, 1, 2], [15, 8, 1, 2]], shows: p => p.feet !== 'left' },
-  { name: 'el-o', fill: EYE, rects: [[5, 2, 1, 2]], shows: p => p.eyes === 'open' || p.eyes === 'wink' },
+  { name: 'el-o', fill: EYE, rects: [[5, 2, 1, 2]], shows: p => p.eyes === 'open' },
   { name: 'el-l', fill: EYE, rects: [[4, 2, 1, 2]], shows: p => p.eyes === 'left' },
   { name: 'el-r', fill: EYE, rects: [[6, 2, 1, 2]], shows: p => p.eyes === 'right' },
   { name: 'el-c', fill: EYE, rects: [[4, 3.2, 2, 0.8]], shows: p => p.eyes === 'closed' },
   { name: 'er-o', fill: EYE, rects: [[13, 2, 1, 2]], shows: p => p.eyes === 'open' },
   { name: 'er-l', fill: EYE, rects: [[12, 2, 1, 2]], shows: p => p.eyes === 'left' },
   { name: 'er-r', fill: EYE, rects: [[14, 2, 1, 2]], shows: p => p.eyes === 'right' },
-  { name: 'er-c', fill: EYE, rects: [[12, 3.2, 2, 0.8]], shows: p => p.eyes === 'closed' || p.eyes === 'wink' },
+  { name: 'er-c', fill: EYE, rects: [[12, 3.2, 2, 0.8]], shows: p => p.eyes === 'closed' },
 ]
 
 // The body that never changes: head, eye row, body, in viewBox units (a pixel is 1 x 2).
@@ -519,18 +521,6 @@ const BODY: Rect[] = [
 
 function rects(list: Rect[]): string {
   return list.map(([x, y, w, h]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}"/>`).join('')
-}
-
-// Clawd as one pose, drawn whole: the petted Clawd that a hover brings up.
-function still(pose: Pose): string {
-  const byFill = new Map<string, Rect[]>([[CLAY, [...BODY]]])
-  for (const part of PARTS) {
-    if (part.shows(pose)) {
-      byFill.set(part.fill, [...(byFill.get(part.fill) ?? []), ...part.rects])
-    }
-  }
-
-  return [...byFill].map(([fill, list]) => `<g fill="${fill}">${rects(list)}</g>`).join('')
 }
 
 function clawdSvg(mood: Mood): string {
@@ -548,21 +538,9 @@ function clawdSvg(mood: Mood): string {
     const lively = styleOf(mood, rest, false)
     css.push(...lively.keyframes, ...calm.keyframes, ...lively.rules, `@media (prefers-reduced-motion:reduce){${calm.rules.join('')}}`)
   }
-  // Petting him (a hover that rests on him a moment): his moment gives way to a
-  // winking, arms-up Clawd and a heart. The delay is the hover's intent; leaving
-  // takes him back at once. Asleep, as on the beach, he is not woken: his eyes
-  // stay shut, the z keeps drifting, and a heart comes up over his head beside it.
-  const isNap = mood.mode === 'nap'
-  css.push(
-    `.${P}pet{opacity:0;transition:opacity 0s}.${P}mood{transition:opacity 0s}`,
-    `svg:hover .${P}pet{opacity:1;transition:opacity 0s ${HOVER_S}s}` +
-      (isNap ? '' : `svg:hover .${P}mood{opacity:0;transition:opacity 0s ${HOVER_S}s}`),
-  )
-
   // Little things around him: sparkles for a cheer, a z for a nap, a bead of
-  // sweat when the context runs high, and a heart while he is petted. He is
-  // pixels; the sparkles, z and bead are soft, smooth shapes, so they read as
-  // his feelings, and the heart is the terminal's pixel heart, as on the beach.
+  // sweat when the context runs high. He is pixels; the sparkles, z and bead
+  // are soft, smooth shapes, so they read as his feelings.
   const extras: string[] = []
   if (mood.isCheer) {
     extras.push(
@@ -578,19 +556,35 @@ function clawdSvg(mood: Mood): string {
   if (mood.isHigh && mood.mode !== 'nap') {
     extras.push(`<g class="${P}sw" fill="${SKY}" shape-rendering="geometricPrecision">${drop(17, -1.2)}</g>`)
   }
-  // The heart beside his raised claw, or over his sleeping head; on whole pixels, so held still
-  // (reduced motion, /band still) it is as crisp as he is.
-  const [hx, hy] = isNap ? NAP_HEART : PET_HEART
-  const petted =
-    `<g class="${P}pet">${isNap ? '' : `<g class="${P}pop">${still(PET)}</g>`}` +
-    `<g class="${P}ht" fill="${PINK}" shape-rendering="geometricPrecision">${heart(hx, hy)}</g></g>`
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.width} ${VIEW.height}" ` +
     `width="${VIEW.width * SCALE}" height="${VIEW.height * SCALE}" shape-rendering="crispEdges">` +
     `<style>${css.join('')}</style>` +
-    `<g class="${P}mood"><g class="${P}hop"><g fill="${CLAY}">${rects(BODY)}</g>${parts.join('')}</g>${extras.join('')}</g>` +
-    petted +
+    `<g class="${P}hop"><g fill="${CLAY}">${rects(BODY)}</g>${parts.join('')}</g>${extras.join('')}` +
+    `</svg>`
+  )
+}
+
+/**
+ * Petting him on the desktop: a heart beside him, or over his head as he sleeps, drawn over him
+ * while a pointer rests on him. He is an image (an interactive frame blanks for a frame or two each
+ * time its source changes), and an image takes no hover, so the heart is a picture of its own, his
+ * size, that the band shows on hover. Shown, it is already up (its picture loaded with his), so it
+ * beats softly rather than popping; held still under reduced motion and /band still.
+ */
+export function petHeart(mood: Mood): string {
+  const [hx, hy] = mood.mode === 'nap' ? NAP_HEART : PET_HEART
+  const beat =
+    `.${P}ht{transform-box:fill-box;transform-origin:center}` +
+    `@keyframes ${P}beat{0%,50%,100%{transform:scale(1)}20%{transform:scale(1.14)}}`
+  const css = mood.isStill ? '' : `@media (prefers-reduced-motion:no-preference){.${P}ht{animation:${P}beat 1.6s ease-in-out infinite}}`
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.width} ${VIEW.height}" ` +
+    `width="${VIEW.width * SCALE}" height="${VIEW.height * SCALE}">` +
+    `<style>${beat}${css}</style>` +
+    `<g class="${P}ht" fill="${PINK}" shape-rendering="geometricPrecision">${heart(hx, hy)}</g>` +
     `</svg>`
   )
 }
@@ -612,7 +606,7 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
   const lead = tracks.find(track => track.isLoop)?.delay ?? leadOf(tracks.filter(track => !track.isLoop && !track.isHeld))
   const napAt = Math.max(lead, NAP_AFTER_S)
   if (isCalm) {
-    // One pose per moment: a sparkle shown for the cheer, a z once he sleeps, a bead of sweat held, a still heart.
+    // One pose per moment: a sparkle shown for the cheer, a z once he sleeps, a bead of sweat held.
     // (The calm keyframes are always in the stylesheet, so the lively rules use `off` too.)
     keyframes.push(`@keyframes ${P}on{0%,100%{opacity:1}}`, `@keyframes ${P}off{0%,100%{opacity:0}}`)
     rules.push(
@@ -623,9 +617,7 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
         : `.${P}z{opacity:0;transform:none;animation:${P}on 1s step-end ${napAt}s 1 forwards}`,
       // The bead waits for a cheer to end (his claws are up beside it), and asleep he stops sweating (as on the terminal).
       `.${P}sw{opacity:${mood.isCheer ? 0 : 1};transform:none;animation:${calmSweat(mood, napAt)}}`,
-      `.${P}ht{opacity:1;transform:none;animation:none}`,
       `.${P}hop{animation:none}`,
-      `svg:hover .${P}pop,svg:hover .${P}ht{animation:none}`,
     )
 
     return { keyframes, rules }
@@ -648,13 +640,6 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
     // blink (5.4 s); it stops above his claw.
     `@keyframes ${P}sw{0%,${pct(2)}%{opacity:0;transform:translate(0,0)}${pct(2.5)}%{opacity:1;transform:translate(0,0)}` +
       `${pct(4)}%{opacity:1;transform:translate(0,1px)}${pct(4.5)}%,100%{opacity:0;transform:translate(0,1px)}}`,
-    // The heart pops up from a point beside his raised claw, rises, and shrinks back to a point near
-    // the top: at full color throughout, as the sparkles do, since a half-faded pink is a muddy
-    // mauve on the dark page.
-    `@keyframes ${P}ht{0%{opacity:1;transform:translate(0,1px) scale(0)}16%{opacity:1;transform:translate(0,0) scale(1.12)}30%{opacity:1;transform:translate(0,-.4px) scale(1)}72%{opacity:1;transform:translate(0,-2.4px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(0,-3.4px) scale(0)}}`,
-    // Over a sleeping head there is less sky: the heart pops up in its place and only lifts a little.
-    `@keyframes ${P}hn{0%{opacity:1;transform:translate(0,.5px) scale(0)}16%{opacity:1;transform:translate(0,0) scale(1.12)}30%{opacity:1;transform:translate(0,0) scale(1)}72%{opacity:1;transform:translate(0,-.25px) scale(1);animation-timing-function:ease-in}100%{opacity:1;transform:translate(0,-.5px) scale(0)}}`,
-    `@keyframes ${P}pop{0%,40%,100%{transform:translate(0,0)}15%{transform:translate(0,-1px)}}`,
   )
   rules.push(
     `.${P}sp{opacity:0;transform-box:fill-box;transform-origin:center;animation:${P}tw 1.5s ease-out 0.1s 2 both}`,
@@ -662,11 +647,7 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
     // Asleep, the z carries on from the frame he dozed off in (see dozedS): never popping up afresh.
     `.${P}z{opacity:0;transform-box:fill-box;transform-origin:center;animation:${P}zz 3s ease-out ${mood.mode === 'nap' ? -mood.dozedS : napAt}s infinite}`,
     `.${P}sw{opacity:0;transform:none;animation:${P}sw ${period}s ease-in ${round(lead)}s infinite${mood.isDozy ? `,${P}off 1s step-end ${napAt}s 1 forwards` : ''}}`,
-    `.${P}ht{opacity:1;transform-box:fill-box;transform-origin:center}`,
-    // Twice, like his hop: a pointer left resting on him does not keep releasing hearts.
-    `svg:hover .${P}ht{animation:${mood.mode === 'nap' ? `${P}hn` : `${P}ht`} 2s ease-out ${HOVER_S}s 2 both}`,
     mood.isCheer ? `.${P}hop{animation:${P}hop ${CHEER_S}s ease-out 0s 1 none}` : `.${P}hop{animation:none}`,
-    `.${P}pop{transform-box:fill-box;transform-origin:50% 100%}svg:hover .${P}pop{animation:${P}pop .9s ease-out ${HOVER_S}s 2}`,
   )
 
   return { keyframes, rules }
@@ -732,7 +713,7 @@ function heart(x: number, y: number): string {
   return pixelHeart(x, y, 0.5, 0.75)
 }
 
-/** Where the petted heart stands: beside his raised right claw, and over his head (right of center, beside the z) as he naps. */
+/** Where the petted heart stands: up beside his right claw, and over his head (right of center, beside the z) as he naps. */
 const PET_HEART: [number, number] = [18.75, 0.75]
 const NAP_HEART: [number, number] = [12.5, -3.5]
 

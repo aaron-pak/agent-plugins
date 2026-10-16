@@ -1,9 +1,8 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
-import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, HOVER_S, SPIN, pixelHeart } from '../clawd'
+import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, SPIN, pixelHeart } from '../clawd'
 import { BODY, EYE, curled, pose, spin } from './band'
-import type { Feet } from '../clawd'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
 import { SPLASH_MS, SPLASH_RUSH_MS } from '../facts'
@@ -162,7 +161,12 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene = sceneO
 
   return (
     <Box flexDirection="row" alignItems="center">
-      <Svg source={diorama(now)} alt={altFor(now, props.percent !== null)} width={now.width * U} height={FRAME_PX} isInteractive />
+      <Box key="beach" position="relative" flexShrink={0}>
+        <Svg source={diorama(now)} alt={altFor(now, props.percent !== null)} width={now.width * U} height={FRAME_PX} />
+        <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }}>
+          <Svg source={petHeart(now)} alt="A heart for Clawd" width={now.width * U} height={FRAME_PX} />
+        </Box>
+      </Box>
       <Box flexDirection="column" marginLeft={2} flexGrow={1} flexShrink={1} minWidth={0}>
         {lines.map(line => (
           <Text wrap="truncate-end">
@@ -797,29 +801,7 @@ const POSES: Record<string, Pose> = {
   walkR2: { eyes: 'right', arms: 'down', feet: 'right' },
   up: { eyes: 'open', arms: 'up', feet: 'both' },
   splash: { eyes: 'closed', arms: 'up', feet: 'both' },
-  pet: { eyes: 'wink', arms: 'up', feet: 'both' },
   wave: { eyes: 'open', arms: 'one-up', feet: 'both' },
-}
-
-// Petted on his walk home to bed, he keeps stepping, arms up and winking: one petted pose for each
-// set of feet the walk puts down, each shown on the beats that put them down (the walk's own
-// timings, `runs`), so he scuttles on with his legs going rather than sliding along frozen. `rest`
-// is the feet the still frame shows. A walk that never lifts a foot gets the one petted pose. (On
-// the beach's own walks a pet stops him instead: see diorama.)
-function petPoses(tag: string, runs: Array<{ name: string; length: number; beats: Beat[]; use: string }>, rest: Feet, base: string[], motion: string[]): string {
-  const feetOf = (name: string): Feet => POSES[name]?.feet ?? 'both'
-  const feet = (['both', 'left', 'right'] as const).filter(f => f === rest || runs.some(run => run.beats.some(beat => feetOf(beat.pose) === f)))
-  if (feet.length === 1) return frame('pet')
-  base.push(`.${tag}{opacity:0}.${tag}-${rest}{opacity:1}`)
-  for (const f of feet) {
-    const uses = runs.map(run => {
-      motion.push(keyframes(`${run.name}-${f}`, run.length, run.beats, beat => `opacity:${feetOf(beat.pose) === f ? 1 : 0}`))
-      return `${run.name}-${f} ${run.use}`
-    })
-    motion.push(`.${tag}-${f}{animation:${uses.join(',')}}`)
-  }
-
-  return feet.map(f => `<g class="${tag} ${tag}-${f}">${pixels(pose({ eyes: 'wink', arms: 'up', feet: f }))}</g>`).join('')
 }
 
 function frame(name: string): string {
@@ -943,6 +925,67 @@ function layout(scene: Scene): { shore: number; start: number; roam: number; spa
   return { shore, start, roam, span }
 }
 
+/**
+ * Petting him on the desktop: a heart beside him, drawn over the diorama while a pointer rests on
+ * the beach. The diorama is an image (an interactive frame blanks for a frame or two each time its
+ * source changes), and an image takes no hover, so the heart is a picture of its own, the
+ * diorama's size, that the band shows on hover. Both images run on the page's one clock from the
+ * same render, so the heart walks his walk step for step: the loop and the lead to it, held where a
+ * still frame holds him, handed over from his walk home to its place over him as he curls up.
+ */
+export function petHeart(scene: Scene): string {
+  const base = ['.heart{transform-box:fill-box;transform-origin:center}']
+  const motion: string[] = []
+  let drawn: string
+  if (scene.mood === 'nap') {
+    const { beats, intro } = napLead(scene.from ?? 0)
+    const isWalking = !scene.still && scene.curled !== true
+    let walking = ''
+    if (isWalking) {
+      // The heart rides his walk home beside his claw, and is handed over where it stood as he curls
+      // up, drifting over him to its place above his head: one heart all the while.
+      const glide = 0.7
+      const pop = round(intro + glide)
+      const [dx, dy] = [round(WALK_HEART[0] - NAP_HEART[0]), round(WALK_HEART[1] - NAP_HEART[1])]
+      base.push('.sleepy{opacity:0}.napheart{transform-box:fill-box;transform-origin:center}')
+      motion.push(
+        `.sleepy{animation:hide ${intro}s step-end 1 both}@keyframes hide{0%{opacity:1}100%{opacity:0}}`,
+        `.homeward{animation:homeward ${intro}s step-end 1 both}`,
+        keyframes('homeward', intro, beats, beat => `transform:translateX(${beat.x}px)`),
+        `.napheart{animation:napheart ${pop}s linear 1 both}@keyframes napheart{0%{transform:translate(${dx}px,${dy}px) scale(0);animation-timing-function:step-end}${pct(intro / pop)}{transform:translate(${dx}px,${dy}px) scale(1);animation-timing-function:ease-in-out}100%{transform:translate(0,0) scale(1)}}`,
+      )
+      walking = `<g class="sleepy"><g class="homeward">${heart(...WALK_HEART)}</g></g>`
+    }
+    drawn = `<g transform="translate(${HOME} ${TOP})">${walking}<g class="napheart">${heart(...NAP_HEART)}</g></g>`
+  } else {
+    const { start, roam } = layout(scene)
+    const { beats, period } = choreography(scene.mood, roam)
+    const lead = scene.still ? { beats: [], length: 0, dx: 0 } : leadOf(scene)
+    const delay = round(lead.length - (scene.phase ?? 0))
+    const walks = [`walk ${period}s step-end ${delay}s infinite both`]
+    if (lead.dx !== 0) {
+      walks.push(`lead ${lead.length}s step-end 0s 1 none`)
+      motion.push(keyframes('lead', lead.length, lead.beats, beat => `transform:translateX(${beat.x}px)`))
+    }
+    motion.push(`.walk{animation:${walks.join(',')}}`, keyframes('walk', period, beats, beat => `transform:translateX(${beat.x}px)`))
+    const stood = scene.still ? stillDx(scene) : 0
+    if (stood !== 0) base.push(`.walk{transform:translateX(${stood}px)}`)
+    // A cheer's sparkle stands where the heart would: the heart goes up and over it.
+    const at = scene.moment === 'cheer' ? CHEER_HEART : WALK_HEART
+    drawn = `<g transform="translate(${start} ${TOP})"><g class="walk">${heart(...at)}</g></g>`
+  }
+  // A slow, soft beat: a heart shown on hover is already up (the pop it was drawn with played out
+  // unseen), so it beats rather than sitting still. Never faded, as every heart here.
+  motion.push('.heart{animation:beat 1.6s ease-in-out infinite}@keyframes beat{0%,50%,100%{transform:scale(1)}20%{transform:scale(1.14)}}')
+  const css = scene.still ? base.join('') : `${base.join('')}@media (prefers-reduced-motion:no-preference){${motion.join('')}}`
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-PAD_PX} ${scene.width * U} ${FRAME_PX}" width="${scene.width * U}" height="${FRAME_PX}">`,
+    `<style>${css}</style>`,
+    `<g transform="scale(${U})">${drawn}</g></svg>`,
+  ].join('')
+}
+
 function diorama(scene: Scene): string {
   const { mood, still } = scene
   const { start, roam } = layout(scene)
@@ -977,69 +1020,40 @@ function diorama(scene: Scene): string {
     // pose shows only while the moment's own animation does, then the loop has him.
     base.push(`.pose{opacity:0}.p-${held ?? first}{opacity:1}`)
     if (held !== null) motion.push(`.p-${held}{opacity:0}.p-${first}{opacity:1}`)
-    // Petted, he stops where he stands (see the hover rules below): his loop holds while the pointer
-    // rests on him, and so does his scuttle back to it; a moment (a cheer, a splash, a wake, a hello)
-    // plays on underneath, so it ends when the frame's clock says, as the sea and the words do.
-    const leadOnHover = moment === null ? 'paused' : 'running'
     // Where he stands: the lead's place and walk (listed last, it wins while it plays), then the loop's.
     const walks = [`walk ${period}s step-end ${delay}s infinite both`]
-    const walksOnHover = ['paused']
     if (lead.dx !== 0) {
       walks.push(`lead ${lead.length}s step-end 0s 1 none`)
-      walksOnHover.push(leadOnHover)
       motion.push(keyframes('lead', lead.length, lead.beats, beat => `transform:translateX(${beat.x}px)`))
     }
-    motion.push(`.walk{animation:${walks.join(',')}}svg:hover .walk{animation-play-state:${walksOnHover.join(',')}}`)
+    motion.push(`.walk{animation:${walks.join(',')}}`)
     motion.push(keyframes('walk', period, beats, beat => `transform:translateX(${beat.x}px)`))
     for (const name of [...loopNames, ...leadNames]) {
       const runs: string[] = []
-      const runsOnHover: string[] = []
       if (loopNames.includes(name)) {
         runs.push(`v-${name} ${period}s step-end ${delay}s infinite both`)
-        runsOnHover.push('paused')
         motion.push(keyframes(`v-${name}`, period, beats, beat => `opacity:${beat.pose === name ? 1 : 0}`))
       }
       if (lead.length > 0) {
         // Listed last, the lead wins while it plays; it leaves no fill behind, so the loop
         // takes over on the very same frame and the beach is never empty at the handoff.
         runs.push(`m-${name} ${lead.length}s step-end 0s 1 none`)
-        runsOnHover.push(leadOnHover)
         motion.push(keyframes(`m-${name}`, lead.length, lead.beats, beat => `opacity:${beat.pose === name ? 1 : 0}`))
       }
-      motion.push(`.p-${name}{animation:${runs.join(',')}}svg:hover .p-${name}{animation-play-state:${runsOnHover.join(',')}}`)
+      motion.push(`.p-${name}{animation:${runs.join(',')}}`)
     }
     const poses = [...loopNames, ...leadNames].map(name => `<g class="pose p-${name}">${frame(name)}</g>`).join('')
-    // Petted, he stops where he stands, all four feet down, arms up and winking: his walk and his
-    // poses hold while the pointer rests on him, and carry on from that very step when it goes, with
-    // the sea's front when it waits on his walk home (see glideWait). A moment plays on to its end
-    // underneath (its sparkles too), so it never outlasts the frame the desktop draws for it. The sea
-    // itself laps and rolls on. (A pointer crossing the band holds him no longer than it takes to cross.)
-    const petting = `<g class="pet">${frame('pet')}${heart(...WALK_HEART)}</g>`
-    if (moment === null) motion.push('svg:hover .glide{animation-play-state:paused}')
     // The cheer's sparkles stand where he cheers. A still frame holds him (and them) where he stood.
     if (isCheer && lead.dx !== 0) motion.push(`.at{transform:translateX(${lead.dx}px)}`)
     const stood = still ? stillDx(scene) : 0
     if (stood !== 0) base.push(`.walk${isCheer ? ',.at' : ''}{transform:translateX(${stood}px)}`)
     const spark = isCheer ? `<g class="at">${sparkles(INTRO.cheer, base, motion)}</g>` : ''
-    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd"><g class="poses">${poses}</g>${petting}</g>${spark}</g>`)
+    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd">${poses}</g>${spark}</g>`)
   }
 
   parts.push(spray)
 
   base.push('.clawd{shape-rendering:crispEdges}')
-  // Petting: arms up, a wink and a heart, once the pointer rests on him a moment (a pointer on its
-  // way across the band to the prompt never flashes it). The cheer's sparkles and a splash's drops
-  // step aside, so the heart never lands on one. The pointer gone, he is back at once.
-  base.push(
-    `.pet{visibility:hidden}.poses,.spark,.spray{visibility:visible}.pet,.poses,.spark,.spray{transition:visibility 0s}` +
-      `svg:hover .pet{visibility:visible;transition:visibility 0s ${HOVER_S}s}` +
-      `svg:hover .poses,svg:hover .spark,svg:hover .spray{visibility:hidden;transition:visibility 0s ${HOVER_S}s}`,
-  )
-  // The heart pops up from a point at full color, a little past its size, and settles with a small
-  // rise: never faded in, since a half-faded pink is a muddy mauve on the dark page.
-  base.push('.heart{transform-box:fill-box;transform-origin:center}')
-  motion.push(`svg:hover .heart{animation:heart 1.4s ease-out ${HOVER_S}s 1 both}`)
-  motion.push('@keyframes heart{0%{transform:translateY(1.5px) scale(0)}20%{transform:translateY(-.6px) scale(1.15)}38%{transform:translateY(-.3px) scale(1)}100%{transform:translateY(0) scale(1)}}')
 
   const css = still ? base.join('') : `${base.join('')}@media (prefers-reduced-motion:no-preference){${motion.join('')}}`
 
@@ -1175,7 +1189,6 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     return `<circle class="drop drop${i}" cx="${round(by + i * 1.5)}" cy="${GROUND - 1}" r=".95" fill="${i % 2 === 0 ? SEA : DROP}"/>`
   })
 
-  // Their own group, so a pet sets them aside with the sparkles (see diorama): the heart pops where they fly.
   return { water, spray: `<g class="spray">${drops.join('')}</g>` }
 }
 
@@ -1276,19 +1289,9 @@ function nap(isMoving: boolean, from: number, isCurled: boolean, zsInto: number,
   let settling = ''
   if (isMoving && !isCurled) {
     // A person who prefers reduced motion sees him curled up from the start.
-    base.push('.sleepy{opacity:0}.napheart{transform-box:fill-box;transform-origin:center}')
+    base.push('.sleepy{opacity:0}')
     motion.push(`.sleepy{animation:hide ${intro}s step-end 1 both}.curl{animation:reveal ${intro}s step-end 1 both}`)
     motion.push('@keyframes hide{0%{opacity:1}100%{opacity:0}}@keyframes reveal{0%{opacity:0}100%{opacity:1}}')
-    // The sleeper's heart, for a pointer resting on him as he curls up: the heart he had on the walk
-    // home is handed over where it stood, beside his raised claw, and drifts up over him to its place
-    // above his head as he lies down; one heart all the while, never a beat without one. (A pointer
-    // that comes later finds it in its place, where it pops up as any heart does.)
-    const glide = 0.7
-    const pop = round(intro + glide)
-    const [dx, dy] = [round(WALK_HEART[0] - NAP_HEART[0]), round(WALK_HEART[1] - NAP_HEART[1])]
-    motion.push(
-      `.napheart{animation:napheart ${pop}s linear 1 both}@keyframes napheart{0%{transform:translate(${dx}px,${dy}px) scale(0);animation-timing-function:step-end}${pct(intro / pop)}{transform:translate(${dx}px,${dy}px) scale(1);animation-timing-function:ease-in-out}100%{transform:translate(0,0) scale(1)}}`,
-    )
     motion.push(`.homeward{animation:homeward ${intro}s step-end 1 both}`)
     motion.push(keyframes('homeward', intro, beats, beat => `transform:translateX(${beat.x}px)`))
     const names = [...new Set(beats.map(beat => beat.pose))]
@@ -1296,15 +1299,11 @@ function nap(isMoving: boolean, from: number, isCurled: boolean, zsInto: number,
       motion.push(`.n-${name}{animation:n-${name} ${intro}s step-end 1 both}`)
       motion.push(keyframes(`n-${name}`, intro, beats, beat => `opacity:${beat.pose === name ? 1 : 0}`))
     }
-    // Petted on his way home, he answers with a wink, his arms up and a heart, but keeps going: he
-    // is off to bed, and his curling up, the heart he hands the sleeper and his z's keep their time.
     const poses = names.map(name => `<g class="n-${name}">${frame(name)}</g>`).join('')
-    const petting = petPoses('nf', [{ name: 'nf', length: intro, beats, use: `${intro}s step-end 1 both` }], 'both', base, motion)
-    settling = `<g class="clawd sleepy"><g class="homeward"><g class="poses">${poses}</g><g class="pet">${petting}${heart(...WALK_HEART)}</g></g></g>`
+    settling = `<g class="clawd sleepy"><g class="homeward">${poses}</g></g>`
   }
 
-  // Petted while asleep: no waking him, just a heart, once he has curled up.
-  return `<g transform="translate(${HOME} ${TOP})">${settling}<g class="clawd curl">${pixels(curled())}</g><g class="pet"><g class="napheart">${heart(...NAP_HEART)}</g></g></g>${zs}`
+  return `<g transform="translate(${HOME} ${TOP})">${settling}<g class="clawd curl">${pixels(curled())}</g></g>${zs}`
 }
 
 // A nap's lead: the walk home from `from` pixels out, then the eyes-shut stand, in the same beats
@@ -1331,12 +1330,13 @@ function napLead(from: number): { beats: Beat[]; intro: number } {
 }
 
 /**
- * Where a petted Clawd's heart stands, from his top left: beside his raised claw, and over him as he
- * sleeps. In whole screen pixels (thirds of a unit), so its edges fall on the pixel grid. Its point
- * stands where the old, flatter heart's did, so it is as clear of his head and claw as ever.
+ * Where a petted Clawd's heart stands, from his top left: up beside his right claw, and over him as
+ * he sleeps. In whole screen pixels (thirds of a unit), so its edges fall on the pixel grid.
  */
 const WALK_HEART: [number, number] = [56 / U, -2 / U]
 const NAP_HEART: [number, number] = [11 / U, -11 / U]
+/** In a cheer: up and to the right of WALK_HEART, clear of the sparkle beside his claw. */
+const CHEER_HEART: [number, number] = [62 / U, -11 / U]
 
 // A small z drawn as a soft stroke, so it stays smooth while it drifts.
 function doze(x: number, y: number, size: number, i: number): string {

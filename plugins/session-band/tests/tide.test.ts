@@ -177,7 +177,7 @@ function find(node: unknown, type: string): Node[] {
   return [...(el.type === type ? [el] : []), ...(el.children ?? []).flatMap(child => find(child, type))]
 }
 
-type View = { scene: string[]; words: string[]; rows: Node[]; tree: RenderElement; svg: { source: string; alt: string } | null }
+type View = { scene: string[]; words: string[]; rows: Node[]; tree: RenderElement; svg: { source: string; alt: string } | null; heart: string }
 
 async function band($: Engine, surface: Surface, props = BAND) {
   const ui = await $.ui.mount({ plugin: 'session-band', surface, component: 'AbovePrompt', props })
@@ -190,7 +190,7 @@ async function band($: Engine, surface: Surface, props = BAND) {
       const rows = rowNodes(tree)
       const all = rows.map(textOf)
 
-      return { scene: all.slice(0, 3), words: all.slice(3), rows, tree, svg: null }
+      return { scene: all.slice(0, 3), words: all.slice(3), rows, tree, svg: null, heart: '' }
     }
     const tree = await ui.drawn()
     const svg = find(tree, 'Svg')[0]
@@ -202,6 +202,8 @@ async function band($: Engine, surface: Surface, props = BAND) {
       rows,
       tree,
       svg: svg === undefined ? null : { source: String(svg.props?.source), alt: String(svg.props?.alt) },
+      // The heart the band reveals over the beach when a pointer rests on it.
+      heart: String(find(tree, 'Svg').find(one => one.props?.alt === 'A heart for Clawd')?.props?.source ?? ''),
     }
   }
   // Time on the band's own frame clock (the terminal's), a tick at a time.
@@ -268,7 +270,8 @@ for (const surface of SURFACES) {
       expect(svg?.source).toContain('crispEdges')
       expect(svg?.alt).toContain('The tide is partway in.')
       expect(svg?.source).toContain('data-tide="40"')
-      expect(find(tree, 'Svg')[0]?.props?.isInteractive).toBe(true)
+      // An image, never an interactive frame, which blanks for a frame or two as its source changes.
+      expect(find(tree, 'Svg').map(svg => svg.props?.isInteractive === true)).toEqual([false, false])
       expect(find(tree, 'Client')).toHaveLength(0)
       expect(words.join('')).not.toMatch(/[▀-▟]/u)
     }
@@ -404,13 +407,13 @@ for (const surface of SURFACES) {
       expect((await look()).scene[0]).toContain(HEAD)
     } else {
       expect(done.svg?.source).toContain('m-spin6')
-      // Hovering for a heart while he cheers, his sparkles step aside, so the heart never lands on one.
       expect(done.svg?.source).toContain('class="spark"')
-      expect(done.svg?.source).toContain('svg:hover .poses,svg:hover .spark,svg:hover .spray{visibility:hidden;transition:visibility 0s 0.15s}')
       // The sparkles pop up from a point and shrink back to one, never fading (a half-faded clay
       // star is a muddy smudge on the dark page).
       expect(done.svg?.source).toMatch(/@keyframes star0\{[^@]*100%\{transform:scale\(0\)\}\}/)
-      expect(done.svg?.source).not.toMatch(/@keyframes (spark|star\d)\{[^@]*opacity/)
+      const twinkles = [...(done.svg?.source ?? '').matchAll(/@keyframes (?:spark|star\d)\{(?:[^{}]*\{[^}]*\})*\}/gu)].map(m => m[0])
+      expect(twinkles.length).toBeGreaterThan(0)
+      for (const twinkle of twinkles) expect(twinkle).not.toContain('opacity')
       // A redraw while he spins hands the frame the same source, so the spin never restarts.
       await clock.advance(1_000)
       await $.session.measure(measured(42, 0.4))
@@ -2008,22 +2011,10 @@ test('desktop: glancing eyes stay inside his head, on clay, in every pose', asyn
   }
 })
 
-// What a pointer resting on the picture does to each animation of an element: the play-state list
-// the last hover rule naming one of its classes gives (a single value stands for every animation).
-function hoverStates(motion: string, classes: readonly string[]): string[] {
-  let states: string[] = []
-  for (const rule of motion.matchAll(/([^{}]+)\{animation-play-state:([^}]*)\}/gu)) {
-    const selectors = (rule[1] ?? '').split(',').map(one => one.trim())
-    if (selectors.some(one => classes.some(name => one === `svg:hover .${name}`))) states = (rule[2] ?? '').split(',')
-  }
-  return states
-}
-
-// The desktop's CSS, seeked: what Clawd's poses and his walk show `t` seconds after the frame opened,
-// with the pointer resting on him from `hover[0]` to `hover[1]` (what a browser does with each
-// animation's play state: a paused one stops its clock). Each element's animations are listed in
-// order, and the last that has an effect wins (a lead with no fill has none once it is over).
-type Run = { name: string; period: number; wait: number; count: number; fill: string; paused: boolean }
+// The desktop's CSS, seeked: what Clawd's poses and his walk show `t` seconds after the frame opened.
+// Each element's animations are listed in order, and the last that has an effect wins (a lead with
+// no fill has none once it is over).
+type Run = { name: string; period: number; wait: number; count: number; fill: string }
 type Parsed = { frames: Map<string, Array<[number, string]>>; walk: Run[]; poses: Array<{ name: string; runs: Run[]; still: string }> }
 const PARSED = new Map<string, Parsed>()
 function parseDesk(source: string): Parsed {
@@ -2036,11 +2027,9 @@ function parseDesk(source: string): Parsed {
   }
   const runsOf = (classes: readonly string[]): Run[] => {
     const list = new RegExp(`(?:^|\\})\\.${classes[0]}\\{animation:([^}]*)\\}`, 'u').exec(motion)?.[1]
-    const states = hoverStates(motion, classes)
-    return (list ?? '').split(',').filter(entry => entry.trim() !== '').map((entry, i) => {
+    return (list ?? '').split(',').filter(entry => entry.trim() !== '').map(entry => {
       const [name = '', length = '', , delay = '', count = '', fill = ''] = entry.trim().split(' ')
-      const paused = (states[i % Math.max(1, states.length)] ?? 'running') === 'paused'
-      return { name, period: Number(length.replace('s', '')), wait: Number(delay.replace('s', '')), count: count === 'infinite' ? Infinity : Number(count), fill, paused }
+      return { name, period: Number(length.replace('s', '')), wait: Number(delay.replace('s', '')), count: count === 'infinite' ? Infinity : Number(count), fill }
     })
   }
   const names = [...new Set([...source.matchAll(/<g class="pose p-([\w-]+)">/gu)].map(m => m[1] ?? ''))]
@@ -2052,13 +2041,12 @@ function parseDesk(source: string): Parsed {
   PARSED.set(source, parsed)
   return parsed
 }
-function seekDesk(source: string, t: number, hover: readonly [number, number] | null): { pose: string; x: number } {
+function seekDesk(source: string, t: number): { pose: string; x: number } {
   const { frames, walk, poses } = parseDesk(source)
   const valueOf = (runs: readonly Run[], pattern: RegExp): string | null => {
     let value: string | null = null
     for (const run of runs) {
-      const clock = run.paused && hover !== null ? t - Math.max(0, Math.min(t, hover[1]) - hover[0]) : t
-      const local = clock - run.wait
+      const local = t - run.wait
       const stops = frames.get(run.name) ?? []
       const at = (fraction: number) => {
         let found = stops[0]?.[1] ?? ''
@@ -2146,105 +2134,72 @@ for (const isNamed of [false, true]) {
   })
 }
 
-test('desktop: petted mid-walk he stops where he stands, all four feet down, and walks on from that very step when the pointer goes', async ($, on) => {
+// The pet on the desktop: Clawd is an image (an interactive frame blanks as its source changes), so a
+// pointer resting on the beach reveals a second picture, the heart, laid over it. Both load in the
+// same render and run on the page's one clock, so the heart's walk must be his walk, step for step:
+// the loop, the lead into it, and a cheer's or a splash's.
+test('desktop: the heart a pet reveals walks his walk step for step, in his loops and through a cheer or a splash', { timeoutMs: 60_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($)
-  await turn($, clock)
-  for (const props of [BAND, { ...BAND, isWorking: true }]) {
-    const { ui, look } = await band($, 'desktop', props)
-    const source = (await look()).svg?.source ?? ''
-    expect(source).toMatch(/@keyframes v-walk[LR][12]\{/u)
-    const motion = /@media \(prefers-reduced-motion:no-preference\)\{(.*)\}<\/style>/u.exec(source)?.[1] ?? ''
-    // His place, his pose and the sea's front (which waits on his walk) all hold together, so the
-    // walk picks up in step; only where motion plays at all.
-    const poses = [...source.matchAll(/<g class="pose (p-[\w-]+)">/gu)].map(m => m[1] ?? '')
-    const held = [hoverStates(motion, ['walk']), ...poses.map(name => hoverStates(motion, [name, 'pose'])), hoverStates(motion, ['glide'])]
-    expect(held.map(states => states.length > 0 && states.every(state => state === 'paused'))).toEqual(held.map(() => true))
-    // A pointer resting on him a few seconds: he walks on from the very step he stopped on.
-    const hover = [1, 3.5] as const
-    const off: string[] = []
-    for (let t = 3.5; t < 14; t += 0.05) {
-      const [petted, alone] = [seekDesk(source, t, hover), seekDesk(source, t - 2.5, null)]
-      if (petted.pose !== alone.pose || petted.x !== alone.x) off.push(`${t.toFixed(2)}: ${petted.pose} ${petted.x} against ${alone.pose} ${alone.x}`)
-    }
-    expect(off.slice(0, 4)).toEqual([])
-    // The sea itself laps and rolls on, and the heart pops up as before.
-    expect(['lap', 'roll', 'roll2', 'surge', 'heart'].filter(name => hoverStates(motion, [name]).length > 0)).toEqual([])
-    // One petted pose, standing on all four feet: never a petted pose that steps or slides along.
-    const pet = /<g class="pet">(.*?)<g class="heart"/u.exec(source)?.[1] ?? ''
-    expect(pet).not.toContain('<g class=')
-    expect(source).not.toMatch(/pf-(left|right)|@keyframes [vm]f-/u)
-    await ui.unmount()
-  }
-  // Calm (/band still): nothing walks, nothing to hold, one petted pose as before.
-  await run($, 'band', 'still')
-  const calm = await band($, 'desktop')
-  const still = (await calm.look()).svg?.source ?? ''
-  expect(still).not.toContain('animation-play-state')
-  expect(still).toContain('<g class="pet">')
-  await calm.ui.unmount()
-})
-
-// A pointer resting on Clawd for 2.5 s as a moment plays (a cheer, a splash): the moment plays on
-// underneath the pet and ends when the frame's clock says, as the sea, the sparkles and the words
-// do; only his idle loop after it holds. Pausing the moment too would leave a cheer under a 2.5 s pet
-// to play out late, or cut it off when the next frame came on time.
-test('desktop: a pet during a cheer or a splash never holds the moment back: it plays on underneath and ends on time; only the loop after it waits', { timeoutMs: 60_000 }, async ($, on) => {
-  const { clock } = world(on)
-  await start($)
+  const frames: Array<{ label: string; source: string; heart: string }> = []
   const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
-  const frames: Array<{ moment: string; source: string }> = []
   await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
   await ui.redraw({ ...BAND, isWorking: true })
   await clock.advance(3_000)
   await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
-  frames.push({ moment: 'splash', source: (await look()).svg?.source ?? '' })
+  frames.push({ label: 'splash', ...(await seen()) })
   await clock.advance(6_000)
+  frames.push({ label: 'work', ...(await seen()) })
   await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't1', reason: 'answer' })
   await ui.redraw(BAND)
-  frames.push({ moment: 'cheer', source: (await look()).svg?.source ?? '' })
-  for (const { moment, source } of frames) {
-    expect([moment, /class="(surge|at)"/u.test(source)]).toEqual([moment, true])
-    const motion = /@media \(prefers-reduced-motion:no-preference\)\{(.*)\}<\/style>/u.exec(source)?.[1] ?? ''
-    const lead = Number(/m-[\w-]+ ([\d.]+)s step-end 0s 1 none/u.exec(motion)?.[1] ?? NaN)
-    expect([moment, lead > 2]).toEqual([moment, true])
-    // Petted from the frame's first moment for 2.5 s: as the pointer goes, the moment is just where it
-    // would be with no pet at all, to its very end.
-    const hover = [0, 2.5] as const
+  frames.push({ label: 'cheer', ...(await seen()) })
+  await clock.advance(20_000)
+  await ui.redraw(BAND)
+  frames.push({ label: 'idle', ...(await seen()) })
+  async function seen() {
+    const view = await look()
+    return { source: view.svg?.source ?? '', heart: view.heart }
+  }
+  for (const { label, source, heart } of frames) {
+    expect([label, heart]).toEqual([label, expect.stringMatching(/^<svg /u)])
+    expect([label, /@keyframes walk\{/u.test(heart)]).toEqual([label, true])
     const off: string[] = []
-    for (let t = 2.5; t < lead; t += 0.02) {
-      const [petted, alone] = [seekDesk(source, t, hover), seekDesk(source, t, null)]
-      if (petted.pose !== alone.pose || petted.x !== alone.x) off.push(`${moment} ${t.toFixed(2)}: ${petted.pose} ${petted.x} against ${alone.pose} ${alone.x}`)
+    for (let t = 0; t < 16; t += 0.05) {
+      const [his, its] = [seekDesk(source, t).x, seekDesk(heart, t).x]
+      if (his !== its) off.push(`${label} ${t.toFixed(2)}: ${its} against his ${his}`)
     }
     expect(off.slice(0, 4)).toEqual([])
-    // Then his loop takes up where it stood when the pointer came: its first step, 2.5 s late.
-    for (let t = lead + 0.01; t < lead + 8; t += 0.05) {
-      const [petted, alone] = [seekDesk(source, t, hover), seekDesk(source, Math.max(lead + 0.001, t - 2.5), null)]
-      if (petted.pose !== alone.pose || petted.x !== alone.x) off.push(`${moment} loop ${t.toFixed(2)}: ${petted.pose} ${petted.x} against ${alone.pose} ${alone.x}`)
-    }
-    expect(off.slice(0, 4)).toEqual([])
-    // The cheer's sparkles and the sea's front play on with it.
-    expect([moment, hoverStates(motion, ['star0', 'star']), hoverStates(motion, ['glide'])]).toEqual([moment, [], []])
+  }
+  // The same view box, so the two pictures lie one on the other.
+  for (const { label, source, heart } of frames) {
+    expect([label, /viewBox="[^"]+"/u.exec(heart)?.[0]]).toEqual([label, /viewBox="[^"]+"/u.exec(source)?.[0]])
   }
   await ui.unmount()
 })
 
-test('desktop: resting the pointer on Clawd shows a heart; motion only where no one asked for less; no script', async ($, on) => {
+test('desktop: resting the pointer on the beach reveals a heart over it; motion only where no one asked for less; no script', async ($, on) => {
   world(on)
   await start($)
   const { ui, look } = await band($, 'desktop')
-  const source = (await look()).svg?.source ?? ''
-  const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
+  const { tree, svg, heart } = await look()
   const motion = '@media (prefers-reduced-motion:no-preference){'
 
-  // Only once the pointer rests on him a moment, as on the hearth: one crossing the band never flashes it.
-  expect(source).toContain('svg:hover .pet{visibility:visible;transition:visibility 0s 0.15s}')
-  expect(source).toContain('svg:hover .heart{animation:heart 1.4s ease-out 0.15s 1 both}')
-  expect(css).toContain(motion)
-  // Outside the motion block nothing animates: that is what a person who prefers reduced motion sees.
-  expect(css.slice(0, css.indexOf(motion))).not.toContain('animation')
-  expect(source).not.toMatch(/<script|on[a-z]+=/i)
-  expect(source.length).toBeLessThan(131_072)
+  // Laid over the beach (absolute, so showing it moves nothing), hidden until the band's own hover.
+  const reveal = find(tree, 'Box').find(box => box.props?.display === 'none')
+  expect(reveal?.props?.position).toBe('absolute')
+  // The drawn tree carries a Box's hover beside its props.
+  expect((reveal as { hover?: unknown } | undefined)?.hover).toEqual({ display: 'flex' })
+  expect(find(reveal, 'Svg')[0]?.props?.alt).toBe('A heart for Clawd')
+  for (const source of [svg?.source ?? '', heart]) {
+    const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
+    expect(css).toContain(motion)
+    // Outside the motion block nothing animates: that is what a person who prefers reduced motion sees.
+    expect(css.slice(0, css.indexOf(motion))).not.toContain('animation')
+    expect(source).not.toMatch(/<script|on[a-z]+=|:hover/i)
+    expect(source.length).toBeLessThan(131_072)
+  }
+  // Shown, the heart is already up (its picture loaded with the beach), so it beats softly.
+  expect(heart).toContain('.heart{animation:beat 1.6s ease-in-out infinite}')
 
   await ui.unmount()
 })
@@ -2478,7 +2433,7 @@ test('desktop: a narrow beach keeps the /compact nudge, giving up "context" and 
   }
 })
 
-test('desktop: he dozes off where he stood and walks home to the shell; the heart waits until he has curled up', async ($, on) => {
+test('desktop: he dozes off where he stood and walks home to the shell; a pet\'s heart rides home with him and settles over him as he curls up', async ($, on) => {
   const { clock } = world(on)
   await start($)
   await turn($, clock)
@@ -2497,33 +2452,27 @@ test('desktop: he dozes off where he stood and walks home to the shell; the hear
   expect(steps[0]).toBeGreaterThan(0)
   expect(steps.at(-1)).toBe(0)
   steps.slice(1).forEach((x, i) => expect((steps[i] ?? 0) - x).toBeLessThanOrEqual(1))
-  const home = (source: string): string => source.slice(source.indexOf('<g class="clawd sleepy">'), source.indexOf('<g class="clawd curl">'))
-  // The walk, a moment standing with his eyes shut, then the curl; the sleeper's heart and the z's
-  // wait for it. For a pointer resting on him, the heart he had on the walk home is handed over
-  // where it stood, beside his raised claw, the very moment he curls up, and drifts up to its place
-  // above his head: one heart all the while, never a beat without one and never a second one.
+  // The walk, a moment standing with his eyes shut, then the curl; the z's wait for it.
   const intro = Number(/\.homeward\{animation:homeward ([\d.]+)s/.exec(nap)?.[1])
   expect(nap).toContain(`.curl{animation:reveal ${intro}s`)
-  const handoff = /\.napheart\{animation:napheart ([\d.]+)s linear 1 both\}@keyframes napheart\{0%\{transform:translate\(([-\d.]+)px,([-\d.]+)px\) scale\(0\);animation-timing-function:step-end\}([\d.]+)%\{transform:translate\(\2px,\3px\) scale\(1\);animation-timing-function:ease-in-out\}100%\{transform:translate\(0,0\) scale\(1\)\}\}/u.exec(nap)
+  expect(Math.round(Number(/\.z0\{animation:z0 [\d.]+s ease-in-out ([\d.]+)s/.exec(nap)?.[1]) * 100)).toBe(Math.round((intro - 1.4) * 100))
+  // For a pointer resting on him, the heart rides his walk home beside his claw, on his very steps,
+  // and is handed over where it stood the moment he curls up, drifting up to its place above his
+  // head: one heart all the while, never a beat without one and never a second one.
+  const heart = (await look()).heart
+  expect(/@keyframes homeward\{(.*?)\}\}/.exec(heart)?.[1]).toBe(homeward)
+  expect(heart).toContain(`.homeward{animation:homeward ${intro}s step-end 1 both}`)
+  expect(heart).toContain(`.sleepy{animation:hide ${intro}s step-end 1 both}`)
+  const handoff = /\.napheart\{animation:napheart ([\d.]+)s linear 1 both\}@keyframes napheart\{0%\{transform:translate\(([-\d.]+)px,([-\d.]+)px\) scale\(0\);animation-timing-function:step-end\}([\d.]+)%\{transform:translate\(\2px,\3px\) scale\(1\);animation-timing-function:ease-in-out\}100%\{transform:translate\(0,0\) scale\(1\)\}\}/u.exec(heart)
   expect(handoff).not.toBeNull()
   const [glide, dx, dy, shown] = (handoff ?? []).slice(1).map(Number) as [number, number, number, number]
   expect(Math.abs((shown / 100) * glide - intro)).toBeLessThan(0.01)
   expect(glide - intro).toBeGreaterThan(0.4)
   // The walk heart's place (his claw, home at the shell) less the sleeper's: one spot on the page.
-  const walkHeart = /<g class="pet">.*?<g class="heart" fill="[^"]+"[^>]*><path d="M([-\d.]+) ([-\d.]+)L/u.exec(home(nap))
-  const napHeart = /<g class="napheart"><g class="heart" fill="[^"]+"[^>]*><path d="M([-\d.]+) ([-\d.]+)L/u.exec(nap)
+  const walkHeart = /<g class="homeward"><g class="heart" fill="[^"]+"[^>]*><path d="M([-\d.]+) ([-\d.]+)L/u.exec(heart)
+  const napHeart = /<g class="napheart"><g class="heart" fill="[^"]+"[^>]*><path d="M([-\d.]+) ([-\d.]+)L/u.exec(heart)
   expect(Math.abs(Number(napHeart?.[1]) + dx - Number(walkHeart?.[1]))).toBeLessThan(0.01)
   expect(Math.abs(Number(napHeart?.[2]) + dy - Number(walkHeart?.[2]))).toBeLessThan(0.01)
-  expect(Math.round(Number(/\.z0\{animation:z0 [\d.]+s ease-in-out ([\d.]+)s/.exec(nap)?.[1]) * 100)).toBe(Math.round((intro - 1.4) * 100))
-  // Petted on his way home he answers as on any walk: a wink, his arms up and a heart, while his
-  // walking poses step aside; the pet goes with him as he lies down.
-  expect(home(nap)).toMatch(/<g class="homeward"><g class="poses">.*<\/g><g class="pet">.*<g class="heart"/u)
-  // His legs keep going under the pet, in step with the walk home: the petted pose with his left
-  // legs lifted shows on exactly the beats of the walking pose that lifts them, and the right too.
-  const body = (name: string) => new RegExp(`@keyframes ${name}\\{(.*?\\})\\}`, 'u').exec(nap)?.[1]
-  expect(body('nf-left')).toBe(body('n-walkL1'))
-  expect(body('nf-right')).toBe(body('n-walkL2'))
-  expect(nap).toContain(`.nf-left{animation:nf-left ${intro}s step-end 1 both}`)
   // Redraws while he sleeps keep the source, walk and all.
   await clock.advance(30_000)
   await $.session.measure(measured(42, 0.31))
@@ -4173,7 +4122,7 @@ test('desktop: every heart is drawn crisp on whole screen pixels, each pixel two
   await turn($, clock)
   const { ui, look } = await band($, 'desktop')
   const hearts = async (label: string) => {
-    const source = (await look()).svg?.source ?? ''
+    const source = (await look()).heart
     const found = [...source.matchAll(/<g class="heart"([^>]*)><path d="([^"]+)"\/><\/g>/gu)]
     expect([label, found.length > 0]).toEqual([label, true])
     for (const [, attributes = '', d = ''] of found) {
@@ -4239,31 +4188,6 @@ test('desktop: the splash\'s drops swell up out of the crest and shrink away at 
     expect([i, Math.abs(Number(delay) + Number(length) - 2.2) < 0.011]).toEqual([i, true])
   }
   await ui.unmount()
-})
-
-test('desktop: petting him in a splash sets the drops aside, so the heart never pops among them, lively or still', async ($, on) => {
-  const { clock } = world(on)
-  await start($)
-  for (const how of ['lively', 'still'] as const) {
-    if (how === 'still') await run($, 'band', 'still')
-    const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
-    await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
-    await clock.advance(2_000)
-    await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
-    const source = (await look()).svg?.source ?? ''
-    // The drops fly in a group of their own, drawn after Clawd...
-    expect([how, source]).toEqual([how, expect.stringMatching(/<g class="spray">(?:<circle class="drop drop\d"[^>]*\/>){4}<\/g>/u)])
-    // ...which steps aside as the pet shows, after the same rest of the pointer, as the sparkles do.
-    const css = /<style>(.*)<\/style>/u.exec(source)?.[1] ?? ''
-    const media = css.indexOf('@media')
-    const held = media < 0 ? css : css.slice(0, media)
-    expect([how, held]).toEqual([how, expect.stringContaining('svg:hover .poses,svg:hover .spark,svg:hover .spray{visibility:hidden;transition:visibility 0s 0.15s}')])
-    expect([how, held]).toEqual([how, expect.stringContaining('svg:hover .pet{visibility:visible;transition:visibility 0s 0.15s}')])
-    expect([how, held]).toEqual([how, expect.stringContaining('.poses,.spark,.spray{visibility:visible}')])
-    await ui.unmount()
-    await $.turn.complete({ answer: 'Done.', durationMs: 4_000, isAborted: false, turnId: `t-${how}`, reason: 'answer' })
-    await clock.advance(30_000)
-  }
 })
 
 test('desktop: a measure just before the turn ends draws one new frame, the cheer, and never a stride first', { timeoutMs: 30_000 }, async ($, on) => {

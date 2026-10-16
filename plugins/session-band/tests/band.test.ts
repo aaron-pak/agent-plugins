@@ -2898,20 +2898,41 @@ test('the hearth lets go of the beach’s kept scene once, then writes nothing m
   await desk.ui.unmount()
 })
 
-test('desktop: a heart never fades, on either look: it pops up and shrinks away, solid all the while', async ($, on) => {
+// The desktop draws Clawd as an image: an interactive frame blanks for a frame or two whenever its
+// source changes, and the band changes it with every moment. An image takes no hover, so the pet is
+// a heart of its own, drawn over him by the band's own hover.
+test('desktop: on either look Clawd is a plain image, and resting the pointer on him reveals a heart that beats, solid all the while', async ($, on) => {
   world(on)
   await start($)
   for (const which of ['tide', 'hearth'] as const) {
     await run($, which)
     const desk = await mount($, 'desktop')
-    const { source } = await desk.look()
-    // The hearth's sleeper's heart (hh-hn) too, which lifts less over his head.
-    for (const name of which === 'tide' ? ['heart'] : ['hh-ht', 'hh-hn']) {
-      const frames = new RegExp(`@keyframes ${name}\\{(.*?)\\}\\}`, 'u').exec(source)?.[1] ?? ''
-      expect([name, frames.length > 0]).toEqual([name, true])
-      for (const opacity of frames.match(/opacity:[^;}]*/gu) ?? []) expect([name, opacity]).toEqual([name, 'opacity:1'])
-      expect([name, frames]).toEqual([name, expect.stringMatching(/scale\(0\)/u)])
+    const { tree } = await desk.look()
+    const svgs: Node[] = []
+    const reveals: Node[] = []
+    const scopes: Node[] = []
+    const visit = (node: unknown, inScope: boolean) => {
+      if (node === null || typeof node !== 'object') return
+      const el = node as Node
+      if (el.type === 'Svg') svgs.push(el)
+      // The drawn tree carries a Box's hover beside its props.
+      const hover = (el as { hover?: { display?: string } }).hover
+      if (el.type === 'Box' && el.props?.display === 'none' && hover?.display === 'flex') reveals.push(el)
+      if (el.type === 'Box' && typeof el.props?.key === 'string' && !inScope) scopes.push(el)
+      for (const child of el.children ?? []) visit(child, inScope || (el.type === 'Box' && typeof el.props?.key === 'string'))
     }
+    visit(tree, false)
+    expect([which, svgs.filter(svg => svg.props?.isInteractive === true).length]).toEqual([which, 0])
+    // One heart, laid over him (absolute, so showing it moves nothing), inside his own hover scope.
+    expect([which, reveals.length, reveals[0]?.props?.position]).toEqual([which, 1, 'absolute'])
+    expect([which, scopes.some(scope => JSON.stringify(scope).includes('A heart for Clawd'))]).toEqual([which, true])
+    const heart = String((reveals[0]?.children?.[0] as Node | undefined)?.props?.source ?? '')
+    expect([which, heart]).toEqual([which, expect.stringMatching(/^<svg /u)])
+    // Never faded (a half-faded pink is a muddy mauve on the dark page), and no script.
+    expect([which, /opacity/u.test(heart), heart.includes('<script')]).toEqual([which, false, false])
+    // Shown, it is already up, so it beats softly; only where the page asks for no less motion.
+    expect([which, heart]).toEqual([which, expect.stringMatching(/@media \(prefers-reduced-motion:no-preference\)\{.*beat/u)])
+    expect([which, /scale\(0\)/u.test(heart)]).toEqual([which, false])
     await desk.ui.unmount()
   }
 })

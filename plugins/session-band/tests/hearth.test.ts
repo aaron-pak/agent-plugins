@@ -235,11 +235,26 @@ function expectBoldApartFromDim(row: Leaf[]): void {
   }
 }
 
+// Clawd's own picture (not the hover heart over him, nor the meter's).
+function isClawd(node: Node): boolean {
+  return node.type === 'Svg' && String(node.props?.source).includes('class="hh-hop"')
+}
+
+// The heart the band reveals over him when a pointer rests on him.
+function heartOf(tree: unknown): string {
+  let found = ''
+  walk(tree, node => {
+    if (node.type === 'Svg' && node.props?.alt === 'A heart for Clawd') found = String(node.props.source)
+  })
+
+  return found
+}
+
 function svgOf(tree: unknown): { source: string; alt: string } | undefined {
   let found: { source: string; alt: string } | undefined
   walk(tree, node => {
-    if (node.type === 'Svg' && node.props?.isInteractive === true) {
-      found = { source: String(node.props.source), alt: String(node.props.alt) }
+    if (isClawd(node)) {
+      found = { source: String(node.props?.source), alt: String(node.props?.alt) }
     }
   })
 
@@ -912,7 +927,13 @@ test('the desktop draws Clawd as a crisp Svg and the words with Box and Text, no
   // The alt text says what the picture shows: in a session's first moments, his hello.
   expect(svg?.alt).toBe('Clawd waves hello.')
   expect(svg?.source).toContain('shape-rendering="crispEdges"')
-  expect(svg?.source).toContain('svg:hover')
+  // An image, never an interactive frame, which blanks for a frame or two as its source changes.
+  const frames: unknown[] = []
+  walk(tree, node => {
+    if (node.type === 'Svg' && node.props?.isInteractive === true) frames.push(node)
+  })
+  expect(frames).toEqual([])
+  expect(svg?.source).not.toContain(':hover')
   expect(svg?.source).not.toContain('<script')
   expect(svg?.source.length ?? 0).toBeLessThan(131_072)
   expect(text(tree)).not.toMatch(/[▀-▟]/u)
@@ -922,7 +943,7 @@ test('the desktop draws Clawd as a crisp Svg and the words with Box and Text, no
   // He sits close to his words: 96 px wide with his extras, 64 tall.
   let size = { width: 0, height: 0 }
   walk(tree, node => {
-    if (node.type === 'Svg' && node.props?.isInteractive === true) size = { width: Number(node.props.width), height: Number(node.props.height) }
+    if (isClawd(node)) size = { width: Number(node.props?.width), height: Number(node.props?.height) }
   })
   expect(size).toEqual({ width: 96, height: 64 })
   // Each percentage has a box five cells wide, so "100%" never nudges what comes after it.
@@ -939,13 +960,16 @@ test('on the desktop every sparkle, z, bead of sweat and heart stays inside Claw
   await start($, 86, 1.94)
   const { ui, read } = await band($, 'desktop')
   const sources: string[] = []
+  const hearts: string[] = []
   await turn($)
   sources.push(svgOf((await read()).tree)?.source ?? '')
+  hearts.push(heartOf((await read()).tree))
   await clock.advance(5 * 60_000)
   await $.session.measure(measured(87, 1.95))
   sources.push(svgOf((await read()).tree)?.source ?? '')
+  hearts.push(heartOf((await read()).tree))
 
-  for (const source of sources) {
+  for (const source of [...sources, ...hearts]) {
     const [x, y, w, h] = (/viewBox="([^"]+)"/.exec(source)?.[1] ?? '').split(' ').map(Number)
     for (const name of ['hh-sp', 'hh-sp hh-sp2', 'hh-z', 'hh-sw', 'hh-ht']) {
       if (!source.includes(`class="${name}"`)) continue
@@ -963,12 +987,12 @@ test('on the desktop every sparkle, z, bead of sweat and heart stays inside Claw
   // The z is a soft shape beside a pixel Clawd, in the tide's slate; the heart is the terminal's
   // pixel heart, as the beach draws it: five runs of pixels, one path, in the tide's pink.
   expect(sources[1]).toMatch(/<g class="hh-z" fill="none" stroke="#7E95B5"[^>]*><path d="M[^"]+L/)
-  const heart = /<g class="hh-ht" fill="#E9789B"[^>]*><path d="([^"]+)"\/><\/g>/u.exec(sources[1] ?? '')?.[1] ?? ''
+  const heart = /<g class="hh-ht" fill="#E9789B"[^>]*><path d="([^"]+)"\/><\/g>/u.exec(hearts[1] ?? '')?.[1] ?? ''
   expect([heart.match(/M/gu)?.length, /[CQ]/u.test(heart)]).toEqual([5, false])
   // Held still (reduced motion, /band still), the heart's edges and the z's strokes fall on whole
   // screen pixels (4 to a unit), so neither is soft beside him at 1x.
   const z = /<g class="hh-z"[^>]*><path d="([^"]+)"/u.exec(sources[1] ?? '')?.[1] ?? ''
-  for (const shape of [heart, /<g class="hh-ht" fill="#E9789B"[^>]*><path d="([^"]+)"\/><\/g>/u.exec(sources[0] ?? '')?.[1] ?? '', z]) {
+  for (const shape of [heart, /<g class="hh-ht" fill="#E9789B"[^>]*><path d="([^"]+)"\/><\/g>/u.exec(hearts[0] ?? '')?.[1] ?? '', z]) {
     const numbers = shape.match(/-?[\d.]+/gu)?.map(Number) ?? []
     expect(numbers.length).toBeGreaterThan(0)
     for (const n of numbers) expect(Math.abs(n * 4 - Math.round(n * 4))).toBeLessThan(0.001)
@@ -2211,72 +2235,64 @@ test('calm, or in Apple’s Terminal, a click is the wink and the heart alone', 
   await calm.ui.unmount()
 })
 
-test('on the desktop a pet needs the pointer to rest on him a moment, and every class and keyframe is his own', async ($, on) => {
+test('on the desktop a pet is a heart beside him, or over his sleeping head clear of the z, and every class and keyframe is his own', async ($, on) => {
   const { clock } = world(on)
   await start($, 86, 1.94)
-  const sources: string[] = []
+  const seen: Array<{ clawd: string; heart: string }> = []
+  const both = (tree: unknown) => ({ clawd: svgOf(tree)?.source ?? '', heart: heartOf(tree) })
   const desk = await band($, 'desktop', { ...BAND, isWorking: true })
   await prompt($, 'go')
   await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
-  sources.push(svgOf((await desk.read()).tree)?.source ?? '')
+  seen.push(both((await desk.read()).tree))
   await desk.ui.unmount()
   for (const step of [0, 5 * 60_000]) {
     await clock.advance(step)
     const { ui, read } = await band($, 'desktop')
     if (step === 0) await turn($)
-    sources.push(svgOf((await read()).tree)?.source ?? '')
+    seen.push(both((await read()).tree))
     await ui.unmount()
   }
   await run($, 'band', 'still')
   const still = await band($, 'desktop')
-  sources.push(svgOf((await still.read()).tree)?.source ?? '')
+  seen.push(both((await still.read()).tree))
   await still.ui.unmount()
 
-  for (const [i, source] of sources.entries()) {
-    // The petted Clawd shows only once the pointer has rested 150 ms; leaving takes him back at once.
-    expect(source).toContain('.hh-pet{opacity:0;transition:opacity 0s}')
-    expect(source).toContain('svg:hover .hh-pet{opacity:1;transition:opacity 0s 0.15s}')
+  for (const [i, { clawd, heart }] of seen.entries()) {
+    expect([i, heart]).toEqual([i, expect.stringMatching(/^<svg /u)])
+    const box = (source: string, group: string) => {
+      const d = new RegExp(`class="${group}"[^>]*><path d="([^"]+)"`).exec(source)?.[1] ?? ''
+      const at = [...d.matchAll(/-?[\d.]+/g)].map(found => Number(found[0]))
+      const xs = at.filter((_, k) => k % 2 === 0)
+      const ys = at.filter((_, k) => k % 2 === 1)
+      return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) }
+    }
+    const shown = box(heart, 'hh-ht')
     if (i < 2) {
-      expect(source).toContain('svg:hover .hh-mood{opacity:0;transition:opacity 0s 0.15s}')
-      expect(source).toContain('class="hh-pop"')
+      // Awake, the heart stands up beside his right claw (he is 1 to 18 across), never on him.
+      expect([i, shown.left >= 18, shown.top < 2]).toEqual([i, true, true])
     } else {
-      // Asleep (5 minutes on, lively, then still) he is not woken, as on the beach: his eyes stay
-      // shut and the z keeps drifting; only a heart comes, over his head.
-      expect(source).not.toContain('svg:hover .hh-mood')
-      expect(source).not.toContain('class="hh-pop"')
-      expect(source).toContain('class="hh-z"')
-      expect(source).toContain('class="hh-ht"')
-      // The heart pops up over his head (his body starts at y 0), and never covers the z, the
-      // z's pen included.
-      const box = (group: string) => {
-        const d = new RegExp(`class="${group}"[^>]*><path d="([^"]+)"`).exec(source)?.[1] ?? ''
-        const at = [...d.matchAll(/-?[\d.]+/g)].map(found => Number(found[0]))
-        const xs = at.filter((_, k) => k % 2 === 0)
-        const ys = at.filter((_, k) => k % 2 === 1)
-        return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) }
-      }
-      const [heart, z] = [box('hh-ht'), box('hh-z')]
+      // Asleep (5 minutes on, lively, then still) it is over his head (his body starts at y 0),
+      // and never covers the z, the z's pen included.
+      const z = box(clawd, 'hh-z')
       const pen = 0.25
-      const isApart = heart.right <= z.left - pen || heart.left >= z.right + pen || heart.bottom <= z.top - pen || heart.top >= z.bottom + pen
-      expect([i, heart.bottom <= 0, isApart]).toEqual([i, true, true])
+      const isApart = shown.right <= z.left - pen || shown.left >= z.right + pen || shown.bottom <= z.top - pen || shown.top >= z.bottom + pen
+      expect([i, shown.bottom <= 0, isApart]).toEqual([i, true, true])
     }
-    const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
-    for (const [, names] of source.matchAll(/class="([^"]+)"/g)) {
-      for (const name of (names ?? '').split(' ')) expect(name.startsWith('hh-')).toBe(true)
-    }
-    for (const [, name] of css.matchAll(/@keyframes ([^{]+)\{/g)) expect(name?.startsWith('hh-')).toBe(true)
-    for (const [, name] of css.matchAll(/\.([a-z][\w-]*)/g)) expect(name?.startsWith('hh-')).toBe(true)
-    for (const [, uses] of css.matchAll(/animation:([^;}]+)/g)) {
-      for (const use of (uses ?? '').split(',')) expect(/^(none|hh-[\w-]+ )/.test(use.trim()) || use.trim() === 'none').toBe(true)
+    for (const source of [clawd, heart]) {
+      const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
+      for (const [, names] of source.matchAll(/class="([^"]+)"/g)) {
+        for (const name of (names ?? '').split(' ')) expect(name.startsWith('hh-')).toBe(true)
+      }
+      for (const [, name] of css.matchAll(/@keyframes ([^{]+)\{/g)) expect(name?.startsWith('hh-')).toBe(true)
+      for (const [, name] of css.matchAll(/\.([a-z][\w-]*)/g)) expect(name?.startsWith('hh-')).toBe(true)
+      for (const [, uses] of css.matchAll(/animation:([^;}]+)/g)) {
+        for (const use of (uses ?? '').split(',')) expect(/^(none|hh-[\w-]+ )/.test(use.trim()) || use.trim() === 'none').toBe(true)
+      }
     }
   }
-  // Lively, the heart rises and he hops once the pointer has rested; calm, both keep still.
-  // The heart rises twice, like his hop: a pointer left resting on him does not release hearts forever.
-  expect(sources[0]).toMatch(/svg:hover \.hh-ht\{animation:hh-ht 2s ease-out 0\.15s 2 both\}/)
-  expect(sources[2]).toMatch(/svg:hover \.hh-ht\{animation:hh-hn 2s ease-out 0\.15s 2 both\}/)
-  for (const source of sources) expect(source).not.toMatch(/svg:hover[^{]*\{[^}]*infinite/)
-  expect(sources[0]).toMatch(/svg:hover \.hh-pop\{animation:hh-pop \.9s ease-out 0\.15s 2\}/)
-  expect(sources[3]).toContain('svg:hover .hh-pop,svg:hover .hh-ht{animation:none}')
+  // Lively, the heart beats softly where the page asks for no less motion; calm, it keeps still.
+  for (const { heart } of seen.slice(0, 3)) expect(heart).toContain('@media (prefers-reduced-motion:no-preference){.hh-ht{animation:hh-beat 1.6s ease-in-out infinite}}')
+  expect(seen[3]?.heart).not.toContain('animation:')
 })
 
 test('the terminal stays still between moments: at most four frames a second, none while idle', { timeoutMs: 30_000 }, async ($, on) => {
@@ -2863,7 +2879,7 @@ test('a page that asks for reduced motion gets the same calm Clawd', async ($, o
   const { ui, read } = await band($, 'desktop')
 
   const source = svgOf((await read()).tree)?.source ?? ''
-  const calm = /@media \(prefers-reduced-motion:reduce\)\{(.*)\}\.hh-pet\{/.exec(source)?.[1] ?? ''
+  const calm = /@media \(prefers-reduced-motion:reduce\)\{(.*)\}<\/style>/.exec(source)?.[1] ?? ''
   expect(calm).toContain('.hh-el-c{opacity:0;animation:hh-qn-el-c 1s step-end 180s 1 forwards}')
   expect(calm).not.toContain('infinite')
   await ui.unmount()
