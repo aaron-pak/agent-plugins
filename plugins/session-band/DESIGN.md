@@ -599,9 +599,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   edge, which only clips it, and the hover lifts it a row above the top (`HEART_SHOWN`). Its picture
   carries a row of empty sky (`ROW_PX`, 19 px) above the heart, which keeps it under the edge while
   parked and cancels the lifted row when shown. Both held step through a whole turn, with no card,
-  no blank frame and, for the beach, no first-frame jump in 8 pets of 8. Its `alt` is empty: it is
-  always mounted, so a screen reader would otherwise read out a heart no one can see, and his own
-  picture's alt already says what he is doing.
+  no blank frame and, for the beach, no first-frame jump in 8 pets of 8. Its `alt` is never empty
+  (`HEART_ALT`): the Mac app draws no Svg whose alt is empty, so a heart with an empty alt never
+  showed, and it was missing from the accessibility tree too.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
   The todos shown beside a step are held there too, so one hold serves all four views.
@@ -660,6 +660,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   splash or hiccup for under a second; an Esc whose turn ends over a second later keeps its splash.
 - **The lively hearth's petted turn holds its first frame 500 ms**, since a pet shows between ticks
   and every frame stays a tick. The beach's spin does the same.
+- **A screen reader can find the parked heart.** It is always mounted and its alt cannot be empty
+  (see "The heart is parked, not revealed"), so it may be read out while nothing of it shows; its
+  alt says what petting brings.
 - **The beach heart's sky is one row of the Mac app's text.** `ROW_PX` is 19 px, a row at the app's
   font; a host whose rows were taller or shorter would land the shown heart that many pixels off.
 - **The desktop heart shows at once.** The band's hover has no delay, so a pointer crossing the

@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps } from './types'
-import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, pixelHeart, textPx } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_ALT, HEART_PINK, pixelHeart, textPx } from '../clawd'
 import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
 import { DIM, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
@@ -87,7 +87,7 @@ export function desk(els: Desk, view: DeskView): RenderElement {
     <Box key="clawd" position="relative" flexShrink={0}>
       <Svg source={clawdSvg(mood)} alt={altOf(mood)} width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
       <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
-        <Svg source={petHeart(mood)} alt="" width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
+        <Svg source={petHeart(mood)} alt={HEART_ALT} width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
       </Box>
     </Box>
   )

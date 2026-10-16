@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
-import { SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
+import { HEART_ALT, SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
 import { SAND, WET, layoutOf, resumeSplash } from '../hooks/tide/band'
 import { STRIDE_WAIT_MS } from '../hooks/tide/props'
 import { HEART_PARKED, HEART_SHOWN, ROW_PX, poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
@@ -2197,8 +2197,8 @@ test('desktop: resting the pointer on the beach brings a parked heart over it; m
   expect([parked?.props?.position, parked?.props?.top, parked?.props?.left]).toEqual(['absolute', HEART_PARKED, 0])
   // The drawn tree carries a Box's hover beside its props.
   expect((parked as { hover?: unknown } | undefined)?.hover).toEqual({ top: HEART_SHOWN })
-  // Decorative: it is always mounted, so a screen reader would otherwise read it out while it is parked.
-  expect(find(parked, 'Svg')[0]?.props?.alt).toBe('')
+  // Never an empty alt: the desktop app draws no Svg whose alt is empty, and the heart never showed.
+  expect(find(parked, 'Svg')[0]?.props?.alt).toBe(HEART_ALT)
   for (const source of [svg?.source ?? '', heart]) {
     const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
     expect(css).toContain(motion)

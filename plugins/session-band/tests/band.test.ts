@@ -9,7 +9,7 @@ import { REPLY_MOST, lookNow, migrateMotion, offReply, parseBand, replyFor, toas
 import { bandProps as tideProps, desktopScenes, sceneMemory } from '../hooks/tide/props'
 import { HEART_PARKED, HEART_SHOWN, positionAt } from '../hooks/tide/desk'
 import { PARKED } from '../hooks/hearth/desk'
-import { EYES, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
+import { EYES, HEART_ALT, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
 import { tideInfo } from '../hooks/tide/view'
 import { CELLS, PIXELS, fitLine } from '../hooks/tide/fit'
 import { article, plain } from '../hooks/tide/words'
@@ -2938,8 +2938,8 @@ test('desktop: on either look Clawd is a plain image, and resting the pointer on
     const [top, shown] = which === 'tide' ? [HEART_PARKED, HEART_SHOWN] : [PARKED, 0]
     expect([which, box.props?.position, box.props?.top, box.props?.left, (box as { hover?: unknown }).hover, inScope]).toEqual([which, 'absolute', top, 0, { top: shown }, true])
     const svg = box.children?.[0] as Node | undefined
-    // Decorative: it is always mounted, so a screen reader would otherwise read it out while it is parked.
-    expect([which, svg?.type, svg?.props?.alt]).toEqual([which, 'Svg', ''])
+    // Never an empty alt: the desktop app draws no Svg whose alt is empty, and the heart never showed.
+    expect([which, svg?.type, svg?.props?.alt]).toEqual([which, 'Svg', HEART_ALT])
     const heart = String(svg?.props?.source ?? '')
     expect([which, heart]).toEqual([which, expect.stringMatching(/^<svg /u)])
     // Never faded (a half-faded pink is a muddy mauve on the dark page), and no script.

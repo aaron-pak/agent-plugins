@@ -75,6 +75,12 @@ export const HEART_PINK = '#E9789B'
  * (#d787af), so a terminal that shows only 256 colors keeps its hue.
  */
 export const TERMINAL_HEART = '#E37DA2'
+/**
+ * The desktop heart's alt. Never empty: Claude's desktop app draws no Svg whose alt is empty, so a
+ * heart with none never showed. It is always mounted, so a screen reader may read it while it is
+ * parked; it says what petting brings.
+ */
+export const HEART_ALT = 'A heart for Clawd'
 /** The nap's z's, on both desktops. */
 export const DOZE_SLATE = '#7E95B5'
 

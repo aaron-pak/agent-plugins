@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
-import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, SPIN, pixelHeart } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_ALT, HEART_PINK, SPIN, pixelHeart } from '../clawd'
 import { BODY, EYE, curled, pose, spin } from './band'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
@@ -169,7 +169,7 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene): Render
         <Svg source={diorama(scene)} alt={altFor(scene, props.percent !== null)} width={scene.width * U} height={FRAME_PX} />
         {/* Parked across the band's bottom edge and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
         <Box position="absolute" top={HEART_PARKED} left={0} hover={{ top: HEART_SHOWN }}>
-          <Svg source={petHeart(scene)} alt="" width={scene.width * U} height={FRAME_PX + ROW_PX} />
+          <Svg source={petHeart(scene)} alt={HEART_ALT} width={scene.width * U} height={FRAME_PX + ROW_PX} />
         </Box>
       </Box>
       <Box flexDirection="column" marginLeft={2} flexGrow={1} flexShrink={1} minWidth={0}>
