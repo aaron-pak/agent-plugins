@@ -80,7 +80,7 @@ export function desk(els: Desk, view: DeskView): RenderElement {
     <Box key="clawd" position="relative" flexShrink={0}>
       <Svg source={clawdSvg(mood)} alt={altOf(mood)} width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
       <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
-        <Svg source={petHeart(mood)} alt="A heart for Clawd" width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
+        <Svg source={petHeart(mood)} alt="" width={VIEW.width * SCALE} height={VIEW.height * SCALE} />
       </Box>
     </Box>
   )

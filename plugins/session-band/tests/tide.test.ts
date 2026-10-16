@@ -203,7 +203,7 @@ async function band($: Engine, surface: Surface, props = BAND) {
       tree,
       svg: svg === undefined ? null : { source: String(svg.props?.source), alt: String(svg.props?.alt) },
       // The heart the band lays over the beach when a pointer rests on it.
-      heart: String(find(tree, 'Svg').find(one => one.props?.alt === 'A heart for Clawd')?.props?.source ?? ''),
+      heart: String(find(find(tree, 'Box').find(box => (box as { hover?: unknown }).hover !== undefined), 'Svg')[0]?.props?.source ?? ''),
     }
   }
   // Time on the band's own frame clock (the terminal's), a tick at a time.
@@ -2191,7 +2191,8 @@ test('desktop: resting the pointer on the beach brings a parked heart over it; m
   expect([parked?.props?.position, parked?.props?.top, parked?.props?.left]).toEqual(['absolute', PARKED, 0])
   // The drawn tree carries a Box's hover beside its props.
   expect((parked as { hover?: unknown } | undefined)?.hover).toEqual({ top: 0 })
-  expect(find(parked, 'Svg')[0]?.props?.alt).toBe('A heart for Clawd')
+  // Decorative: it is always mounted, so a screen reader would otherwise read it out while it is parked.
+  expect(find(parked, 'Svg')[0]?.props?.alt).toBe('')
   for (const source of [svg?.source ?? '', heart]) {
     const css = /<style>(.*)<\/style>/.exec(source)?.[1] ?? ''
     expect(css).toContain(motion)

@@ -2931,7 +2931,8 @@ test('desktop: on either look Clawd is a plain image, and resting the pointer on
     const { box, inScope } = parked[0]!
     expect([which, box.props?.position, box.props?.top, box.props?.left, (box as { hover?: unknown }).hover, inScope]).toEqual([which, 'absolute', PARKED, 0, { top: 0 }, true])
     const svg = box.children?.[0] as Node | undefined
-    expect([which, svg?.type, svg?.props?.alt]).toEqual([which, 'Svg', 'A heart for Clawd'])
+    // Decorative: it is always mounted, so a screen reader would otherwise read it out while it is parked.
+    expect([which, svg?.type, svg?.props?.alt]).toEqual([which, 'Svg', ''])
     const heart = String(svg?.props?.source ?? '')
     expect([which, heart]).toEqual([which, expect.stringMatching(/^<svg /u)])
     // Never faded (a half-faded pink is a muddy mauve on the dark page), and no script.

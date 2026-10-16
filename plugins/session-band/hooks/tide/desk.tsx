@@ -165,7 +165,7 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene = sceneO
         <Svg source={diorama(now)} alt={altFor(now, props.percent !== null)} width={now.width * U} height={FRAME_PX} />
         {/* Parked below the band and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
         <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
-          <Svg source={petHeart(now)} alt="A heart for Clawd" width={now.width * U} height={FRAME_PX} />
+          <Svg source={petHeart(now)} alt="" width={now.width * U} height={FRAME_PX} />
         </Box>
       </Box>
       <Box flexDirection="column" marginLeft={2} flexGrow={1} flexShrink={1} minWidth={0}>

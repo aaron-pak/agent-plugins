@@ -588,7 +588,7 @@ naps, without blinks, taps or hops.
   Mac app: an absolute Box that is itself revealed (`display: none` to `flex`) is drawn as a floating
   card with its own fill and border above the band; any revealed picture starts its clock over, so a
   beach heart fell out of step with his walk; and a heart parked above or to the side fell out of step
-  too. Parked below, it held step through a whole turn, with no card and no blank frame.
+  too. Parked below, it held step through a whole turn, with no card and no blank frame. Its `alt` is empty: it is always mounted, so a screen reader would otherwise read out a heart no one can see, and his own picture's alt already says what he is doing.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
   The todos shown beside a step are held there too, so one hold serves all four views.

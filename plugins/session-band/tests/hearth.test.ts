@@ -240,11 +240,12 @@ function isClawd(node: Node): boolean {
   return node.type === 'Svg' && String(node.props?.source).includes('class="hh-hop"')
 }
 
-// The heart the band lays over him when a pointer rests on him.
+// The heart the band lays over him when a pointer rests on him: the picture in the Box its hover moves.
 function heartOf(tree: unknown): string {
   let found = ''
   walk(tree, node => {
-    if (node.type === 'Svg' && node.props?.alt === 'A heart for Clawd') found = String(node.props.source)
+    const svg = node.type === 'Box' && (node as { hover?: unknown }).hover !== undefined ? node.children?.[0] : undefined
+    if (svg !== undefined && (svg as Node).type === 'Svg') found = String((svg as Node).props?.source)
   })
 
   return found
