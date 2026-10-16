@@ -555,7 +555,7 @@ while Claude works."
 | Past `warnAt` | a blue bead slides down, every 8 s at work, 16 s idle | a blue drop; it waits 400 ms while Claude works | Getting full · /compact when you're ready |
 | Near a limit | | | Near the 5h limit · resets 4:57am ("At", "Over" past it) |
 | Idle 3 minutes | eyes closed, a dim z drifts up | eyes close 3 minutes after the Svg appears, a slate z | unchanged |
-| Petted | turns all the way around, winks with arms up and a pixel heart | a pointer on him: the pixel heart beside him, beating softly; asleep, over his head | unchanged |
+| Petted | turns all the way around, winks with arms up and a pixel heart | a pointer on him: the pixel heart beside him, beating softly; asleep, over his head, moving there the moment he dozes off by himself, clear of his z | unchanged |
 
 A nap changes Clawd and not line 3, which keeps the last turn's line, the next todo, or before the
 first turn "Ready when you are". The hearth's words are its readout and Clawd carries the mood, so

@@ -2306,6 +2306,41 @@ test('on the desktop a pet is a heart beside him, or over his sleeping head clea
   expect(seen[3]?.heart).not.toContain('animation:')
 })
 
+test('on the desktop, as he dozes off by himself the heart a pet brings moves over his head the moment his z comes, clear of it, lively or calm', async ($, on) => {
+  world(on)
+  await start($, 86, 1.94)
+  const box = (source: string, group: string, [dx, dy] = [0, 0]) => {
+    const d = new RegExp(`class="${group}"[^>]*><path d="([^"]+)"`).exec(source)?.[1] ?? ''
+    const at = [...d.matchAll(/-?[\d.]+/g)].map(found => Number(found[0]))
+    const xs = at.filter((_, k) => k % 2 === 0).map(x => x + dx)
+    const ys = at.filter((_, k) => k % 2 === 1).map(y => y + dy)
+    return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) }
+  }
+  for (const motion of ['lively', 'still'] as const) {
+    await run($, 'band', motion)
+    const { ui, read } = await band($, 'desktop')
+    await turn($)
+    const tree = (await read()).tree
+    const [clawd, heart] = [svgOf(tree)?.source ?? '', heartOf(tree)]
+    // It moves when his z comes: lively, and under reduced motion in the calm timing; held still,
+    // only the calm timing is drawn.
+    const calmZ = /\.hh-z\{opacity:0;transform:none;animation:hh-on 1s step-end ([\d.]+)s/u.exec(clawd)?.[1]
+    const livelyZ = /\.hh-z\{[^}]*animation:hh-zz 3s ease-out ([\d.]+)s/u.exec(clawd)?.[1]
+    const moves = [...heart.matchAll(/\.hh-hp\{animation:hh-doze 1s step-end ([\d.]+)s 1 forwards\}/gu)].map(found => found[1])
+    expect([motion, calmZ === undefined, moves]).toEqual([motion, false, motion === 'lively' ? [livelyZ, calmZ] : [calmZ]])
+    if (motion === 'lively') expect(heart).toContain('@media (prefers-reduced-motion:reduce){.hh-hp{')
+    // Moved there, the heart is over his head (his body starts at y 0) and never covers the z, the
+    // z's pen included.
+    const [, dx = '0', dy = '0'] = /@keyframes hh-doze\{0%,100%\{transform:translate\((-?[\d.]+)px,(-?[\d.]+)px\)\}\}/u.exec(heart) ?? []
+    const moved = box(heart, 'hh-ht', [Number(dx), Number(dy)])
+    const z = box(clawd, 'hh-z')
+    const pen = 0.25
+    const isApart = moved.right <= z.left - pen || moved.left >= z.right + pen || moved.bottom <= z.top - pen || moved.top >= z.bottom + pen
+    expect([motion, Number(dx) !== 0 || Number(dy) !== 0, moved.bottom <= 0, isApart]).toEqual([motion, true, true, true])
+    await ui.unmount()
+  }
+})
+
 test('the terminal stays still between moments: at most four frames a second, none while idle', { timeoutMs: 30_000 }, async ($, on) => {
   world(on)
   await start($)

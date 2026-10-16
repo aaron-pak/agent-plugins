@@ -580,20 +580,28 @@ function clawdSvg(mood: Mood): string {
  * while a pointer rests on him. He is an image (an interactive frame blanks for a frame or two each
  * time its source changes), and an image takes no hover, so the heart is a picture of its own, his
  * size, parked below the band until its hover lays it over him. It shows at once, with no pop, and
- * beats softly; held still under reduced motion and /band still.
+ * beats softly; held still under reduced motion and /band still. Both pictures run on the page's
+ * one clock, so as he dozes off by himself the heart moves over his head the moment his z comes,
+ * clear of it, in whichever timing the page plays.
  */
 function petHeart(mood: Mood): string {
   const [hx, hy] = mood.mode === 'nap' ? NAP_HEART : PET_HEART
   const beat =
     `.${P}ht{transform-box:fill-box;transform-origin:center}` +
     `@keyframes ${P}beat{0%,50%,100%{transform:scale(1)}20%{transform:scale(1.14)}}`
-  const css = mood.isStill ? '' : `@media (prefers-reduced-motion:no-preference){.${P}ht{animation:${P}beat 1.6s ease-in-out infinite}}`
+  const css = mood.isStill ? [] : [`@media (prefers-reduced-motion:no-preference){.${P}ht{animation:${P}beat 1.6s ease-in-out infinite}}`]
+  if (mood.isDozy) {
+    const [dx, dy] = [round(NAP_HEART[0] - PET_HEART[0]), round(NAP_HEART[1] - PET_HEART[1])]
+    const doze = (isCalm: boolean) => `.${P}hp{animation:${P}doze 1s step-end ${round(timesOf(tracksOf(mood, isCalm)).napAt)}s 1 forwards}`
+    css.push(`@keyframes ${P}doze{0%,100%{transform:translate(${dx}px,${dy}px)}}`)
+    css.push(mood.isStill ? doze(true) : `${doze(false)}@media (prefers-reduced-motion:reduce){${doze(true)}}`)
+  }
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${VIEW.x} ${VIEW.y} ${VIEW.width} ${VIEW.height}" ` +
     `width="${VIEW.width * SCALE}" height="${VIEW.height * SCALE}">` +
-    `<style>${beat}${css}</style>` +
-    `<g class="${P}ht" fill="${PINK}" shape-rendering="geometricPrecision">${heart(hx, hy)}</g>` +
+    `<style>${beat}${css.join('')}</style>` +
+    `<g class="${P}hp"><g class="${P}ht" fill="${PINK}" shape-rendering="geometricPrecision">${heart(hx, hy)}</g></g>` +
     `</svg>`
   )
 }
@@ -611,9 +619,7 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
     rules.push(`.${P}${part.name}{opacity:${part.shows(rest) ? 1 : 0};animation:${anims.length === 0 ? 'none' : anims.map(a => a.use).join(',')}}`)
   }
 
-  // Where his loop begins (its bead of sweat keeps its place in it), or else where his moments end.
-  const lead = tracks.find(track => track.isLoop)?.delay ?? leadOf(tracks.filter(track => !track.isLoop && !track.isHeld))
-  const napAt = Math.max(lead, NAP_AFTER_S)
+  const { lead, napAt } = timesOf(tracks)
   if (isCalm) {
     // One pose per moment: a sparkle shown for the cheer, a z once he sleeps, a bead of sweat held.
     // (The calm keyframes are always in the stylesheet, so the lively rules use `off` too.)
@@ -660,6 +666,16 @@ function styleOf(mood: Mood, rest: Pose, isCalm: boolean): { keyframes: string[]
   )
 
   return { keyframes, rules }
+}
+
+/**
+ * Where his loop begins (its bead of sweat keeps its place in it), or else where his moments end; and
+ * when he dozes off by himself, after them and never before NAP_AFTER_S.
+ */
+function timesOf(tracks: Track[]): { lead: number; napAt: number } {
+  const lead = tracks.find(track => track.isLoop)?.delay ?? leadOf(tracks.filter(track => !track.isLoop && !track.isHeld))
+
+  return { lead, napAt: Math.max(lead, NAP_AFTER_S) }
 }
 
 // The calm bead of sweat: held still, shown once a cheer is over, gone once he sleeps.
