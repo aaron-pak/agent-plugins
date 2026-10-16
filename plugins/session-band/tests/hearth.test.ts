@@ -3,8 +3,8 @@ import type { Engine, TestBody, TestOptions } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
 import Band from '../hooks/hearth/band'
-import { SPIN, cells, cut } from '../hooks/clawd'
-import { textPx } from '../hooks/clawd'
+import { SPIN, cells, cut, textPx } from '../hooks/clawd'
+import { panelMost } from '../hooks/hearth/words'
 import { NAP_AFTER_MS, NAP_LATE_MS, clockText } from '../hooks/facts'
 import type { BandProps } from '../hooks/hearth/types'
 
@@ -574,6 +574,16 @@ test('a branch or a todo in CJK or emoji is measured in terminal cells, as the t
   expect(cuts).toEqual(new Set(['日本語のブランチ', '🦀 カニを描いています']))
 })
 
+test('on the desktop, a band the host gives no width keeps all three lines beside him, in a 100-column panel', async ($, on) => {
+  world(on)
+  await start($)
+  const { ui, read } = await band($, 'desktop', { ...BAND, bodyColumns: 0 })
+  const { tree, words } = await read()
+  expect(words).toHaveLength(3)
+  expect(Number(kids(tree)[1]?.props?.width)).toBe(panelMost(100))
+  await ui.unmount()
+})
+
 test('on the desktop, at every width from 34 to 160 with long figures, every line fits and no figure or label is ever clipped', { timeoutMs: 60_000 }, async ($, on) => {
   const { hold, release, clock } = world(on, { branch: 'claude/first-mod' })
   await start($, 100, 123.45, 100)
@@ -589,7 +599,7 @@ test('on the desktop, at every width from 34 to 160 with long figures, every lin
       const { ui, read } = await band($, 'desktop', { ...BAND, bodyColumns: columns, isWorking })
       const { tree, words } = await read()
       const column = kids(tree)[1]
-      const panel = Math.min(columns - 14, 64)
+      const panel = Math.min(columns - 14, panelMost(columns))
       expect(Number(column?.props?.width)).toBe(panel)
       const lines = kids(column)
       expect(lines).toHaveLength(3)

@@ -70,8 +70,8 @@ rule on purpose, change its test and this page with it.
   quotes the reason; when it cannot be reached, the look switches for this session only.
 - **A look outside the options** (a hand-edited `cozy`) reads as unset, which is the beach.
 - **Older builds** stored a `style` (only `still` meant still), made a motion once (`migrateMotion`).
-  Someone whose style was `hearth` lands on the beach and hears it once, in a toast: "The beach is
-  the new look. /band hearth to switch back." `whole()` fills in older `$.state` facts.
+  Someone whose style was `hearth` or `still` (the still hearth) lands on the beach and hears it
+  once, in a toast: "The beach is the new look. /band hearth to switch back." `whole()` fills in older `$.state` facts.
 - **The toast** comes once per crossing of `warnAt`, rounded, in the look's own voice: "High tide:
   context is 86% full. Try /compact soon." or "Context is 86% full. Run /compact when you're
   ready." Toasts keep to the replies' 60 cells too, since the host shows them under the plugin's
@@ -530,7 +530,9 @@ branch, a file name, a command or a todo may be cut, at its end, while 7 charact
 
 On the desktop, Clawd is a 96 × 64 px `Svg` drawn from his pixel form and animated by CSS alone,
 beside three Box/Text lines, with the meters as rounded Svg pills. The words sit in a panel of
-`columns - 14` cells, at most 64; under 16 cells (30 columns) Clawd has the band alone. Forms are
+`columns - 14` cells, at most the terminal's panel (`panelMost`: 68 at 100 columns, up to 80);
+under 16 cells (30 columns) Clawd has the band alone, and a band the host gives no width gets a
+100-column panel. Forms are
 measured at the widest of Inter, DejaVu Sans and Liberation Sans, against the panel as a page with
 7.2 px cells would lay it out, so a line keeps a cell or more to spare; a name that must be cut is
 cut with an ellipsis (`cutToFit`). The alt text is a full sentence: "Clawd rests.", "Clawd taps
@@ -645,8 +647,6 @@ naps, without blinks, taps or hops.
   0.4 s after the reading, and a rising tide waits for his walk back.
 - **Esc with no word of it.** A host that marked neither the dispatch nor the result would show a
   splash or hiccup for under a second; an Esc whose turn ends over a second later keeps its splash.
-- **A frame's alt text says how the frame began**: a splash's or flinch's frame stays up through the
-  work after it, and the hello's for its minute.
 - **The lively hearth's petted turn holds its first frame 500 ms**, since a pet shows between ticks
   and every frame stays a tick. The beach's spin does the same.
 - **The beach heart can land one frame off.** On about a third of pets in the Mac app, the heart's
@@ -658,10 +658,7 @@ naps, without blinks, taps or hops.
   his, so on show it beats softly rather than popping. The hover never reaches the plugin.
 - **The narrowest nudge** at 36 to 41 desktop columns (38 and 39 on the terminal) is "86% try
   /compact", without its dot.
-- **The upgrade toast is for `hearth` only**; an older stored `still` gets the motion and no toast.
 - **`/config`'s quoted reason** brings down the capital of a one-word name it opens on ("Okta").
-- **The hearth desktop's panel stops at 64 cells**, so from about 90 columns a long raw command is
-  cut there while the terminal shows it whole.
 - **The water's glide is kept to a twentieth of a unit**, so a second failure in a splash's rush can
   open up to 0.2 px from where the last frame stood.
 - **A wait on you:** whether the band shows beside Claude Code's own question is up to the host.

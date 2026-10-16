@@ -3,7 +3,7 @@ import type { Elements, RenderElement } from 'claude-code'
 import type { BandProps } from './types'
 import { CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, pixelHeart, textPx } from '../clawd'
 import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
-import { DIM, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
+import { DIM, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
 
 // Hearth, on the desktop: a vector Clawd (an Svg drawn from his pixel form,
@@ -84,7 +84,9 @@ export function desk(els: Desk, view: DeskView): RenderElement {
       </Box>
     </Box>
   )
-  const panel = Math.min(view.columns - 14, PANEL_MAX)
+  // No width from the host (0, or nothing usable): the words keep a 100-column band's panel.
+  const isSized = Number.isFinite(view.columns) && view.columns > 0
+  const panel = isSized ? Math.min(view.columns - 14, panelMost(view.columns)) : panelMost(100)
   if (panel < PANEL_MIN) {
     // Too narrow for words: Clawd keeps the band alone.
     return <Box flexDirection="row">{clawd}</Box>
@@ -92,7 +94,7 @@ export function desk(els: Desk, view: DeskView): RenderElement {
   // The room is the panel as a page with narrow cells (7.2 px) lays it out: beside Clawd's fixed
   // 96 px the panel then shrinks, so the words keep one to four cells to spare (fewest on the
   // narrowest bands) and no line ever runs past the band's edge.
-  const room = Math.min(panel * NARROW_CELL_PX, (view.columns - 1) * NARROW_CELL_PX - VIEW.width * SCALE)
+  const room = isSized ? Math.min(panel * NARROW_CELL_PX, (view.columns - 1) * NARROW_CELL_PX - VIEW.width * SCALE) : panel * NARROW_CELL_PX
   const said: Said = {
     isWorking: view.isWorking,
     activity: view.activity,
@@ -132,8 +134,7 @@ export function desk(els: Desk, view: DeskView): RenderElement {
 
 /** Pixels to a cell in the budget (the margins and the figures' boxes): a little under the desktop's, so a fit is a fit. */
 const CELL_PX = 7.6
-/** The words' panel, in cells: up to 64 beside Clawd's 96 px and a cell of gap; under 16, Clawd keeps the band alone. */
-const PANEL_MAX = 64
+/** Under this many cells for the words' panel (as wide as the terminal's, see panelMost), Clawd keeps the band alone. */
 const PANEL_MIN = 16
 /** The narrowest cell a page is expected to draw (the desktop's measures 7.8 px): the room is counted at this. */
 const NARROW_CELL_PX = 7.2

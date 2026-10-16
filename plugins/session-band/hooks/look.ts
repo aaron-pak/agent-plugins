@@ -162,12 +162,13 @@ export function migrateMotion(motion: unknown, style: unknown): Motion {
 
 /**
  * The one toast on the first session after the upgrade, for the person whose older build stored
- * the hearth's own look (`hearth`, which only the Hearth build wrote) and who now lands on the
- * beach, the new default: what changed, and the way back. A stored motion says the upgrade
- * already happened, and a look already back on the hearth (/config) needs no word.
+ * the hearth's own look (`hearth`, or `still`, the still hearth: the Hearth build was the only one to
+ * write either) and who now lands on the beach, the new default: what changed, and the way back.
+ * A stored motion says the upgrade already happened, and a look already back on the hearth
+ * (/config) needs no word.
  */
 export function upgradeToast(motion: unknown, style: unknown, look: Look): string | null {
-  return !isMotion(motion) && style === 'hearth' && look === 'tide' ? `The beach is the new look. ${BACK.tide}` : null
+  return !isMotion(motion) && (style === 'hearth' || style === 'still') && look === 'tide' ? `The beach is the new look. ${BACK.tide}` : null
 }
 
 export function newActivation(): string {
@@ -338,13 +339,13 @@ function replyLine(reply: Reply): string {
  * /config's reason, quoted mid-sentence after a colon: its own closing mark goes, whatever it is (the
  * reply adds its stop), and a capital that only opened its sentence comes down ("Locked by your
  * organization" reads "locked by…"). A name keeps its capital: one whose next word has one too
- * ("Claude Code manages…"), or Claude's and Anthropic's own; so does an acronym, a lone "I" or a
- * command: "ID 42…", "/config…".
+ * ("Claude Code manages…"), one with a capital inside it ("GitHub"), or Claude's and Anthropic's
+ * own; so does an acronym, a lone "I" or a command: "ID 42…", "/config…".
  */
 function reasonOf(denied: string): string {
   const reason = denied.trim().replace(/[\s.!?…]+$/u, '')
   const [first = '', second] = reason.split(/\s+/u)
-  const isName = NAMES.has(first) || (second !== undefined && /^\p{Lu}/u.test(second))
+  const isName = NAMES.has(first) || !/^\p{Lu}\p{Ll}*$/u.test(first) || (second !== undefined && /^\p{Lu}/u.test(second))
 
   return isName ? reason : reason.replace(/^\p{Lu}(?=\p{Ll})/u, letter => letter.toLowerCase())
 }

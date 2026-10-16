@@ -690,7 +690,7 @@ const DOING: Record<Mood, string> = {
 }
 const HAPPENING: Record<Exclude<Moment, null>, string> = {
   cheer: 'Clawd spins with joy, then throws his arms up',
-  splash: 'A wave splashes Clawd, then slides back out',
+  splash: 'A wave splashes Clawd and slides back out',
   wake: 'Clawd wakes up by his shell and watches the words',
   hello: 'Clawd waves hello',
 }
@@ -708,8 +708,8 @@ const STILL_IDLE = 'Clawd stands on the sand'
 function altFor(scene: Scene, isRead: boolean): string {
   const doing = scene.still && scene.mood === 'work' ? STILL_WORK : scene.still && scene.mood === 'idle' ? STILL_IDLE : DOING[scene.mood]
   const { moment } = scene
-  // The hello's frame goes on into the mood's loop (and keeps its source as it does): it says both.
-  // Still, a cheer or a splash is its one held frame.
+  // The hello's and a lively splash's frames go on into the mood's loop (and keep their source as
+  // they do): each says both. Still, a cheer or a splash is its one held frame.
   const what =
     moment === null
       ? doing
@@ -717,7 +717,9 @@ function altFor(scene: Scene, isRead: boolean): string {
         ? `${HAPPENING.hello}, then ${doing.replace(/^Clawd /, '')}`
         : scene.still && (moment === 'cheer' || moment === 'splash')
           ? HELD[moment]
-          : HAPPENING[moment]
+          : moment === 'splash'
+            ? `${HAPPENING.splash}, then he ${doing.replace(/^Clawd /, '')}`
+            : HAPPENING[moment]
 
   return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}`
 }

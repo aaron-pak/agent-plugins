@@ -616,6 +616,7 @@ test("/config's reason reads as the rest of the reply's sentence: its opening ca
   expect(refused('Is this locked?')).toBe('is this locked.')
   expect(refused('Claude Code manages this setting…')).toBe('Claude Code manages this setting.')
   expect(refused('Anthropic sets this')).toBe('Anthropic sets this.')
+  expect(refused('GitHub manages this setting')).toBe('GitHub manages this setting.')
   expect(refused('Locked')).toBe('locked.')
 })
 
@@ -753,8 +754,10 @@ test("an older band's stored style becomes a motion, once, and never picks the l
   expect(migrateMotion('still', 'hearth')).toBe('still')
   expect(migrateMotion('lively', 'still')).toBe('lively')
 
-  const { sets } = world(on, { store: { style: 'still' } })
+  // Only the Hearth build stored `still`, so it was the still hearth: the beach is news to them too.
+  const { sets, toasts } = world(on, { store: { style: 'still' } })
   await start($)
+  expect(toasts).toEqual(['The beach is the new look. /band hearth to switch back.'])
   expect(await run($)).toBe('Tide, still. Try /band hearth, /band lively or /config.')
   expect(sets).toEqual([])
 })
@@ -774,10 +777,11 @@ test("a user whose older build stored the hearth's look hears once, on the first
   // Only the hearth's own stored look, never landing on the hearth already, never once migrated,
   // and never when the store could not keep the motion (it would come back every session).
   expect(upgradeToast(undefined, 'hearth', 'tide')).toBe(UPGRADED)
+  expect(upgradeToast(undefined, 'still', 'tide')).toBe(UPGRADED)
   for (const [motion, style, look] of [
     [undefined, 'hearth', 'hearth'],
+    [undefined, 'still', 'hearth'],
     ['lively', 'hearth', 'tide'],
-    [undefined, 'still', 'tide'],
     [undefined, 'tide', 'tide'],
     [undefined, 'cozy', 'tide'],
     [undefined, undefined, 'tide'],
@@ -2601,8 +2605,7 @@ for (const which of ['tide', 'hearth'] as const) {
         joined.push({ ...now, columns: was.columns, surface: was.surface })
         expect({ ...was, kept: now.left.startsWith(was.left) && (was.right === '' || now.right === was.right) }).toEqual({ ...was, kept: true })
       }
-      // At a wide band all of it shows: the branch (on the hearth's desktop panel, which stops at 64
-      // cells, without its prefix), the count, and the model at its place.
+      // At a wide band all of it shows: the whole branch, the count, and the model at its place.
       const wide = joined.filter(seen => seen.columns === 120)
       for (const seen of wide) {
         expect(seen).toEqual({
@@ -2610,7 +2613,7 @@ for (const which of ['tide', 'hearth'] as const) {
           surface: seen.surface,
           ...(which === 'tide'
             ? { left: 'agent-plugins · claude/first-mod-polish · 2 uncommitted · Opus 5.5', right: '' }
-            : { left: `agent-plugins on ${seen.surface === 'terminal' ? 'claude/' : ''}first-mod-polish · 2 uncommitted`, right: 'Opus 5.5' }),
+            : { left: 'agent-plugins on claude/first-mod-polish · 2 uncommitted', right: 'Opus 5.5' }),
         })
       }
       for (const { band } of bands) await band.ui.unmount()

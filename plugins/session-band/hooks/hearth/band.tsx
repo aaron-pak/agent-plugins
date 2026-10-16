@@ -4,7 +4,7 @@ import type { BandProps, Doing } from './types'
 import { APPLE_EYES, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, cells, cut } from '../clawd'
 import { NAP_AFTER_MS } from '../facts'
 import type { Arms, Eyes, Feet } from '../clawd'
-import { ACCENT, DIM, SPACE, firstFit, happeningForms, squeezeCut, squeezeRoom, whereForms } from './words'
+import { ACCENT, DIM, SPACE, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
 import { hasRoom, isHeld, isSettled, newPace, spend, tick } from '../pace'
 import type { Pace } from '../pace'
 import type { Form, Line, Measure, Row, Seg } from './words'
@@ -528,7 +528,7 @@ function panelWidth(columns: number): number {
     return 0
   }
 
-  return Math.min(room, 80, 68 + Math.max(0, Math.floor((columns - 100) / 4)))
+  return Math.min(room, panelMost(columns))
 }
 
 function compose(live: Live, columns: number): Frame {

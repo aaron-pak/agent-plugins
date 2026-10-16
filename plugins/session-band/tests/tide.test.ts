@@ -1694,8 +1694,8 @@ test('desktop: the alt text says when a wave splashes him or he spins with joy',
   const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
   await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
   const splash = (await look()).svg?.alt
-  expect(splash).toContain('A wave splashes Clawd, then slides back out')
-  // The frame goes on into his work, and so does what it says: the wave has slid back out.
+  // The frame goes on into his work, and so does what it says: the wave slides back out, then he works on.
+  expect(splash).toContain('A wave splashes Clawd and slides back out, then he potters about on the sand')
   await clock.advance(3_500)
   expect((await look()).svg?.alt).toBe(splash)
   await ui.unmount()

@@ -48,6 +48,14 @@ const QUERY_LEAST = 4
 /** A plain space: the bold project and the warm figures never sit right beside dim words. */
 export const SPACE: Seg = { text: ' ' }
 
+/**
+ * The widest the words' panel grows, in cells, on either surface: 68 at 100 columns, a little more
+ * on wider bands (78 at 140) and never more than 80, so the figures stay near their lines.
+ */
+export function panelMost(columns: number): number {
+  return Math.min(80, 68 + Math.max(0, Math.floor((columns - 100) / 4)))
+}
+
 export function needs({ line, least }: Form, m: Measure): number {
   const text = line.squeeze === undefined ? '' : rowText(line.squeeze)
   // The shortest cut the squeezed part may take, measured as the surface draws it (cells, or pixels).
