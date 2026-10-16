@@ -588,14 +588,20 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   changes, and the band changes it with every moment; an image swaps cleanly and still plays its CSS.
   An image takes no `:hover`, so the pet is a heart picture the band's own Box hover moves onto him:
   no wink, no raised arms, no pause in his walk, which the frame used to give.
-- **The heart is parked, not revealed.** It sits in an always-shown absolute Box at `top: PARKED`,
-  below the band where nothing of it shows, and `hover: { top: 0 }` lays it over him. Measured in the
-  Mac app: an absolute Box that is itself revealed (`display: none` to `flex`) is drawn as a floating
-  card with its own fill and border above the band; any revealed picture starts its clock over, so a
-  beach heart fell out of step with his walk; and a heart parked above or to the side fell out of
-  step too. Parked below, it held step through a whole turn, with no card and no blank frame. Its
-  `alt` is empty: it is always mounted, so a screen reader would otherwise read out a heart no one
-  can see, and his own picture's alt already says what he is doing.
+- **The heart is parked, not revealed.** It sits in an always-shown absolute Box where nothing of it
+  shows, and the band's hover moves it over him. Measured in the Mac app: an absolute Box that is
+  itself revealed (`display: none` to `flex`) is drawn as a floating card with its own fill and
+  border above the band; any revealed picture starts its clock over, so a beach heart fell out of
+  step with his walk; and a heart parked above or to the side fell out of step too. The hearth's
+  parks wholly below the band (`top: PARKED`, `hover: { top: 0 }`). A Box parked there is squeezed
+  to a pixel, and the beach's heart, which walks, then landed its first frame up to 15 px off one
+  pet in three; so the beach's parks 3 rows down (`HEART_PARKED`), still across the band's bottom
+  edge, which only clips it, and the hover lifts it a row above the top (`HEART_SHOWN`). Its picture
+  carries a row of empty sky (`ROW_PX`, 19 px) above the heart, which keeps it under the edge while
+  parked and cancels the lifted row when shown. Both held step through a whole turn, with no card,
+  no blank frame and, for the beach, no first-frame jump in 8 pets of 8. Its `alt` is empty: it is
+  always mounted, so a screen reader would otherwise read out a heart no one can see, and his own
+  picture's alt already says what he is doing.
 - **The hooks module holds the words, not the surfaces.** The desktop has no frame clock to hold a
   step by itself, and the terminal drawing the same held step is what makes both name the same tools.
   The todos shown beside a step are held there too, so one hold serves all four views.
@@ -654,10 +660,8 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   splash or hiccup for under a second; an Esc whose turn ends over a second later keeps its splash.
 - **The lively hearth's petted turn holds its first frame 500 ms**, since a pet shows between ticks
   and every frame stays a tick. The beach's spin does the same.
-- **The beach heart can land one frame off.** On about a third of pets in the Mac app, the heart's
-  first frame after moving out of its parking spot sits up to 15 px from his shoulder, then snaps
-  beside him (one frame, about 33 ms). Keeping its scale while parked (`preserveAspectRatio="none"`)
-  did not help; the hearth's heart does not walk, so it never shows.
+- **The beach heart's sky is one row of the Mac app's text.** `ROW_PX` is 19 px, a row at the app's
+  font; a host whose rows were taller or shorter would land the shown heart that many pixels off.
 - **The desktop heart shows at once.** The band's hover has no delay, so a pointer crossing the
   picture on its way to the prompt flashes the heart. It has no pop to play on show, only its soft
   beat. The hover never reaches the plugin.
@@ -709,17 +713,18 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
 - `hooks/look.ts`: the look and `/band`: `parseBand`, `lookNow`, `migrateMotion`, `replyFor`,
   `offReply`, `troubleReply`, the toasts, and `REPLY_MOST`, the most a reply may hold.
 - `hooks/clawd.ts`: Clawd's terminal cells, the shared palette (with `TERMINAL_HEART`, the heart
-  both terminal looks draw), the desktop hearts' `pixelHeart` and their parking spot (`PARKED`),
-  `cells()`, `textPx()` and the desktops' `CELL_PX`, the terminal bands' `dice`, and the cuts.
+  both terminal looks draw), the desktop hearts' `pixelHeart`, `cells()`, `textPx()` and the
+  desktops' `CELL_PX`, the terminal bands' `dice`, and the cuts.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
-- `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text.
+- `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text, and where its
+  heart parks (`HEART_PARKED`, `HEART_SHOWN`, `ROW_PX`).
 - `hooks/tide/props.ts`: the beach's props, `sceneMemory()` and `desktopScenes()`.
 - `hooks/tide/words.ts`: each beach line's forms, and `article` ("A" or "An" before a server).
 - `hooks/tide/fit.ts`: `fitLine` and the `CELLS` and `PIXELS` measures.
 - `hooks/tide/view.ts`, `hooks/tide/types.ts`: `tideInfo()` and the beach's types.
 - `hooks/hearth/band.tsx`, `desk.tsx`, `props.ts`: the hearth's terminal module, its desktop Clawd,
-  pills and pixel budget, and its props.
+  pills, pixel budget and heart's parking spot (`PARKED`), and its props.
 - `hooks/hearth/words.ts`: each hearth line's forms, its cuts (private to the file), `uncut` and
   `hiccupNouns`, for both surfaces.
 - `hooks/hearth/view.ts`, `hooks/hearth/types.ts`: `hearthInfo()` and the hearth's types.

@@ -7,8 +7,9 @@ import { bandProps as hearthProps } from '../hooks/hearth/props'
 import { hearthInfo, slipAt } from '../hooks/hearth/view'
 import { REPLY_MOST, lookNow, migrateMotion, offReply, parseBand, replyFor, toastFor, troubleReply, upgradeToast } from '../hooks/look'
 import { bandProps as tideProps, desktopScenes, sceneMemory } from '../hooks/tide/props'
-import { positionAt } from '../hooks/tide/desk'
-import { EYES, PARKED, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
+import { HEART_PARKED, HEART_SHOWN, positionAt } from '../hooks/tide/desk'
+import { PARKED } from '../hooks/hearth/desk'
+import { EYES, SPIN, cells, cut, lastDot, textPx } from '../hooks/clawd'
 import { tideInfo } from '../hooks/tide/view'
 import { CELLS, PIXELS, fitLine } from '../hooks/tide/fit'
 import { article, plain } from '../hooks/tide/words'
@@ -2905,7 +2906,8 @@ test('the hearth lets go of the beach’s kept scene once, then writes nothing m
 // source changes, and the band changes it with every moment. An image takes no hover, so the pet is
 // a heart of its own, laid over him by the band's own hover. The desktop draws a revealed absolute
 // Box as a floating card above the band, and a revealed picture starts its clock over, so the heart
-// is never revealed: it is always mounted, parked below the band, and the hover moves it onto him.
+// is never revealed: it is always mounted, parked where nothing of it shows, and the hover moves it
+// onto him.
 test('desktop: on either look Clawd is a plain image, and resting the pointer on him brings a parked heart over him that beats, solid all the while', async ($, on) => {
   world(on)
   await start($)
@@ -2928,11 +2930,13 @@ test('desktop: on either look Clawd is a plain image, and resting the pointer on
     }
     visit(tree, false)
     expect([which, svgs.filter(svg => svg.props?.isInteractive === true).length]).toEqual([which, 0])
-    // Nothing is revealed (that would be a card above the band); one heart is parked below the band
-    // (absolute, so moving it moves nothing), inside his own hover scope, and the hover lays it at 0.
+    // Nothing is revealed (that would be a card above the band); one heart is parked where nothing of
+    // it shows (absolute, so moving it moves nothing), inside his own hover scope, and the hover lays
+    // it over him: the hearth's below the band, the beach's across its bottom edge (see HEART_PARKED).
     expect([which, hidden.length, parked.length]).toEqual([which, 0, 1])
     const { box, inScope } = parked[0]!
-    expect([which, box.props?.position, box.props?.top, box.props?.left, (box as { hover?: unknown }).hover, inScope]).toEqual([which, 'absolute', PARKED, 0, { top: 0 }, true])
+    const [top, shown] = which === 'tide' ? [HEART_PARKED, HEART_SHOWN] : [PARKED, 0]
+    expect([which, box.props?.position, box.props?.top, box.props?.left, (box as { hover?: unknown }).hover, inScope]).toEqual([which, 'absolute', top, 0, { top: shown }, true])
     const svg = box.children?.[0] as Node | undefined
     // Decorative: it is always mounted, so a screen reader would otherwise read it out while it is parked.
     expect([which, svg?.type, svg?.props?.alt]).toEqual([which, 'Svg', ''])

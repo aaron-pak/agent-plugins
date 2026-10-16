@@ -2,10 +2,10 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
-import { PARKED, SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
+import { SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
 import { SAND, WET, layoutOf, resumeSplash } from '../hooks/tide/band'
 import { STRIDE_WAIT_MS } from '../hooks/tide/props'
-import { poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
+import { HEART_PARKED, HEART_SHOWN, ROW_PX, poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
 import type { Scene } from '../hooks/tide/desk'
 
 const BAND: RenderPropsOf['AbovePrompt'] = {
@@ -2170,9 +2170,14 @@ test('desktop: the heart a pet brings walks his walk step for step, in his loops
     }
     expect(off.slice(0, 4)).toEqual([])
   }
-  // The same view box, so the two pictures lie one on the other.
+  // His view box with a row of sky above it, lifted a row as it shows, so the two pictures lie one
+  // on the other.
+  const boxOf = (svg: string) => (/viewBox="([^"]+)"/u.exec(svg)?.[1] ?? '').split(' ').map(Number)
+  const tallOf = (svg: string) => Number(/ height="([^"]+)"/u.exec(svg)?.[1])
+  expect(HEART_SHOWN * ROW_PX + ROW_PX).toBe(0)
   for (const { label, source, heart } of frames) {
-    expect([label, /viewBox="[^"]+"/u.exec(heart)?.[0]]).toEqual([label, /viewBox="[^"]+"/u.exec(source)?.[0]])
+    const [x, y, w, h] = boxOf(source)
+    expect([label, boxOf(heart), tallOf(heart)]).toEqual([label, [x, y! - ROW_PX, w, h! + ROW_PX], tallOf(source) + ROW_PX])
   }
   await ui.unmount()
 })
@@ -2184,13 +2189,14 @@ test('desktop: resting the pointer on the beach brings a parked heart over it; m
   const { tree, svg, heart } = await look()
   const motion = '@media (prefers-reduced-motion:no-preference){'
 
-  // Parked below the band (absolute, so moving it moves nothing) until the band's own hover lays it
-  // over the beach; never revealed, which the desktop would draw as a card and restart his walk in.
+  // Parked across the band's bottom edge (absolute, so moving it moves nothing) until the band's own
+  // hover lifts it over the beach; never revealed, which the desktop would draw as a card and restart
+  // his walk in.
   expect(find(tree, 'Box').filter(box => box.props?.display === 'none')).toEqual([])
   const parked = find(tree, 'Box').find(box => (box as { hover?: unknown }).hover !== undefined)
-  expect([parked?.props?.position, parked?.props?.top, parked?.props?.left]).toEqual(['absolute', PARKED, 0])
+  expect([parked?.props?.position, parked?.props?.top, parked?.props?.left]).toEqual(['absolute', HEART_PARKED, 0])
   // The drawn tree carries a Box's hover beside its props.
-  expect((parked as { hover?: unknown } | undefined)?.hover).toEqual({ top: 0 })
+  expect((parked as { hover?: unknown } | undefined)?.hover).toEqual({ top: HEART_SHOWN })
   // Decorative: it is always mounted, so a screen reader would otherwise read it out while it is parked.
   expect(find(parked, 'Svg')[0]?.props?.alt).toBe('')
   for (const source of [svg?.source ?? '', heart]) {

@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps } from './types'
-import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, pixelHeart, textPx } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, pixelHeart, textPx } from '../clawd'
 import { NAP_AFTER_MS, NAP_LATE_MS } from '../facts'
 import { DIM, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
 import type { Line, Measure, Row, Said, Seg } from './words'
@@ -58,7 +58,8 @@ const PINK = HEART_PINK
 const SKY = '#5B9BD5'
 const ZED = DOZE_SLATE
 const LIMIT = '#A39E93'
-const TRACK = 'rgba(140,134,122,0.28)'
+// Dark enough that an empty meter still reads on the light band's gray.
+const TRACK = 'rgba(140,134,122,0.42)'
 
 // Clawd's canvas, in his own units (a pixel is 1 wide and 2 tall; 4 CSS px a
 // unit): he stands in x 1..18, y 0..10, with a little room above him and to his
@@ -68,6 +69,13 @@ const SCALE = 4
 
 /** Every class and keyframe in his Svg starts with this, in case a host ever draws it inline. */
 const P = 'hh-'
+/**
+ * Where the hearth parks the pet's heart, in rows below the band's top: always mounted (so it keeps
+ * his clock) yet clipped away, until the band's hover moves it to 0, over him. Parked below, the
+ * desktop keeps it in step with him; parked above or to the side, it fell out of step. (The beach,
+ * whose heart walks, parks its own across the band's edge: see HEART_PARKED in tide/desk.tsx.)
+ */
+export const PARKED = 40
 
 export function desk(els: Desk, view: DeskView): RenderElement {
   const { Box, Svg } = els

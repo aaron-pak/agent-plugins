@@ -75,12 +75,6 @@ export const HEART_PINK = '#E9789B'
  * (#d787af), so a terminal that shows only 256 colors keeps its hue.
  */
 export const TERMINAL_HEART = '#E37DA2'
-/**
- * Where both desktops park the pet's heart, in rows below the band's top: always mounted (so it keeps
- * his clock) yet clipped away, until the band's hover moves it to 0, over him. Parked below, the
- * desktop keeps it in step with him; parked above or to the side, it fell out of step.
- */
-export const PARKED = 40
 /** The nap's z's, on both desktops. */
 export const DOZE_SLATE = '#7E95B5'
 

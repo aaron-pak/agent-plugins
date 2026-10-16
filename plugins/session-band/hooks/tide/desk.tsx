@@ -1,7 +1,7 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
-import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, PARKED, SPIN, pixelHeart } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_PINK, SPIN, pixelHeart } from '../clawd'
 import { BODY, EYE, curled, pose, spin } from './band'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
@@ -32,6 +32,19 @@ const NARROW = 40
 const H = 18
 const FRAME_PX = 64
 const PAD_PX = (FRAME_PX - H * U) / 2
+/**
+ * Where the beach parks its heart, in rows, and where the hover moves it. The hearth's heart parks
+ * wholly below the band (PARKED), but a Box parked there is squeezed to a pixel, and the beach's
+ * heart, which walks his walk, then landed its first frame up to 15 px off one reveal in three. So
+ * this one parks 3 rows down, still across the band's bottom edge, which only clips it and keeps
+ * its clock true, and the hover lifts it a row above the band's top. Its picture carries a row of
+ * empty sky (ROW_PX) above the heart, which keeps the parked heart under the edge and, shown,
+ * cancels the row it was lifted, so it lands on him exactly.
+ */
+export const HEART_PARKED = 3
+export const HEART_SHOWN = -1
+/** One row of the desktop's text, in CSS px, as Claude's desktop app draws it. */
+export const ROW_PX = 19
 const GROUND = 14
 const TOP = GROUND - 10
 const HOME = 7
@@ -154,9 +167,9 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene): Render
     <Box flexDirection="row" alignItems="center">
       <Box key="beach" position="relative" flexShrink={0}>
         <Svg source={diorama(scene)} alt={altFor(scene, props.percent !== null)} width={scene.width * U} height={FRAME_PX} />
-        {/* Parked below the band and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
-        <Box position="absolute" top={PARKED} left={0} hover={{ top: 0 }}>
-          <Svg source={petHeart(scene)} alt="" width={scene.width * U} height={FRAME_PX} />
+        {/* Parked across the band's bottom edge and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
+        <Box position="absolute" top={HEART_PARKED} left={0} hover={{ top: HEART_SHOWN }}>
+          <Svg source={petHeart(scene)} alt="" width={scene.width * U} height={FRAME_PX + ROW_PX} />
         </Box>
       </Box>
       <Box flexDirection="column" marginLeft={2} flexGrow={1} flexShrink={1} minWidth={0}>
@@ -921,10 +934,10 @@ function layout(scene: Scene): { shore: number; start: number; roam: number; spa
  * Petting him on the desktop: a heart beside him, drawn over the diorama while a pointer rests on
  * the beach. The diorama is an image (an interactive frame blanks for a frame or two each time its
  * source changes), and an image takes no hover, so the heart is a picture of its own, the diorama's
- * size, parked below the band until its hover lays it over him. Both images run on the page's one
- * clock from the same render, so the heart walks his walk step for step: the loop and the lead to
- * it, held where a still frame holds him, handed over from his walk home to its place over him as he
- * curls up.
+ * size with a row of sky above it, parked across the band's bottom edge until its hover lays it
+ * over him (see HEART_PARKED). Both images run on the page's one clock from the same render, so the
+ * heart walks his walk step for step: the loop and the lead to it, held where a still frame holds
+ * him, handed over from his walk home to its place over him as he curls up.
  */
 function petHeart(scene: Scene): string {
   const base = ['.heart{transform-box:fill-box;transform-origin:center}']
@@ -973,7 +986,7 @@ function petHeart(scene: Scene): string {
   const css = scene.still ? base.join('') : `${base.join('')}@media (prefers-reduced-motion:no-preference){${motion.join('')}}`
 
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-PAD_PX} ${scene.width * U} ${FRAME_PX}" width="${scene.width * U}" height="${FRAME_PX}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 ${-PAD_PX - ROW_PX} ${scene.width * U} ${FRAME_PX + ROW_PX}" width="${scene.width * U}" height="${FRAME_PX + ROW_PX}">`,
     `<style>${css}</style>`,
     `<g transform="scale(${U})">${drawn}</g></svg>`,
   ].join('')
@@ -1086,7 +1099,8 @@ function sand(width: number): string {
 
 function shell(): string {
   return [
-    `<path d="M1.2 ${GROUND + 0.2}C1.4 ${GROUND - 3.4} 5.8 ${GROUND - 3.4} 6 ${GROUND + 0.2}Z" fill="${SHELL}"/>`,
+    // Rimmed in its ridges' rose, so its pale pink keeps an edge against a light band.
+    `<path d="M1.2 ${GROUND + 0.2}C1.4 ${GROUND - 3.4} 5.8 ${GROUND - 3.4} 6 ${GROUND + 0.2}Z" fill="${SHELL}" stroke="${SHELL_RIDGE}" stroke-width=".3" stroke-linejoin="round"/>`,
     ...[2.4, 3.6, 4.8].map(x => `<path d="M3.6 ${GROUND}L${x} ${GROUND - 2.2}" stroke="${SHELL_RIDGE}" stroke-width=".3"/>`),
     `<rect x="2.8" y="${GROUND - 0.2}" width="1.6" height=".7" rx=".3" fill="${SHELL_RIDGE}"/>`,
   ].join('')
