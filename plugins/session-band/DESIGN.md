@@ -170,6 +170,7 @@ facts through a view that hands it exactly what its code was built to read (`tid
 |---|---|
 | `session.start` | Registers `/band`; reads the motion, usage, model, repo, reduced motion and `TERM_PROGRAM`, each on its own so one failed lookup never blanks the rest, and writes them before git answers; arms the nap; shows the upgrade toast; then writes git's branch and count, even if a step before it went wrong. Idempotent. |
 | `session.measure` | Context, cost and limits; the `warnAt` toast. |
+| `classic.PostModelSwitch` | The main loop's new model, on line 3 at once. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
 | `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
@@ -632,8 +633,6 @@ naps, without blinks, taps or hops.
 - **The cheer by the shell with the tide partway in** (56 to 95 columns): stepping out would leave
   the ✻ no sky, so he cheers at home and the ✶ sits a corner off the shell.
 - **Below 34 columns the looks fall back differently**, and under 16 neither Clawd fits whole.
-- **A `/model` shows at the next Enter.** No hook fires on it, so the band names the old model until
-  the next prompt or turn end.
 - **Two word fitters.** Both only take away and are tested at 34 to 160 columns, but a fix to one
   does not reach the other.
 - **Turn-start order.** If the host ever said it was working before the prompt hook ran, the beach

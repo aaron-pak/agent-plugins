@@ -216,6 +216,18 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // A /model, the picker or a fallback names the new model on line 3 at once. Only the main loop's
+  // switch counts (a subagent's runs its own model), and the git hold still keeps it off the line
+  // until the project's facts arrive together.
+  on('classic.PostModelSwitch', async ($, e, next) => {
+    if (e.agent_id === undefined && typeof e.to_model === 'string' && e.to_model.trim() !== '') {
+      const model = prettyModel(e.to_model)
+      await patch($, () => ({ model }))
+    }
+
+    return next(e)
+  }).catch((_$, e, next) => next(e))
+
   // The band only watches the prompt and the tools. Should its bookkeeping throw, the `.catch`
   // says outright what the engine would do anyway: hand the event on untouched, or keep what the
   // hook's own `next` already settled to (nothing runs twice). A failed state write never touches
@@ -225,7 +237,8 @@ export const register: Register = (on, options) => {
     // look a no-op anyway: this only keeps one timer at a time, see settle.)
     letGo(timers)
     settled()
-    // Read again with each prompt, so a change in /config (or a /model) takes hold without a restart.
+    // Read again with each prompt, so a change in /config takes hold without a restart (and a model
+    // switch the hook above missed shows by the next Enter).
     const [now, isCalm, model] = await Promise.all([$.clock.now(), prefersReducedMotion($), modelNow($)])
     await patch($, before => ({
       model: model ?? before.model,
@@ -922,8 +935,8 @@ async function gitState($: EngineInterface): Promise<Partial<Pick<Info, 'branch'
 
 /**
  * The main loop's model as line 3 names it ("Opus 5.5"), read at the start and again at each prompt
- * and each turn's end, so a /model shows by the next Enter. A lookup that fails says nothing (null),
- * and the band keeps the last model it knew.
+ * and each turn's end, behind the model switch hook. A lookup that fails says nothing (null), and the
+ * band keeps the last model it knew.
  */
 async function modelNow($: EngineInterface): Promise<string | null> {
   try {

@@ -2979,6 +2979,44 @@ test('after /model, line 3 names the new model by the next Enter, on both looks 
   for (const line of await said()) expect([line, line.includes('Haiku')]).toEqual([line, true])
 })
 
+test('a model switch names the new model on line 3 at once, with no prompt; a subagent\'s switch leaves it alone', async ($, on) => {
+  world(on)
+  // No settings hook beneath: the engine's own answer is nothing to add.
+  on('classic.PostModelSwitch', () => ({}))
+  await start($)
+  await turn($)
+  const switched = (to: string, agent?: string) =>
+    $.classic.PostModelSwitch({
+      from_model: 'claude-opus-5-5[1m]',
+      to_model: to,
+      requested_model: null,
+      source: 'command',
+      context_tokens: 0,
+      prompt_cache_warm: false,
+      cache_ttl: '5m',
+      estimated_cache_write_usd: 0,
+      pricing: 'catalog',
+      ...(agent === undefined ? {} : { agent_id: agent, agent_type: 'general-purpose' }),
+    })
+  const lines = async (): Promise<string[]> => {
+    const all: string[] = []
+    for (const which of ['tide', 'hearth'] as const) {
+      await run($, which)
+      for (const surface of SURFACES) {
+        const { ui, look } = await mount($, surface, { ...BAND, bodyColumns: 140 })
+        all.push(`${which} ${surface}: ${(await look()).text.replace(/\s+/g, ' ')}`)
+        await ui.unmount()
+      }
+    }
+
+    return all
+  }
+  await switched('claude-haiku-5-5', 'agent-1')
+  for (const line of await lines()) expect([line, line.includes('Opus 5.5'), line.includes('Haiku')]).toEqual([line, true, false])
+  await switched('claude-sonnet-5')
+  for (const line of await lines()) expect([line, line.includes('Sonnet 5'), line.includes('Opus')]).toEqual([line, true, false])
+})
+
 for (const fails of [['usage'], ['repo'], ['usage', 'repo']] as const) {
   test(`a ${fails.join(' and ')} lookup that fails at the start loses only its own fact: line 3 still names the project and the model`, async ($, on) => {
     world(on, { fails })
