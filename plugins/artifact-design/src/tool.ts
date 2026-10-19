@@ -258,9 +258,9 @@ export function checkTool(): Tool {
 export function unknownParameter(args: Record<string, unknown>, check = false): string | null {
   const known = Object.keys((check ? checkSchema() : schema()).properties);
   for (const key of Object.keys(args)) {
-    // Claude Code's quickstart takes `intent`; every artifact here is a plain page, so quickstart
-    // takes none, and one passed out of habit is let through and ignored.
-    if (known.includes(key) || (key === "intent" && !check)) continue;
+    // Claude Code's quickstart takes `intent` and `design_systems`; every artifact here is a plain
+    // page, so quickstart takes neither, and one passed out of habit is let through and ignored.
+    if (known.includes(key) || (!check && (key === "intent" || key === "design_systems"))) continue;
     const instead = check ? undefined : INSTEAD[key];
     const takes = known.map((name) => `\`${name}\``).join(", ");
     return (

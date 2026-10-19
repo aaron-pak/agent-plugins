@@ -7,9 +7,9 @@
 //   quickstart returns for a plain page (read from the bundled artifact-design skill).
 // - publish: wraps the page in the claude.ai publish skeleton and writes it to an artifacts
 //   folder (ARTIFACTS_DIR, default ~/artifacts), one folder per artifact. Publishing the same
-//   file again in the same session (this server process, or the Claude Code session it was
-//   started for, which a resumed session keeps) updates the same artifact, as the Artifact tool
-//   keeps its file-to-artifact map per session; `url` updates any artifact.
+//   file again in the same session (this server process, a Claude Code session ID the artifact
+//   lists, or a file in a drafts folder) updates the same artifact, as the Artifact tool keeps its
+//   file-to-artifact map per session; `url` updates any artifact.
 //   A Markdown file is rendered into the document template Claude Code uses for one. `edits`
 //   changes the file on the way, as the Artifact tool's does (src/edits.ts).
 // - list, read, open, delete: the published artifacts.
@@ -37,6 +37,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -251,11 +252,34 @@ async function previewOffered(): Promise<boolean> {
 // ---------------------------------------------------------------- publishing
 
 // The source files this server process published, and their artifacts: like the Artifact tool's
-// per-session map, a path republished in this session updates its artifact, and nothing else does.
+// per-session map, a path republished in this session updates its artifact. A session goes on past
+// its server, though: a resumed one starts a new server, and Claude Code can switch sessions under a
+// running one, so a republish also finds an artifact this session published before (see `ours`).
 const SESSION_SOURCES = new Map<string, string>();
-// Claude Code passes its session ID to the servers it starts, and a resumed session keeps it, so
-// each artifact records it and a resumed session's republish finds its artifact again.
+// Claude Code passes its session ID to the servers it starts, and a resumed session keeps it.
 const SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID || null;
+// How many sessions an artifact remembers, newest first, for when another one updates it with `url`.
+const SESSIONS_KEPT = 8;
+
+const realOr = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+/** Whether a publish of `source` continues the session that published `entry` before: the entry
+ * lists this session's ID, or the file is in a drafts folder. Each server start makes its own drafts
+ * folder, so a later server meets a file in one only when the conversation that wrote it goes on,
+ * which covers Codex, where no session ID reaches the server, and a session switched to under a
+ * running Claude Code server, which keeps the ID it started with. */
+function ours(source: string, entry: Entry): boolean {
+  if (SESSION_ID && entry.sessions?.includes(SESSION_ID)) return true;
+  const roots = new Set([DRAFTS_ROOT, realOr(DRAFTS_ROOT)]);
+  const paths = new Set([source, realOr(source)]);
+  return [...roots].some((root) => [...paths].some((path) => (partsBelow(root, path)?.length ?? 0) >= 2));
+}
 
 // The tab icon: a letter on a dark tile, with its angle brackets percent-encoded so that nothing
 // reading the page's head (the title rule stops at the first "<svg") takes it for markup.
@@ -393,17 +417,12 @@ function publish(args: Args): string {
       entry = index.get(known)!;
     } else {
       let earlier: [string, Entry] | null = null;
-      let resumed: [string, Entry] | null = null;
       for (const [other, otherEntry] of index) {
         if (otherEntry.source !== source) continue;
-        const updated = otherEntry.updated || "";
-        if (!earlier || updated > (earlier[1].updated || "")) earlier = [other, otherEntry];
-        if (SESSION_ID && otherEntry.session === SESSION_ID && (!resumed || updated > (resumed[1].updated || ""))) {
-          resumed = [other, otherEntry];
-        }
+        if (!earlier || (otherEntry.updated || "") > (earlier[1].updated || "")) earlier = [other, otherEntry];
       }
-      if (resumed) {
-        [slug, entry] = resumed;
+      if (earlier && ours(source, earlier[1])) {
+        [slug, entry] = earlier;
       } else if (earlier) {
         notes.push(
           `This path was published before as ${linkOf(...earlier)}, in an earlier session; ` +
@@ -486,7 +505,9 @@ function publish(args: Args): string {
     description,
     icon,
   });
-  if (SESSION_ID) entry.session = SESSION_ID;
+  if (SESSION_ID) {
+    entry.sessions = [SESSION_ID, ...(entry.sessions ?? []).filter((id) => id !== SESSION_ID)].slice(0, SESSIONS_KEPT);
+  }
   if (given === null && description !== null) entry.derived = true;
   else delete entry.derived;
   entry.created = entry.created || now;

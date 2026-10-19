@@ -188,22 +188,56 @@ describe("Artifact tool", () => {
     expect((await before.call({ file_path: source, icon: "page" })).text).toContain("(Version 1)");
     await before.close();
 
+    // Another session updates it with `url`, which doesn't take it from the first.
+    const other = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "another-session" });
+    expect((await other.call({ file_path: source, url: "resumed-page" })).text).toContain("(Version 2)");
+    await other.close();
+
     // --resume starts a new server process with the same session ID.
     const after = await legacy("claude-code", STORE, session);
     writeFileSync(source, "<title>Resumed Page</title>\n<p>Second</p>\n");
     const again = await after.call({ file_path: source });
-    expect(again.text).toContain("resumed-page/index.html (Version 2)");
+    expect(again.text).toContain("resumed-page/index.html (Version 3)");
     expect(again.text).not.toContain("in an earlier session");
     await after.close();
 
-    // Another session gets a new artifact, and is told about the earlier one.
-    const other = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "another-session" });
-    const fresh = await other.call({ file_path: source });
+    // A third session gets a new artifact, and is told about the earlier one.
+    const third = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "third-session" });
+    const fresh = await third.call({ file_path: source });
     expect(fresh.text).toContain("resumed-page-2/index.html (Version 1)");
     expect(fresh.text).toContain("in an earlier session");
-    await other.call({ action: "delete", url: "resumed-page-2" });
-    await other.call({ action: "delete", url: "resumed-page" });
-    await other.close();
+    await third.call({ action: "delete", url: "resumed-page-2" });
+    await third.call({ action: "delete", url: "resumed-page" });
+    await third.close();
+  });
+
+  test("a page in a drafts folder republishes to its artifact from a later server", async () => {
+    // Codex passes no session ID, and a session Claude Code switches to keeps the server's: the
+    // drafts folder, one per server start, tells that the conversation went on.
+    const drafts = join(TEMP, `artifact-drafts-${process.getuid!()}`, "20261019-120000-AbCdEf");
+    mkdirSync(drafts, { recursive: true });
+    const source = join(drafts, "draft.html");
+    writeFileSync(source, "<title>Drafted Page</title>\n<p>First</p>\n");
+    const first = await legacy("codex-mcp-client");
+    expect((await first.call({ file_path: source, icon: "page" })).text).toContain("(Version 1)");
+    await first.close();
+    const later = await legacy("codex-mcp-client");
+    const again = await later.call({ file_path: source });
+    expect(again.text).toContain("drafted-page/index.html (Version 2)");
+    expect(again.text).not.toContain("in an earlier session");
+
+    // A file outside the drafts that an entry without sessions lists (no ID reached its server)
+    // stays with that server: a later one makes a new artifact.
+    const outside = join(TEMP, "outside.html");
+    writeFileSync(outside, "<title>Outside Page</title>\n");
+    expect((await later.call({ file_path: outside })).text).toContain("(Version 1)");
+    await later.close();
+    const resumed = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "some-session" });
+    const fresh = await resumed.call({ file_path: outside });
+    expect(fresh.text).toContain("outside-page-2/index.html (Version 1)");
+    expect(fresh.text).toContain("in an earlier session");
+    for (const url of ["drafted-page", "outside-page", "outside-page-2"]) await resumed.call({ action: "delete", url });
+    await resumed.close();
   });
 
   test("publishes edits and saves them to the file", async () => {
