@@ -158,12 +158,6 @@ export function schema(compact = false): ObjectSchema {
       type: "string",
       description: "publish: an existing artifact's link to update. read, open and delete: the artifact's link.",
     },
-    intent: {
-      type: "string",
-      enum: ["document", "slides", "design", "other"],
-      description:
-        "quickstart: what is being made: 'document' (a report, memo or other text to read), 'slides' (a deck or one slide), 'design' (a visual design or prototype), 'other' (anything else, or unsure). Each is made as a plain page.",
-    },
   };
   if (compact) {
     const short: Record<string, string> = {
@@ -175,7 +169,6 @@ export function schema(compact = false): ObjectSchema {
       files: '{"published/path": "/absolute/source"}; null removes one.',
       edits: "Exact old_str/new_str pairs applied to file_path, then published and saved.",
       url: "An artifact's link (from list).",
-      intent: "What is being made.",
     };
     for (const [name, description] of Object.entries(short)) properties[name]!.description = description;
     const pair = (properties.edits!.items as { properties: Record<string, Schema> }).properties;
@@ -265,7 +258,9 @@ export function checkTool(): Tool {
 export function unknownParameter(args: Record<string, unknown>, check = false): string | null {
   const known = Object.keys((check ? checkSchema() : schema()).properties);
   for (const key of Object.keys(args)) {
-    if (known.includes(key)) continue;
+    // Claude Code's quickstart takes `intent`; every artifact here is a plain page, so quickstart
+    // takes none, and one passed out of habit is let through and ignored.
+    if (known.includes(key) || (key === "intent" && !check)) continue;
     const instead = check ? undefined : INSTEAD[key];
     const takes = known.map((name) => `\`${name}\``).join(", ");
     return (

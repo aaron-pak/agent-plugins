@@ -30,7 +30,15 @@ type Reply = { id: number; result?: any; error?: { code: number; message: string
 
 const spawnServer = (store: string, env: Record<string, string> = {}) =>
   spawn("node", [SERVER], {
-    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP, ...env },
+    env: {
+      ...process.env,
+      ARTIFACTS_DIR: store,
+      ARTIFACT_OPEN: "0",
+      ARTIFACT_PREVIEW: "0",
+      TMPDIR: TEMP,
+      CLAUDE_CODE_SESSION_ID: "",
+      ...env,
+    },
     stdio: ["pipe", "pipe", "inherit"],
   });
 
@@ -170,6 +178,32 @@ describe("Artifact tool", () => {
     expect(existsSync(join(STORE, "budget-plan"))).toBe(false);
     expect(existsSync(source)).toBe(true);
     await server.close();
+  });
+
+  test("a resumed Claude Code session republishes to the same artifact", async () => {
+    const source = join(TEMP, "resumed.html");
+    writeFileSync(source, "<title>Resumed Page</title>\n<p>First</p>\n");
+    const session = { CLAUDE_CODE_SESSION_ID: "3f0c2b9e-resumed" };
+    const before = await legacy("claude-code", STORE, session);
+    expect((await before.call({ file_path: source, icon: "page" })).text).toContain("(Version 1)");
+    await before.close();
+
+    // --resume starts a new server process with the same session ID.
+    const after = await legacy("claude-code", STORE, session);
+    writeFileSync(source, "<title>Resumed Page</title>\n<p>Second</p>\n");
+    const again = await after.call({ file_path: source });
+    expect(again.text).toContain("resumed-page/index.html (Version 2)");
+    expect(again.text).not.toContain("in an earlier session");
+    await after.close();
+
+    // Another session gets a new artifact, and is told about the earlier one.
+    const other = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "another-session" });
+    const fresh = await other.call({ file_path: source });
+    expect(fresh.text).toContain("resumed-page-2/index.html (Version 1)");
+    expect(fresh.text).toContain("in an earlier session");
+    await other.call({ action: "delete", url: "resumed-page-2" });
+    await other.call({ action: "delete", url: "resumed-page" });
+    await other.close();
   });
 
   test("publishes edits and saves them to the file", async () => {
@@ -399,21 +433,22 @@ describe("preview", () => {
       const missing = await server.call({ file_path: page, widths: [800], themes: ["dark"] }, "ArtifactCheck");
       expect(missing.text).toStartWith("preview failed: preview isn't available here");
     }
-    const listed = (await server.call({ action: "quickstart", intent: "other" })).text;
+    const listed = (await server.call({ action: "quickstart" })).text;
+    expect(listed).toStartWith("For a plain page, the page-design guidance follows.");
     expect(listed).toContain("one `ArtifactCheck` preview, or else one screenshot");
     expect(listed).toContain("`artifact-design:artifact-diagramming` in the Skill tool");
     expect(listed).not.toMatch(NATIVE_ONLY);
+    // An intent passed out of habit is ignored: every artifact here takes the plain-page path.
+    expect((await server.call({ action: "quickstart", intent: "document" })).text).toBe(listed);
     await server.close();
     const off = await legacy("codex-mcp-client", STORE, { ARTIFACT_PREVIEW: "0" });
-    for (const intent of ["other", "document", "slides", "design"]) {
-      const text = (await off.call({ action: "quickstart", intent })).text;
-      expect(text).not.toContain("ArtifactCheck");
-      expect(text).not.toContain("The preview renders");
-      expect(text).toContain("one screenshot of the local file; if the session offers no way, skip the look.");
-      expect(text).not.toContain("Skill tool");
-      expect(text).toContain("In this text, Claude means you.");
-      expect(text).not.toMatch(NATIVE_ONLY);
-    }
+    const text = (await off.call({ action: "quickstart" })).text;
+    expect(text).not.toContain("ArtifactCheck");
+    expect(text).not.toContain("The preview renders");
+    expect(text).toContain("one screenshot of the local file; if the session offers no way, skip the look.");
+    expect(text).not.toContain("Skill tool");
+    expect(text).toContain("In this text, Claude means you.");
+    expect(text).not.toMatch(NATIVE_ONLY);
     await off.close();
   }, 60_000);
 

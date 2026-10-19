@@ -32,6 +32,7 @@ export type Entry = {
   description?: string | null;
   derived?: boolean; // the description was taken from the page, so the next publish takes it again
   icon?: string | null;
+  session?: string; // the Claude Code session that last published it, which a resumed session keeps
 };
 export type Index = Map<string, Entry>;
 
