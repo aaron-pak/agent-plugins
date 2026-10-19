@@ -12,7 +12,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      # The whole history, so the mod step below can see what a change touched.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check marketplace, manifests, skills, and README agree
         run: python3 scripts/validate.py
@@ -50,6 +53,21 @@ jobs:
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
+
+      # A mod's tests take minutes, so they run for the mods a change touches, and for every mod
+      # when the commands that run them change (or when what changed can't be told).
+      - name: Test the mods this change touches
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          changed=$(git diff --name-only "$BASE" HEAD) || changed=scripts/mod/
+          status=0
+          for mod in plugins/*/; do
+            [ -f "$mod/hooks/hooks.json" ] || continue
+            echo "$changed" | grep -qE "^($mod|scripts/mod/|package\.json$)" || continue
+            bun run mod test "$mod" || status=1
+          done
+          exit $status
 
       # --strict fails on warnings. The one warning allowed is a missing version: a mod's
       # .claude-plugin/plugin.json leaves it unset on purpose, like every manifest here.
