@@ -35,6 +35,7 @@ CI (`.github/workflows/validate.yml`) runs on every push to `main` and every pul
 - `python3 scripts/validate.py` checks that marketplace entries, `plugin.json` files (including Codex's `.codex-plugin/plugin.json`), skill frontmatter, MCP config pairs, and the README plugin list agree.
 - `claude plugin validate --strict` checks the marketplace and each plugin the way Claude Code loads them. CI allows one warning, a missing version, which every mod's `.claude-plugin/plugin.json` gets because versions stay unset.
 - `bun run lint`, `bun run typecheck` and `bun run test` check the TypeScript, and `bun run build` must leave the committed bundles unchanged.
+- `bun run mod test` runs the tests of each mod the change touches (all of them when `scripts/mod/` changes).
 
 Run them locally before pushing.
 
@@ -63,14 +64,11 @@ bun run mod check plugins/<mod>                # validate --strict, tsc against 
 bun run mod test plugins/<mod> --grep splash   # the tests whose names match; without --grep, all of them
 bun run mod preview plugins/<mod> --styles tide,hearth   # play a band through a session and check its layout
 bun run mod preview plugins/<mod> --png        # and paint both surfaces, dark and light; --gifs animates them
-bun run mod tty plugins/<mod> --send "/band hearth" --send "run false"   # real Claude Code in tmux
 ```
 
-- `mod test` cuts each test file into runs of neighbouring tests that run side by side, balanced by each test's last time. Iterate with `--grep` on what changed and run everything before pushing. A test that leans on the one before it stays beside it unless a cut falls between them; name such pairs "(1 of 2)" and "(2 of 2)" and no cut does.
+- `mod test` cuts each test file into runs of neighbouring tests that run side by side, balanced by each test's last time. Iterate with `--grep` on what changed and run everything before pushing: on session-band's 503 tests in a 4-core container, a few named tests take seconds and the whole suite about 6 minutes, against 9 for `claude plugin test`. A test that leans on the one before it stays beside it unless a cut falls between them; name such pairs "(1 of 2)" and "(2 of 2)" and no cut does, and `--grep` brings a later part's earlier ones along.
 - `mod preview` plays fresh, idle, cheer, working, reading, thinking, oops, high, nap and pet through the mod's `AbovePrompt` hook on both surfaces at 64, 100 and 140 columns, then writes `report.txt` and `frames.txt` (the terminal band as text, each animation's distinct frames). Read those before painting, and paint for what text can't show: color and the desktop. The report fails on a height that changes, a row past the band's edge, an emoji-capable glyph, block characters in desktop Text, or an element a surface refuses, and warns on rows within 2 columns of the edge, glyphs outside the safe set, space-aligned desktop Text and more than 4 frame changes a second. When a round of looking finds a fault of a new kind, add it to `scripts/mod/preview/lint.ts` or to the mod's tests, so no later round has to look for it. The desktop paint approximates the real page.
 - `mod types` uses the `.claude-plugin/types/` an interactive session lays beside a mod it loads from its folder; elsewhere it uses the declarations the plugin-authoring skill writes each time it loads, so load that skill first in a cloud session.
-- `mod tty` starts `claude --plugin-dir <mod>` in a detached tmux pane, types each `--send`, and records every change to the pane, which is where the host's own lines, wrapping and 256-color rounding show. A cloud container's auto mode refuses an interactive `claude`, so run it on a Mac, through Remote Control.
-- To see each push on a Mac with no restart, name the mod's checkout in `CLAUDE_CODE_PLUGIN_DIRS` and set `CLAUDE_CODE_PLUGIN_DIR_WATCH=1`, both in `env` of `~/.claude/settings.json`. An interactive session reloads a watched mod when a file in it is saved; the variable makes the desktop app's sessions do the same. Then `scripts/mod/follow.sh <checkout>` fast-forwards the checkout to each push to its branch.
 
 ## Trying changes locally
 

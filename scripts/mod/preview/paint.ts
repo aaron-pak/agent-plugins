@@ -473,20 +473,6 @@ export function termBlock(shot: Shot, schemeName: Scheme): string {
   return `<div style="position:relative;width:${w + 24}px;height:${hgt + 16}px;background:${scheme.bg};font-family:'DejaVu Sans Mono',Menlo,monospace;font-size:15px;border-radius:8px"><div style="position:absolute;left:12px;top:8px">${html}</div></div>`;
 }
 
-/** A captured terminal screen (ANSI text) painted as cells, as `mod tty --png` shows it. */
-export function ansiBlock(ansi: string, schemeName: Scheme): string {
-  const scheme = TERM[schemeName];
-  const {
-    html,
-    w,
-    h: hgt,
-  } = cellsHtml(
-    parseAnsi(ansi.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;]*[A-HJKSTfhl]/g, "")),
-    scheme,
-  );
-  return `<div style="position:relative;width:${w + 24}px;height:${hgt + 16}px;background:${scheme.bg};font-family:'DejaVu Sans Mono',Menlo,monospace;font-size:15px;border-radius:8px;margin-bottom:12px"><div style="position:absolute;left:12px;top:8px">${html}</div></div>`;
-}
-
 // ── Desktop: tree → flex divs and spans ───────────────────────────────────
 
 const CELL = 7.8; // the desktop's monospace metric, approximated

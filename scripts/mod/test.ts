@@ -29,6 +29,9 @@ type Cache = Record<string, { hash: string; names: string[]; ms: Record<string, 
 
 const KIT = /(\bimport\s+(?!type\b)[^;]*?\bfrom\s*)(["'])claude-code\/testing\2/g;
 
+/** A test named as a later part ("(2 of 2)"), which leans on the one before it. */
+const CONTINUES = /\((?:[2-9]|\d\d+) of \d+\)/;
+
 function cachePath(name: string): string {
   return join(root, "node_modules", ".cache", "mod-test", `${name}.json`);
 }
@@ -117,7 +120,7 @@ function partition(items: { test: string; index: number; ms: number }[], bins: n
   for (const item of items) {
     const run = runs.at(-1)!;
     const due = (total * runs.length) / bins;
-    const continues = /\((?:[2-9]|\d\d+) of \d+\)/.test(item.test);
+    const continues = CONTINUES.test(item.test);
     if (run.length > 0 && runs.length < bins && done >= due - item.ms / 2 && !continues) runs.push([item.index]);
     else run.push(item.index);
     done += item.ms;
@@ -200,10 +203,11 @@ export async function testMod(dir: string, options: TestOptions = {}): Promise<n
     const plan = files.map((file) => {
       if (!file.splittable) return { file, items: null };
       const entry = cache[file.rel]!;
-      const items = entry.names
-        .map((test, index) => ({ test, index, ms: entry.ms[test] ?? typical }))
-        .filter((item) => options.grep === undefined || options.grep.test(item.test));
-      return { file, items };
+      const all = entry.names.map((test, index) => ({ test, index, ms: entry.ms[test] ?? typical }));
+      const kept = all.map((item) => options.grep === undefined || options.grep.test(item.test));
+      // A later part brings the parts before it, so --grep never runs it without what it leans on.
+      for (let i = all.length - 1; i > 0; i--) if (kept[i] && CONTINUES.test(all[i]!.test)) kept[i - 1] = true;
+      return { file, items: all.filter((_, i) => kept[i]) };
     });
     const total = plan.reduce((sum, { items }) => sum + (items?.reduce((s, item) => s + item.ms, 0) ?? 0), 0);
     let shards = 0;

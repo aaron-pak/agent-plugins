@@ -4,7 +4,6 @@
 //   bun run mod test <dir> [--grep re]   the tests, split across the cores, or only the matching ones
 //   bun run mod types <dir>              type-check against this build's API
 //   bun run mod preview <dir> [...]      draw a band through a session and check its layout
-//   bun run mod tty [...]                capture a real terminal running Claude Code with the mod
 //
 // Each command works on a copy of the mod and leaves its folder as it was. `bun run mod help <command>`
 // says more.
@@ -12,7 +11,6 @@
 import { parseArgs, seconds, modDir, stream } from "./common.ts";
 import { previewMod, PREVIEW_HELP, PREVIEW_SWITCHES } from "./preview.ts";
 import { testMod } from "./test.ts";
-import { ttyCapture, TTY_HELP } from "./tty.ts";
 import { typecheckMod } from "./types.ts";
 
 const HELP: Record<string, string> = {
@@ -24,16 +22,16 @@ says which passed. A missing manifest version is the one warning it allows, as C
 
 Runs the mod's tests with \`claude plugin test\` on a copy whose test files are split into shards that
 run side by side, balanced by each test's last time. --grep keeps the tests whose names match (a
-regular expression, case-insensitive). --shards 1 runs the files as they are.`,
+regular expression, case-insensitive), with the earlier parts of a test named "(2 of 2)". --shards 1
+runs the files as they are.`,
   types: `bun run mod types <dir> [--api path/to/claude-code.d.ts]
 
 Type-checks the mod: with its own tsconfig.json when the engine has laid .claude-plugin/types/, else
 against the API declarations the plugin-authoring skill last wrote (or the ones --api names).`,
   preview: PREVIEW_HELP,
-  tty: TTY_HELP,
 };
 
-const USAGE = `bun run mod <check|test|types|preview|tty|help> ...\n\n${Object.values(HELP)
+const USAGE = `bun run mod <check|test|types|preview|help> ...\n\n${Object.values(HELP)
   .map((text) => text.split("\n")[0])
   .join("\n")}`;
 
@@ -88,8 +86,6 @@ async function main(argv: string[]): Promise<number> {
       return await typecheckMod(modDir(words[0]), flags.get("api")?.at(-1));
     case "preview":
       return await previewMod(modDir(words[0]), flags);
-    case "tty":
-      return await ttyCapture(words, flags);
     case "help":
     case undefined:
       console.log(words[0] !== undefined && HELP[words[0]] !== undefined ? HELP[words[0]] : USAGE);
