@@ -300,6 +300,10 @@ const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => strin
 /** Text the plugin ports with edits, found by a string its code or file holds. */
 const PORTED: { what: string; anchor: string }[] = [
   { what: "the page contract and skill composition", anchor: "## Page contract" },
+  // Claude Code builds the page contract's Format, Skeleton and Title paragraphs, and ArtifactCheck's
+  // text, in a chunk of their own that holds none of the other anchors.
+  { what: "the page contract's Skeleton and Title paragraphs", anchor: "The file is wrapped in a" },
+  { what: "ArtifactCheck's description", anchor: "renders a local page file before you publish it" },
   { what: "the Artifact tool's description", anchor: "renders an HTML file as an Artifact" },
   { what: "the publish skeleton and runtimes", anchor: "body{margin:0;padding:0;font:14px" },
   { what: "the Markdown publish", anchor: "Markdown \\xB7 " },
