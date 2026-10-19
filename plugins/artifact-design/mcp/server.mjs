@@ -13,7 +13,6 @@ import {
   openSync as openSync2,
   readFileSync as readFileSync3,
   readdirSync as readdirSync3,
-  realpathSync as realpathSync2,
   renameSync as renameSync2,
   rmSync as rmSync2,
   statSync as statSync3,
@@ -25570,20 +25569,12 @@ async function previewOffered() {
 var SESSION_SOURCES = new Map;
 var SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID || null;
 var SESSIONS_KEPT = 8;
-var realOr = (path) => {
-  try {
-    return realpathSync2(path);
-  } catch {
-    return path;
-  }
-};
 function ours(source, entry) {
-  if (SESSION_ID && entry.sessions?.includes(SESSION_ID))
+  if (SESSION_ID && sessionsOf(entry).includes(SESSION_ID))
     return true;
-  const roots = new Set([DRAFTS_ROOT, realOr(DRAFTS_ROOT)]);
-  const paths = new Set([source, realOr(source)]);
-  return [...roots].some((root) => [...paths].some((path) => (partsBelow(root, path)?.length ?? 0) >= 2));
+  return [DRAFTS_ROOT, resolvePath(DRAFTS_ROOT)].some((root) => (partsBelow(root, source)?.length ?? 0) >= 2);
 }
+var sessionsOf = (entry) => Array.isArray(entry.sessions) ? entry.sessions.filter((id) => typeof id === "string") : [];
 var ICON_SVG = "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' " + "fill='%23141413'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='17' text-anchor='middle' " + "fill='%23faf9f5'%3E{letter}%3C/text%3E%3C/svg%3E";
 function wrapPage(content, description, icon, lang, cover) {
   const published = wrap(content, description, lang, cover);
@@ -25672,19 +25663,23 @@ function publish(args) {
       if (entry.source && entry.source !== source) {
         notes.push("That file is the artifact's published page, so the artifact was updated in place; " + `its source file ${entry.source} doesn't have this change.`);
       }
-    } else if (known !== undefined && index.get(known)?.source === source) {
-      slug = known;
-      entry = index.get(known);
+    } else if (known !== undefined && index.get(known.slug)?.created === known.created) {
+      slug = known.slug;
+      entry = index.get(known.slug);
     } else {
       let earlier = null;
+      let mine = null;
       for (const [other, otherEntry] of index) {
         if (otherEntry.source !== source)
           continue;
-        if (!earlier || (otherEntry.updated || "") > (earlier[1].updated || ""))
+        const newer = (than) => !than || (otherEntry.updated || "") > (than[1].updated || "");
+        if (newer(earlier))
           earlier = [other, otherEntry];
+        if (newer(mine) && ours(source, otherEntry))
+          mine = [other, otherEntry];
       }
-      if (earlier && ours(source, earlier[1])) {
-        [slug, entry] = earlier;
+      if (mine) {
+        [slug, entry] = mine;
       } else if (earlier) {
         notes.push(`This path was published before as ${linkOf(...earlier)}, in an earlier session; ` + "that artifact is unchanged. Pass `url` to update that one instead.");
       }
@@ -25757,7 +25752,7 @@ function publish(args) {
     icon
   });
   if (SESSION_ID) {
-    entry.sessions = [SESSION_ID, ...(entry.sessions ?? []).filter((id) => id !== SESSION_ID)].slice(0, SESSIONS_KEPT);
+    entry.sessions = [SESSION_ID, ...sessionsOf(entry).filter((id) => id !== SESSION_ID)].slice(0, SESSIONS_KEPT);
   }
   if (given === null && description !== null)
     entry.derived = true;
@@ -25766,7 +25761,7 @@ function publish(args) {
   entry.created = entry.created || now;
   index.set(slug, entry);
   saveIndex(index);
-  SESSION_SOURCES.set(source, slug);
+  SESSION_SOURCES.set(source, { slug, created: entry.created });
   const link = linkOf(slug, entry);
   const lines = [
     `Published ${source} at ${link} (Version ${entry.version})` + (first && icon ? ` Icon: "${icon}".` : "")
@@ -25915,7 +25910,7 @@ async function actDelete(args) {
     return [found, foundEntry, note];
   });
   for (const [source, owner] of SESSION_SOURCES)
-    if (owner === slug)
+    if (owner.slug === slug)
       SESSION_SOURCES.delete(source);
   return (repaired ? repaired + `
 

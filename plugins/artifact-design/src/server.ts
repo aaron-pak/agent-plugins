@@ -37,7 +37,6 @@ import {
   openSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -74,7 +73,7 @@ import {
   wrap,
 } from "./publish.ts";
 import { DRAFTS_ROOT, draftsRootIsOwn, makeDrafts } from "./drafts.ts";
-import { partsBelow } from "./paths.ts";
+import { partsBelow, resolvePath } from "./paths.ts";
 import { applyEdits, editsOf, missMessage, savedMessage, type Edit } from "./edits.ts";
 import {
   STORE,
@@ -255,19 +254,11 @@ async function previewOffered(): Promise<boolean> {
 // per-session map, a path republished in this session updates its artifact. A session goes on past
 // its server, though: a resumed one starts a new server, and Claude Code can switch sessions under a
 // running one, so a republish also finds an artifact this session published before (see `ours`).
-const SESSION_SOURCES = new Map<string, string>();
+const SESSION_SOURCES = new Map<string, { slug: string; created: string | null }>();
 // Claude Code passes its session ID to the servers it starts, and a resumed session keeps it.
 const SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID || null;
 // How many sessions an artifact remembers, newest first, for when another one updates it with `url`.
 const SESSIONS_KEPT = 8;
-
-const realOr = (path: string): string => {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-};
 
 /** Whether a publish of `source` continues the session that published `entry` before: the entry
  * lists this session's ID, or the file is in a drafts folder. Each server start makes its own drafts
@@ -275,11 +266,14 @@ const realOr = (path: string): string => {
  * which covers Codex, where no session ID reaches the server, and a session switched to under a
  * running Claude Code server, which keeps the ID it started with. */
 function ours(source: string, entry: Entry): boolean {
-  if (SESSION_ID && entry.sessions?.includes(SESSION_ID)) return true;
-  const roots = new Set([DRAFTS_ROOT, realOr(DRAFTS_ROOT)]);
-  const paths = new Set([source, realOr(source)]);
-  return [...roots].some((root) => [...paths].some((path) => (partsBelow(root, path)?.length ?? 0) >= 2));
+  if (SESSION_ID && sessionsOf(entry).includes(SESSION_ID)) return true;
+  // `source` is resolved already; DRAFTS_ROOT may sit under a symlink (macOS's /var/folders).
+  return [DRAFTS_ROOT, resolvePath(DRAFTS_ROOT)].some((root) => (partsBelow(root, source)?.length ?? 0) >= 2);
 }
+
+/** An entry's session IDs, ignoring a value an older build or a hand edit left that isn't a list. */
+const sessionsOf = (entry: Entry): string[] =>
+  Array.isArray(entry.sessions) ? entry.sessions.filter((id) => typeof id === "string") : [];
 
 // The tab icon: a letter on a dark tile, with its angle brackets percent-encoded so that nothing
 // reading the page's head (the title rule stops at the first "<svg") takes it for markup.
@@ -412,17 +406,25 @@ function publish(args: Args): string {
             `its source file ${entry.source} doesn't have this change.`,
         );
       }
-    } else if (known !== undefined && index.get(known)?.source === source) {
-      slug = known;
-      entry = index.get(known)!;
+    } else if (known !== undefined && index.get(known.slug)?.created === known.created) {
+      // Like the Artifact tool's map, this session's keeps every path it published to an artifact,
+      // even after a publish with `url` from another file made that one the artifact's source; the
+      // creation time tells the artifact from a later one that took its folder after a delete.
+      slug = known.slug;
+      entry = index.get(known.slug)!;
     } else {
+      // The newest artifact from this path, and the newest of those this session published: another
+      // session may have published the same file since.
       let earlier: [string, Entry] | null = null;
+      let mine: [string, Entry] | null = null;
       for (const [other, otherEntry] of index) {
         if (otherEntry.source !== source) continue;
-        if (!earlier || (otherEntry.updated || "") > (earlier[1].updated || "")) earlier = [other, otherEntry];
+        const newer = (than: [string, Entry] | null) => !than || (otherEntry.updated || "") > (than[1].updated || "");
+        if (newer(earlier)) earlier = [other, otherEntry];
+        if (newer(mine) && ours(source, otherEntry)) mine = [other, otherEntry];
       }
-      if (earlier && ours(source, earlier[1])) {
-        [slug, entry] = earlier;
+      if (mine) {
+        [slug, entry] = mine;
       } else if (earlier) {
         notes.push(
           `This path was published before as ${linkOf(...earlier)}, in an earlier session; ` +
@@ -506,14 +508,14 @@ function publish(args: Args): string {
     icon,
   });
   if (SESSION_ID) {
-    entry.sessions = [SESSION_ID, ...(entry.sessions ?? []).filter((id) => id !== SESSION_ID)].slice(0, SESSIONS_KEPT);
+    entry.sessions = [SESSION_ID, ...sessionsOf(entry).filter((id) => id !== SESSION_ID)].slice(0, SESSIONS_KEPT);
   }
   if (given === null && description !== null) entry.derived = true;
   else delete entry.derived;
   entry.created = entry.created || now;
   index.set(slug, entry);
   saveIndex(index);
-  SESSION_SOURCES.set(source, slug);
+  SESSION_SOURCES.set(source, { slug, created: entry.created });
 
   const link = linkOf(slug, entry);
   const lines = [
@@ -694,7 +696,7 @@ async function actDelete(args: Args): Promise<string> {
     saveIndex(index);
     return [found, foundEntry, note] as const;
   });
-  for (const [source, owner] of SESSION_SOURCES) if (owner === slug) SESSION_SOURCES.delete(source);
+  for (const [source, owner] of SESSION_SOURCES) if (owner.slug === slug) SESSION_SOURCES.delete(source);
   return (
     (repaired ? repaired + "\n\n" : "") +
     `Deleted ${entry.title || slug} and its versions; its link no longer opens. ` +

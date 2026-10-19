@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { NATIVE_ONLY } from "./native-only.ts";
 
@@ -201,14 +201,21 @@ describe("Artifact tool", () => {
     expect(again.text).not.toContain("in an earlier session");
     await after.close();
 
-    // A third session gets a new artifact, and is told about the earlier one.
+    // A third session gets a new artifact, and is told about the earlier one (`updated` counts whole
+    // seconds, so the pause makes the third session's the newer).
+    await Bun.sleep(1100);
     const third = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "third-session" });
     const fresh = await third.call({ file_path: source });
     expect(fresh.text).toContain("resumed-page-2/index.html (Version 1)");
     expect(fresh.text).toContain("in an earlier session");
-    await third.call({ action: "delete", url: "resumed-page-2" });
-    await third.call({ action: "delete", url: "resumed-page" });
     await third.close();
+
+    // The first session, resumed again, still finds its own, not the newer one.
+    const last = await legacy("claude-code", STORE, session);
+    expect((await last.call({ file_path: source })).text).toContain("resumed-page/index.html (Version 4)");
+    await last.call({ action: "delete", url: "resumed-page-2" });
+    await last.call({ action: "delete", url: "resumed-page" });
+    await last.close();
   });
 
   test("a page in a drafts folder republishes to its artifact from a later server", async () => {
@@ -225,6 +232,14 @@ describe("Artifact tool", () => {
     const again = await later.call({ file_path: source });
     expect(again.text).toContain("drafted-page/index.html (Version 2)");
     expect(again.text).not.toContain("in an earlier session");
+    // With TMPDIR through a symlink, as macOS's /var/folders is, the resolved path still counts.
+    const linked = join(TEMP, "linked-tmp");
+    symlinkSync(TEMP, linked);
+    const viaLink = await legacy("codex-mcp-client", STORE, { TMPDIR: linked });
+    const third = await viaLink.call({ file_path: join(linked, relative(TEMP, source)) });
+    expect(third.text).toContain("drafted-page/index.html (Version 3)");
+    await viaLink.close();
+    rmSync(linked);
 
     // A file outside the drafts that an entry without sessions lists (no ID reached its server)
     // stays with that server: a later one makes a new artifact.
@@ -238,6 +253,31 @@ describe("Artifact tool", () => {
     expect(fresh.text).toContain("in an earlier session");
     for (const url of ["drafted-page", "outside-page", "outside-page-2"]) await resumed.call({ action: "delete", url });
     await resumed.close();
+  });
+
+  test("a path keeps its artifact in this session after a url publish from another file", async () => {
+    const server = await legacy("claude-code");
+    const one = join(TEMP, "one.html");
+    const two = join(TEMP, "two.html");
+    writeFileSync(one, "<title>Report Alpha</title>\n<p>One</p>\n");
+    writeFileSync(two, "<title>Report Alpha</title>\n<p>Two</p>\n");
+    expect((await server.call({ file_path: one, icon: "page" })).text).toContain("report-alpha/index.html (Version 1)");
+    expect((await server.call({ file_path: two, url: "report-alpha" })).text).toContain("(Version 2)");
+    expect((await server.call({ file_path: one })).text).toContain("report-alpha/index.html (Version 3)");
+    expect((await server.call({ file_path: two })).text).toContain("report-alpha/index.html (Version 4)");
+    // Another server deletes it and a new artifact takes its folder: this session's path doesn't
+    // update the newcomer (creation times count in whole seconds).
+    const other = await legacy("claude-code");
+    await other.call({ action: "delete", url: "report-alpha" });
+    await Bun.sleep(1100);
+    const three = join(TEMP, "three.html");
+    writeFileSync(three, "<title>Report Alpha</title>\n<p>Three</p>\n");
+    expect((await other.call({ file_path: three })).text).toContain("report-alpha/index.html (Version 1)");
+    expect((await server.call({ file_path: one })).text).toContain("report-alpha-2/index.html (Version 1)");
+    await other.call({ action: "delete", url: "report-alpha" });
+    await other.call({ action: "delete", url: "report-alpha-2" });
+    await other.close();
+    await server.close();
   });
 
   test("publishes edits and saves them to the file", async () => {
