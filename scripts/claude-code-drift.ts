@@ -300,6 +300,12 @@ const VERBATIM: { path: string; from: (bundle: Bundle, current: string) => strin
 /** Text the plugin ports with edits, found by a string its code or file holds. */
 const PORTED: { what: string; anchor: string }[] = [
   { what: "the page contract and skill composition", anchor: "## Page contract" },
+  // Claude Code builds the page contract's Format, Skeleton and Title paragraphs, and ArtifactCheck's
+  // text, in a chunk of their own that holds none of the other anchors.
+  { what: "the page contract's Skeleton and Title paragraphs", anchor: "The file is wrapped in a" },
+  { what: "ArtifactCheck's description", anchor: "renders a local page file before you publish it" },
+  { what: "the edits text", anchor: "Its replacement; empty deletes old_str." },
+  { what: "the system prompt's To update section", anchor: "To make a small change to a page you already published" },
   { what: "the Artifact tool's description", anchor: "renders an HTML file as an Artifact" },
   { what: "the publish skeleton and runtimes", anchor: "body{margin:0;padding:0;font:14px" },
   { what: "the Markdown publish", anchor: "Markdown \\xB7 " },
@@ -312,6 +318,21 @@ function literalTexts(code: string): string[] {
   return literals(code)
     .map((lit) => lit.raw.join("${…}"))
     .filter((text) => text.length >= MIN_LENGTH && !/^(?:file:\/\/)?\/\$bunfs\//.test(text));
+}
+
+/** One literal changed into another, as the part that changed with some context: …before[-old-]{+new+}after… */
+function inline(old: string, now: string, context = 80): string {
+  let start = 0;
+  while (start < old.length && start < now.length && old[start] === now[start]) start++;
+  let end = 0;
+  while (end < old.length - start && end < now.length - start && old.at(-1 - end) === now.at(-1 - end)) end++;
+  const head = old.slice(Math.max(0, start - context), start);
+  const tail = old.slice(old.length - end, old.length - end + context);
+  return (
+    (start > context ? "\u2026" : "") +
+    `${head}[-${old.slice(start, old.length - end)}-]{+${now.slice(start, now.length - end)}+}${tail}` +
+    (end > context ? "\u2026" : "")
+  );
 }
 
 /** What `after` added and removed among the strings in `before`, as multisets. */
@@ -344,11 +365,9 @@ function occurs(bundle: Bundle, text: string): boolean {
   return text.split("${…}").every((part) => code.includes(part));
 }
 
-function codeWith(bundle: Bundle, anchor: string): string {
-  return [...bundle]
-    .filter(([name, text]) => name.endsWith(".js") && text.includes(anchor))
-    .map(([, text]) => text)
-    .join("\n");
+/** The code files that hold `anchor`, each parsed on its own. */
+function codeWith(bundle: Bundle, anchor: string): string[] {
+  return [...bundle].filter(([name, text]) => name.endsWith(".js") && text.includes(anchor)).map(([, text]) => text);
 }
 
 /** A line diff, unified-style without context, for files a few hundred lines long. */
@@ -432,23 +451,23 @@ function main(): number {
   );
   drift ||= skillDiff !== "";
   // Anchors whose code is the same file are reported once, under all their names.
-  const groups = new Map<string, { what: string[]; old: string; now: string; anchor: string }>();
+  const groups = new Map<string, { what: string[]; old: string[]; now: string[]; anchor: string }>();
   for (const { what, anchor } of PORTED) {
     const old = codeWith(before, anchor);
     const now = codeWith(after, anchor);
-    const key = `${old.length}:${now.length}:${old.slice(0, 200)}`;
+    const key = `${old.join("\n").length}:${now.join("\n").length}:${old.join("\n").slice(0, 200)}`;
     const group = groups.get(key);
     if (group) group.what.push(what);
     else groups.set(key, { what: [what], old, now, anchor });
   }
   for (const { what: names, old, now, anchor } of groups.values()) {
     const what = names.join(", ");
-    if (!old || !now) {
-      console.log(`  missing   ${what}: no code holds ${JSON.stringify(anchor)} in ${old ? target : synced}`);
+    if (!old.length || !now.length) {
+      console.log(`  missing   ${what}: no code holds ${JSON.stringify(anchor)} in ${old.length ? target : synced}`);
       drift = true;
       continue;
     }
-    const diff = changed(literalTexts(old), literalTexts(now));
+    const diff = changed(old.flatMap(literalTexts), now.flatMap(literalTexts));
     const added = diff.added.filter((text) => !occurs(before, text));
     const removed = diff.removed.filter((text) => !occurs(after, text));
     if (!added.length && !removed.length) {
@@ -457,6 +476,10 @@ function main(): number {
     }
     drift = true;
     console.log(`  changed   ${what}:`);
+    if (removed.length === 1 && added.length === 1) {
+      console.log(`    ~ ${inline(JSON.stringify(removed[0]), JSON.stringify(added[0]))}`);
+      continue;
+    }
     for (const text of removed) console.log(`    - ${JSON.stringify(text)}`);
     for (const text of added) console.log(`    + ${JSON.stringify(text)}`);
   }

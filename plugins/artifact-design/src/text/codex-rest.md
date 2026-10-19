@@ -2,7 +2,7 @@ Write the page content to a file (in {drafts} unless the person names another lo
 Publish finished work meant for others even when the request is phrased as a question; when the person asks only for your own verdict, answer in the terminal and offer the page in one line. Read the whole of any file you did not write before publishing it.
 Calls (action; publish when omitted):
 - publish: file_path, plus icon on a first publish and a one-sentence description; with url, updates that artifact. files maps published paths to source files for a multi-file page.{open_note}
-- quickstart: intent; returns the page contract and design guidance.
+- quickstart: returns the page contract and design guidance.
 - read: url; returns the page content without its skeleton.
 - list: the artifacts on this machine, with links and source files.
 - open: url; opens it in the browser.

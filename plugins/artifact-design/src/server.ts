@@ -7,8 +7,9 @@
 //   quickstart returns for a plain page (read from the bundled artifact-design skill).
 // - publish: wraps the page in the claude.ai publish skeleton and writes it to an artifacts
 //   folder (ARTIFACTS_DIR, default ~/artifacts), one folder per artifact. Publishing the same
-//   file again in the same session (this server process) updates the same artifact, as the
-//   Artifact tool keeps its file-to-artifact map per session; `url` updates any artifact.
+//   file again in the same session (this server process, a Claude Code session ID the artifact
+//   lists, or a file in a drafts folder) updates the same artifact, as the Artifact tool keeps its
+//   file-to-artifact map per session; `url` updates any artifact.
 //   A Markdown file is rendered into the document template Claude Code uses for one. `edits`
 //   changes the file on the way, as the Artifact tool's does (src/edits.ts).
 // - list, read, open, delete: the published artifacts.
@@ -72,7 +73,7 @@ import {
   wrap,
 } from "./publish.ts";
 import { DRAFTS_ROOT, draftsRootIsOwn, makeDrafts } from "./drafts.ts";
-import { partsBelow } from "./paths.ts";
+import { partsBelow, resolvePath } from "./paths.ts";
 import { applyEdits, editsOf, missMessage, savedMessage, type Edit } from "./edits.ts";
 import {
   STORE,
@@ -250,8 +251,29 @@ async function previewOffered(): Promise<boolean> {
 // ---------------------------------------------------------------- publishing
 
 // The source files this server process published, and their artifacts: like the Artifact tool's
-// per-session map, a path republished in this session updates its artifact, and nothing else does.
-const SESSION_SOURCES = new Map<string, string>();
+// per-session map, a path republished in this session updates its artifact. A session goes on past
+// its server, though: a resumed one starts a new server, and Claude Code can switch sessions under a
+// running one, so a republish also finds an artifact this session published before (see `ours`).
+const SESSION_SOURCES = new Map<string, { slug: string; created: string | null }>();
+// Claude Code passes its session ID to the servers it starts, and a resumed session keeps it.
+const SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID || null;
+// How many sessions an artifact remembers, newest first, for when another one updates it with `url`.
+const SESSIONS_KEPT = 8;
+
+/** Whether a publish of `source` continues the session that published `entry` before: the entry
+ * lists this session's ID, or the file is in a drafts folder. Each server start makes its own drafts
+ * folder, so a later server meets a file in one only when the conversation that wrote it goes on,
+ * which covers Codex, where no session ID reaches the server, and a session switched to under a
+ * running Claude Code server, which keeps the ID it started with. */
+function ours(source: string, entry: Entry): boolean {
+  if (SESSION_ID && sessionsOf(entry).includes(SESSION_ID)) return true;
+  // `source` is resolved already; DRAFTS_ROOT may sit under a symlink (macOS's /var/folders).
+  return [DRAFTS_ROOT, resolvePath(DRAFTS_ROOT)].some((root) => (partsBelow(root, source)?.length ?? 0) >= 2);
+}
+
+/** An entry's session IDs, ignoring a value an older build or a hand edit left that isn't a list. */
+const sessionsOf = (entry: Entry): string[] =>
+  Array.isArray(entry.sessions) ? entry.sessions.filter((id) => typeof id === "string") : [];
 
 // The tab icon: a letter on a dark tile, with its angle brackets percent-encoded so that nothing
 // reading the page's head (the title rule stops at the first "<svg") takes it for markup.
@@ -290,7 +312,7 @@ const MISS_ROOM = 40_000;
 
 const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
-async function actQuickstart(args: Args, client?: string): Promise<string> {
+async function actQuickstart(client?: string): Promise<string> {
   const text = readFileSync(GUIDANCE, "utf8");
   const start = text.indexOf("## Page contract");
   if (start === -1) throw new Error(`${GUIDANCE} has no "## Page contract" section`);
@@ -309,20 +331,14 @@ async function actQuickstart(args: Args, client?: string): Promise<string> {
       () => "one screenshot of the local file; if the session offers no way, skip the look.",
     );
   }
-  const codex = isCodex(client);
-  const onlyPlain =
-    args.intent !== undefined && args.intent !== null && args.intent !== "other"
-      ? "Every artifact here is a plain HTML page, so make this one as a plain page.\n\n"
-      : "";
   return (
-    onlyPlain +
     "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own " +
     "text, so do not load that skill as well. Write the page to a file and publish it in the same " +
     "message: the two calls run in order. Unless the person named a location, the file goes in " +
     `${DRAFTS}, not in the project. In this text, Claude means you.\n\n` +
     guidance +
     "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill" +
-    (codex ? "" : " (`artifact-design:artifact-diagramming` in the Skill tool)") +
+    (isCodex(client) ? "" : " (`artifact-design:artifact-diagramming` in the Skill tool)") +
     " before writing it."
   );
 }
@@ -390,16 +406,26 @@ function publish(args: Args): string {
             `its source file ${entry.source} doesn't have this change.`,
         );
       }
-    } else if (known !== undefined && index.get(known)?.source === source) {
-      slug = known;
-      entry = index.get(known)!;
+    } else if (known !== undefined && index.get(known.slug)?.created === known.created) {
+      // Like the Artifact tool's map, this session's keeps every path it published to an artifact,
+      // even after a publish with `url` from another file made that one the artifact's source; the
+      // creation time tells the artifact from a later one that took its folder after a delete.
+      slug = known.slug;
+      entry = index.get(known.slug)!;
     } else {
+      // The newest artifact from this path, and the newest of those this session published: another
+      // session may have published the same file since.
       let earlier: [string, Entry] | null = null;
+      let mine: [string, Entry] | null = null;
       for (const [other, otherEntry] of index) {
         if (otherEntry.source !== source) continue;
-        if (!earlier || (otherEntry.updated || "") > (earlier[1].updated || "")) earlier = [other, otherEntry];
+        const newer = (than: [string, Entry] | null) => !than || (otherEntry.updated || "") > (than[1].updated || "");
+        if (newer(earlier)) earlier = [other, otherEntry];
+        if (newer(mine) && ours(source, otherEntry)) mine = [other, otherEntry];
       }
-      if (earlier) {
+      if (mine) {
+        [slug, entry] = mine;
+      } else if (earlier) {
         notes.push(
           `This path was published before as ${linkOf(...earlier)}, in an earlier session; ` +
             "that artifact is unchanged. Pass `url` to update that one instead.",
@@ -481,12 +507,15 @@ function publish(args: Args): string {
     description,
     icon,
   });
+  if (SESSION_ID) {
+    entry.sessions = [SESSION_ID, ...sessionsOf(entry).filter((id) => id !== SESSION_ID)].slice(0, SESSIONS_KEPT);
+  }
   if (given === null && description !== null) entry.derived = true;
   else delete entry.derived;
   entry.created = entry.created || now;
   index.set(slug, entry);
   saveIndex(index);
-  SESSION_SOURCES.set(source, slug);
+  SESSION_SOURCES.set(source, { slug, created: entry.created });
 
   const link = linkOf(slug, entry);
   const lines = [
@@ -667,7 +696,7 @@ async function actDelete(args: Args): Promise<string> {
     saveIndex(index);
     return [found, foundEntry, note] as const;
   });
-  for (const [source, owner] of SESSION_SOURCES) if (owner === slug) SESSION_SOURCES.delete(source);
+  for (const [source, owner] of SESSION_SOURCES) if (owner.slug === slug) SESSION_SOURCES.delete(source);
   return (
     (repaired ? repaired + "\n\n" : "") +
     `Deleted ${entry.title || slug} and its versions; its link no longer opens. ` +
@@ -687,7 +716,7 @@ function actOpen(args: Args): string {
 
 const ACTIONS: Record<string, (args: Args, client?: string) => Result | Promise<Result>> = {
   publish: (args) => withStoreLock(() => publish(args)),
-  quickstart: (args, client) => actQuickstart(args, client),
+  quickstart: (args, client) => actQuickstart(client),
   read: actRead,
   list: actList,
   open: actOpen,
