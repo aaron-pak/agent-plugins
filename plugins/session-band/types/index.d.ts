@@ -161,6 +161,18 @@ export type Info = {
    */
   splashAt: number | null
   waves: number
+  /**
+   * A compaction let the tide out: the context fill just before it, the high-water mark, where the
+   * beach leaves a starfish on the sand until the tide comes back up to it (null: none on the sand).
+   * `treasures` counts the compactions that left one this session, so a new one is told from the last.
+   */
+  treasurePercent: number | null
+  treasures: number
+  /**
+   * `cheers` when the conversation began (0, or what it was at the last /clear): the answered turns
+   * since are the ones the beach's sandcastle is built from, so a new conversation starts a new one.
+   */
+  castleFrom: number
   /** When the current (or last) turn's prompt was sent. */
   turnAt: number | null
 

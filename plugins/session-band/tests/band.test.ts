@@ -909,7 +909,7 @@ test('a switch mid-session keeps Clawd\'s day: no second hello, no replayed chee
   expect(after.key).toBe('band')
   expect(after.text).toContain('Done in 41s')
   // No sparkles beside him (the words' dim ✻ is the settled line's, as Claude Code marks a finished turn).
-  expect(after.rows.slice(0, 3).join('')).not.toMatch(/[✻✶]/u)
+  expect(after.rows.slice(0, 3).join('')).not.toMatch(/[✻✽✶✢]/u)
 })
 
 test('a reload keeps the session: a napping Clawd stays asleep, and the counts carry on', async ($, on) => {
@@ -3654,14 +3654,14 @@ test('terminal: /clear in the middle of a cheer or a splash ends it at once on t
         await band.ui.redraw(BAND)
       }
       const playing = (await band.look()).text
-      expect([look, moment, /Done|Splash|✻|✶|✢|▗▟/u.test(playing)]).toEqual([look, moment, true])
+      expect([look, moment, /Done|Splash|✻|✽|✶|✢|▗▟/u.test(playing)]).toEqual([look, moment, true])
       await $.session.end({ reason: 'clear', sessionId: `s-${n}`, resume: { id: `s-${n}` } })
       // From two ticks after /clear on (a busy second waits for room, as every change does): the fresh
       // conversation's words, and Clawd at rest beside them.
       const after = (await filmBoth(clock, band, null, 4_000)).filter(frame => frame.at >= 500)
       for (const frame of after) {
         expect([look, moment, frame.at, frame.term.includes('Ready')]).toEqual([look, moment, frame.at, true])
-        expect([look, moment, frame.at, /Done|Splash|failed|Hiccup|✻|✶|✢|▗▟/u.test(frame.term)]).toEqual([look, moment, frame.at, false])
+        expect([look, moment, frame.at, /Done|Splash|failed|Hiccup|✻|✽|✶|✢|▗▟/u.test(frame.term)]).toEqual([look, moment, frame.at, false])
       }
       await filmBoth(clock, band, null, 2_000)
     }
@@ -5340,3 +5340,40 @@ test('every color either look draws on the terminal reads as itself on a 256-col
   }
   expect(entries.size).toBe(all.size)
 })
+
+// Something else may hold the band's place: Claude Code's survey, or on the desktop the app's own
+// notice above the prompt (its effort warning), each told by `hasSurvey`. The band steps aside, and
+// comes back once the place is free, though the app asks for it again only when the engine says it
+// changed, and says nothing itself as its notice goes.
+for (const look of ['tide', 'hearth'] as const) {
+  test(`${look}: while something holds the band's place it steps aside and keeps watching; on the desktop it asks to be drawn again until the place is free`, { options: { look } }, async ($, on) => {
+    const { clock } = world(on)
+    let asks = 0
+    on('ui.render', () => {
+      asks += 1
+      return { type: 'Text', children: ['Claude thinks longer with Max effort'] }
+    })
+    await start($)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ plugin: 'session-band', surface, component: 'AbovePrompt', props: { ...BAND, hasSurvey: true } })
+      expect(await ui.find({ text: 'Claude thinks longer with Max effort' })).toBeDefined()
+      // It read the facts as it stepped aside, so a change to them draws it again (and it steps aside again).
+      const before = asks
+      await $.session.measure(measured(50))
+      await clock.advance(200)
+      expect([surface, asks > before]).toEqual([surface, true])
+      // With nothing changing, the desktop's asks again by itself every 2 s; the terminal's survey
+      // draws the band again itself as it goes.
+      const quiet = asks
+      await clock.advance(6_100)
+      expect([surface, asks - quiet]).toEqual([surface, surface === 'desktop' ? 3 : 0])
+      // The place is free: the band draws, and asks no more.
+      await ui.redraw(BAND)
+      expect([surface, await ui.find({ text: 'Claude thinks longer with Max effort' })]).toEqual([surface, undefined])
+      const drawn = asks
+      await clock.advance(6_100)
+      expect([surface, asks]).toEqual([surface, drawn])
+      await ui.unmount()
+    }
+  })
+}

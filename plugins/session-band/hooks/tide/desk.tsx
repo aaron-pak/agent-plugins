@@ -1,11 +1,11 @@
 import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
-import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_ALT, HEART_PINK, SPIN, pixelHeart } from '../clawd'
+import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_ALT, HEART_PINK, SPIN, pixelHeart, textPx } from '../clawd'
 import { BODY, EYE, curled, pose, spin } from './band'
 import type { Pose, Row } from './band'
 import { PIXELS, fitLine } from './fit'
-import { NAP_AFTER_MS, SPLASH_MS } from '../facts'
+import { NAP_AFTER_MS, SPLASH_MS, skySteps } from '../facts'
 
 // The beach on the desktop: a tiny SVG diorama (sand, a shell, slow waves and
 // Clawd built from the very cells the terminal draws him with) beside the
@@ -23,12 +23,20 @@ type Desktop = Elements['desktop']
 /** How long a cheer plays (a splash plays SPLASH_MS); the hooks module redraws once each ends. */
 export const CHEER_MS = 4_500
 
-// The diorama in units of one Clawd pixel's width (3 CSS px): 64 wide on a band of 48 columns or
-// more, down to 40 on the narrowest (see dioramaWidth). The frame is 64 px tall, as tall as the
-// hearth's Clawd, so a look switch never moves the prompt: the 54 px picture sits in its middle.
+// The diorama in units of one Clawd pixel's width (3 CSS px): 64 wide on a band of 48 columns, down
+// to 40 on the narrowest (see dioramaWidth), and on a wider band as wide as the words leave room for,
+// up to WIDEST (see beachWidth). The frame is 64 px tall, as tall as the hearth's Clawd, so a look
+// switch never moves the prompt: the 54 px picture sits in its middle.
 const U = 3
 const WIDE = 64
 const NARROW = 40
+/** The widest the beach grows, in units (672 px): a wide window's panorama. */
+const WIDEST = 224
+/**
+ * The least room the words keep beside a widened beach, in pixels: a turn's tally whole ("✻ Done in
+ * 41s · 7 tools · 2 files changed"), and the context line with every number at its widest.
+ */
+const WORDS_LEAST_PX = 290
 const H = 18
 const FRAME_PX = 64
 const PAD_PX = (FRAME_PX - H * U) / 2
@@ -68,6 +76,8 @@ const SHELL = '#E9A3A4'
 const SHELL_RIDGE = '#C9818A'
 const HEART = HEART_PINK
 const DOZE = DOZE_SLATE
+// His shadow: the sand, a shade darker (it only ever lies on the sand).
+const SHADOW = 'rgba(122,88,44,.26)'
 // A paler sea for the splash's drops, so they stay airy on the dark page too.
 const DROP = '#8FB6D6'
 
@@ -99,6 +109,16 @@ export type Scene = {
   from: number | null
   width: number
   wave: number
+  /** Night by the person's own clock: a moon and stars over the sea. */
+  night: boolean
+  /** How far the sun has crossed the sky by day, or the moon by night, in steps (see skyStepAt and skyAt). */
+  sky: number
+  /** Where a compaction left a starfish: the tide it stood at before, in 5% steps (null: none). */
+  treasure: number | null
+  /** How built his sandcastle is, 0 (none) to 6 (flag and all): see castleStage. */
+  castle: number
+  /** This frame's cheer is for the turn that built the castle's newest piece: it pops up as his arms go up. */
+  built: boolean
   sea: Sea | null
   phase?: number
   curled?: boolean
@@ -119,7 +139,7 @@ export type Sea = { clock: number; lap: LapPlan; glide: number }
 type Lap = { period: number; reach: number }
 type LapPlan = { finish: (Lap & { offset: number }) | null; start: number }
 const CALM_SEA: Sea = { clock: 0, lap: { finish: null, start: 0 }, glide: 0 }
-/** The crests' periods (seconds), and a time both come round in, which the sea's clock wraps at. */
+/** The crests' periods (seconds), and a time both come round in, which the sea's clock wraps at (the glints' and the stars' periods divide it too). */
 const ROLL_S = 9
 const ROLL2_S = 14
 const CLOCK_WRAP = 126
@@ -127,13 +147,16 @@ const CLOCK_WRAP = 126
 const SURGE_S = 2.4
 /** When the splash's last drop has fallen back into the sea, in seconds from the splash's start. */
 const DROPS_END_S = 2.2
+/** How far through its flight a drop of spray reaches the top of its arc. */
+const PEAK_AT = 0.42
 
 /**
- * How wide the diorama is beside a band of `columns`, in units: 64 from 48 columns, 40 on the
+ * How wide the diorama is beside a narrow band of `columns`, in units: 64 from 48 columns, 40 on the
  * narrowest, two units (6 px) narrower a column between, so the words' room (7.6 px a column)
- * never shrinks as the band widens. No width from the host: the wide one.
+ * never shrinks as the band widens. No width from the host: the wide one. (A wider band's beach is
+ * beachWidth's.)
  */
-export function dioramaWidth(columns: number): number {
+function dioramaWidth(columns: number): number {
   if (!Number.isFinite(columns) || columns <= 0) {
     return WIDE
   }
@@ -142,25 +165,46 @@ export function dioramaWidth(columns: number): number {
 }
 
 /**
- * The room the words have beside the diorama, in pixels of the page's proportional font (see
- * textPx): the band's width less the diorama and its margin, and a cell to spare, so a page whose
- * cells run a little narrower than the budget's (7.2 px) still ends no line in its own ellipsis.
- * The last pixel is that page's too: at 45 columns "Ready when you are" fitted the budget by a
- * tenth of a pixel and ran a pixel past its box at 7.2 px. When the host gives no width (0, or
+ * How wide the beach is beside a band of `columns` whose where-line is `place` (its widest form), in
+ * units. Up to 48 columns it is dioramaWidth's, and 64 from there until the words have their room
+ * beside it: WORDS_LEAST_PX at least, and their where-line whole, each of its numbers counted as two
+ * zeros or more, so a count going from 9 to 10 (or 13 to 14) never moves the beach. From that band
+ * on it widens two units (6 px) a column, up to WIDEST, so the words' room (7.6 px a column) never
+ * shrinks as the band widens and a narrower band never says more than a wider one. Only that line's
+ * parts move it (a new branch, another model), and a move is a new frame as a resize is.
+ */
+export function beachWidth(columns: number, place: Words): number {
+  const narrow = dioramaWidth(columns)
+  if (!Number.isFinite(columns) || columns <= 0) {
+    return narrow
+  }
+  const where = place.reduce((sum, piece) => sum + textPx(piece.text.replace(/\d+/gu, digits => '0'.repeat(Math.max(2, digits.length))), piece.bold === true || piece.fitsAsBold === true), 0)
+  // The first band whose words have their room beside the 64-unit beach (see deskRoom).
+  const from = Math.ceil((Math.max(WORDS_LEAST_PX, where) + 3 * CELL_PX + 1 + WIDE * U) / CELL_PX)
+
+  return Math.max(narrow, Math.min(WIDEST, WIDE + 2 * (Math.floor(columns) - from)))
+}
+
+/**
+ * The room the words have beside a beach `width` units wide, in pixels of the page's proportional
+ * font (see textPx): the band's width less the beach and its margin, and a cell to spare, so a page
+ * whose cells run a little narrower than the budget's (7.2 px) still ends no line in its own
+ * ellipsis. The last pixel is that page's too: at 45 columns "Ready when you are" fitted the budget
+ * by a tenth of a pixel and ran a pixel past its box at 7.2 px. When the host gives no width (0, or
  * nothing usable), every word is kept and the Text's truncate-end is the only cut.
  */
-function deskRoom(columns: number): number {
+function deskRoom(columns: number, width: number): number {
   if (!Number.isFinite(columns) || columns <= 0) {
     return Number.POSITIVE_INFINITY
   }
 
-  return columns * CELL_PX - dioramaWidth(columns) * U - 3 * CELL_PX - 1
+  return columns * CELL_PX - width * U - 3 * CELL_PX - 1
 }
 
 /** Draws the desktop band; `scene` is the one the hooks module settled on (sceneOf, with where a nap begins). */
 export function desktopBand(el: Desktop, props: BandProps, scene: Scene): RenderElement {
   const { Box, Text, Svg } = el
-  const room = deskRoom(props.columns)
+  const room = deskRoom(props.columns, scene.width)
   const lines = linesFor(props).map(forms => fitLine(forms, room, PIXELS))
 
   return (
@@ -245,7 +289,16 @@ export function sceneOf(props: BandProps): Scene {
   const mood = moment === 'cheer' && (now === 'read' || now === 'work') ? (props.isHigh ? 'high' : 'idle') : now
   const wave = moment === 'splash' && !props.isStill ? props.waves : 0
 
-  return { mood, tide: tideOf(props, moment), still: props.isStill, moment, from: null, width: dioramaWidth(props.columns), wave, sea: null }
+  const treasure = props.treasure === null ? null : Math.round(props.treasure / TIDE_STEP) * TIDE_STEP
+
+  const width = beachWidth(props.columns, props.words.place[0] ?? [])
+  const castle = castleStage(props.castle, width)
+  const built = moment === 'cheer' && !props.isStill && castle > 0 && CASTLE_TURNS.includes(props.castle)
+
+  // The narrow beach's sky never moves (see skyAt), so its step never reloads the frame.
+  const sky = width < WIDE ? 0 : props.sky
+
+  return { mood, tide: tideOf(props, moment), still: props.isStill, moment, from: null, width, wave, night: props.isNight, sky, treasure, castle, built, sea: null }
 }
 
 /**
@@ -695,7 +748,7 @@ const DOING: Record<Mood, string> = {
 const HAPPENING: Record<Exclude<Moment, null>, string> = {
   cheer: 'Clawd spins with joy, then throws his arms up',
   splash: 'A wave splashes Clawd and slides back out',
-  wake: 'Clawd wakes up by his shell and watches the words',
+  wake: 'Clawd wakes up by his shell, stretches and watches the words',
   hello: 'Clawd waves hello',
 }
 // (The still splash's own words: "right up to his feet" is how the full tide is told, and beside a
@@ -725,7 +778,9 @@ function altFor(scene: Scene, isRead: boolean): string {
             ? `${HAPPENING.splash}, then he ${doing.replace(/^Clawd /, '')}`
             : HAPPENING[moment]
 
-  return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}`
+  const starfish = starfishAt(scene) === null ? '' : ' A starfish lies where the tide was.'
+
+  return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}${starfish}${scene.night ? ' The stars are out.' : ''}`
 }
 
 function tideWords(tide: number): string {
@@ -808,6 +863,9 @@ const POSES: Record<string, Pose> = {
   walkR2: { eyes: 'right', arms: 'down', feet: 'right' },
   up: { eyes: 'open', arms: 'up', feet: 'both' },
   splash: { eyes: 'closed', arms: 'up', feet: 'both' },
+  stretch: { eyes: 'closed', arms: 'up', feet: 'both' },
+  hopL: { eyes: 'closed', arms: 'down', feet: 'left' },
+  hopR: { eyes: 'closed', arms: 'down', feet: 'right' },
   wave: { eyes: 'open', arms: 'one-up', feet: 'both' },
 }
 
@@ -822,8 +880,9 @@ function frame(name: string): string {
 
 type Beat = { at: number; pose: string; x: number }
 
-// A loop of beats: where Clawd stands and how, second by second.
-function choreography(mood: Mood, span: number): { beats: Beat[]; period: number } {
+// A loop of beats: where Clawd stands and how, second by second, strolling `reach` units out at most
+// (see layout).
+function choreography(mood: Mood, reach: number): { beats: Beat[]; period: number } {
   const beats: Beat[] = []
   let at = 0
   let x = 0
@@ -843,8 +902,6 @@ function choreography(mood: Mood, span: number): { beats: Beat[]; period: number
       n += 1
     }
   }
-  const reach = Math.min(span, 10)
-
   switch (mood) {
     case 'idle':
       hold('stand', 3.2)
@@ -919,15 +976,21 @@ function pct(fraction: number): string {
 // ── The diorama ────────────────────────────────────────────────────────────────
 
 // Where the water starts, and where he stands when the loop starts (by the shell for a nap, at the
-// water's edge when the tide is high), and how far he may roam from there.
+// water's edge when the tide is high), and how far he strolls from there: up to strollReach on the
+// sand the tide leaves.
 function layout(scene: Scene): { shore: number; start: number; roam: number; span: number } {
   const { mood, width } = scene
   const shore = width - water(scene.tide, width)
   const span = Math.max(0, shore - 1 - SPRITE_W - HOME)
   const start = mood === 'nap' ? HOME : mood === 'high' ? HOME + span : HOME + Math.min(1, span)
-  const roam = mood === 'high' ? 0 : Math.max(0, span - (start - HOME))
+  const roam = mood === 'high' ? 0 : Math.min(strollReach(width), Math.max(0, span - (start - HOME)))
 
   return { shore, start, roam, span }
+}
+
+/** How far he strolls out at most: 10 units on the 64-unit beach, and a unit more for every 4 a wider beach adds. */
+function strollReach(width: number): number {
+  return 10 + Math.max(0, Math.floor((width - WIDE) / 4))
 }
 
 /**
@@ -1004,10 +1067,19 @@ function diorama(scene: Scene): string {
   const moment = scene.moment
 
   const parts: string[] = []
+  const clock = (scene.sea ?? CALM_SEA).clock
+  parts.push(scene.night ? nightSky(scene, clock, base, motion) : daySky(scene, clock, base, motion))
   parts.push(sand(scene.width))
+  const shade = umbrella(scene)
+  parts.push(shade.under)
+  parts.push(castle(scene, clock, base, motion))
+  parts.push(shade.over)
+  parts.push(starfish(scene))
   parts.push(shell())
+  parts.push(fish(scene, layout(scene).shore, clock, base, motion))
   const { water, spray } = sea(scene, base, motion)
   parts.push(water)
+  parts.push(boat(scene, clock, base, motion))
 
   if (mood === 'nap') {
     parts.push(nap(!still, scene.from ?? 0, scene.curled === true, zLead(scene), base, motion))
@@ -1056,12 +1128,15 @@ function diorama(scene: Scene): string {
     const stood = still ? stillDx(scene) : 0
     if (stood !== 0) base.push(`.walk${isCheer ? ',.at' : ''}{transform:translateX(${stood}px)}`)
     const spark = isCheer ? `<g class="at">${sparkles(INTRO.cheer, base, motion)}</g>` : ''
-    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd">${poses}</g>${spark}</g>`)
+    // He hops for joy as his arms go up (twice, as the hearth's Clawd does): his own little jump, so
+    // the sparkles stay where they popped up.
+    if (isCheer) motion.push(hop(INTRO.cheer))
+    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd">${shadow()}<g class="hop">${poses}</g></g>${spark}</g>`)
   }
 
   parts.push(spray)
 
-  base.push('.clawd{shape-rendering:crispEdges}')
+  base.push('.clawd{shape-rendering:crispEdges}.shadow{transform-box:fill-box;transform-origin:center}')
 
   const css = still ? base.join('') : `${base.join('')}@media (prefers-reduced-motion:no-preference){${motion.join('')}}`
 
@@ -1089,12 +1164,416 @@ function sand(width: number): string {
   const x = (n: number) => round((n * width) / WIDE)
   const top = `M0 ${GROUND + 0.3}C${x(12)} ${GROUND - 0.5} ${x(22)} ${GROUND + 0.1} ${x(34)} ${GROUND - 0.1}S${x(56)} ${GROUND + 0.4} ${width} ${GROUND}`
 
+  // A narrower beach squeezes the 64-unit beach's four grains in; a wider one sows them again every 64 units.
+  const grains: Array<[number, number]> = [[9, 16.2], [21, 15.4], [30, 16.6], [41, 15.8]]
+  const sown = width <= WIDE ? grains.map(([at, y]): [number, number] => [x(at), y]) : grains.flatMap(([at, y]) => Array.from({ length: Math.ceil(width / WIDE) }, (_, k): [number, number] => [at + k * WIDE, y]).filter(([at]) => at < width - 2))
+
   return [
     `<clipPath id="sand"><path d="${top}V${H}H0Z"/></clipPath>`,
     `<path d="${top}V${H}H0Z" fill="${SAND}"/>`,
     `<path d="${top}" fill="none" stroke="${SAND_EDGE}" stroke-width=".35"/>`,
-    ...[[9, 16.2], [21, 15.4], [30, 16.6], [41, 15.8]].map(([at, y]) => `<rect x="${x(at ?? 0)}" y="${y}" width=".6" height=".6" fill="${SAND_EDGE}"/>`),
+    ...sown.map(([at, y]) => `<rect x="${round(at)}" y="${y}" width=".6" height=".6" fill="${SAND_EDGE}"/>`),
   ].join('')
+}
+
+/**
+ * Where the starfish a compaction left lies, in units from the diorama's left: at the tide's edge as
+ * it stood before (the scene's `treasure`), when that is on the sand the water has left, a unit or
+ * more from it. Null with none, or none to see.
+ */
+function starfishAt(scene: Scene): number | null {
+  if (scene.treasure === null) {
+    return null
+  }
+  const at = scene.width - water(scene.treasure, scene.width) + 0.8
+
+  return at < layout(scene).shore - 1.5 && at > HOME + 1 ? at : null
+}
+
+// The starfish: Claude's own clay, five round arms on the sand face, a little tipped. It lies in the
+// sand, before the sea and him, so the tide washes over it and he walks in front of it.
+function starfish(scene: Scene): string {
+  const x = starfishAt(scene)
+  if (x === null) {
+    return ''
+  }
+  const y = GROUND + 1.7
+  const points = Array.from({ length: 10 }, (_, i) => {
+    const r = i % 2 === 0 ? 1.45 : 0.62
+    const a = (Math.PI / 5) * i - Math.PI / 2
+    return `${round(x + r * Math.cos(a))} ${round(y + r * Math.sin(a))}`
+  })
+
+  return `<path class="starfish" d="M${points.join('L')}Z" fill="${CLAY}" stroke="${CLAY}" stroke-width=".35" stroke-linejoin="round" transform="rotate(14 ${round(x)} ${round(y)})"/>`
+}
+
+// Night's moon and stars: a warm gold that reads on both pages, low in the sky over the sea, behind
+// everything (he walks in front of them). The stars twinkle each at its own pace, shrinking to a
+// glint and back, never fading (a half-faded star is a smudge on the dark page); still, they shine.
+// They keep time by the sea's clock, so a new frame never snaps one back mid-twinkle.
+const MOON = '#E2B65A'
+const STARLIGHT = '#E9C77E'
+// The sun's glints on the water by day.
+const SUNLIGHT = '#FFFFFF'
+
+function nightSky(scene: Scene, clock: number, base: string[], motion: string[]): string {
+  const { width } = scene
+  // A crescent: a disc less a disc, opening toward the sea, tipped a little. It crosses the sky
+  // through the night (see skyAt), in front of the stars it passes.
+  const { x: mx, y: my } = skyAt(width, scene.sky, true)
+  const r = 1.9
+  const moon =
+    `<path class="moon" d="M${mx} ${round(my - r)}A${r} ${r} 0 1 0 ${mx} ${round(my + r)}A${round(r * 1.25)} ${round(r * 1.25)} 0 0 1 ${mx} ${round(my - r)}Z" ` +
+    `fill="${MOON}" transform="rotate(-22 ${mx} ${my})"/>`
+  // [from the right edge, height, size, its twinkle's period and where in it the sea's clock starts,
+  // in seconds]. Each period divides the clock's wrap (CLOCK_WRAP), so it goes on in step across it.
+  const places: Array<[number, number, number, number, number]> = [
+    [11.5, 1.2, 0.62, 4.5, 1.3],
+    [16.5, 5.4, 0.48, 6, 3.9],
+    [3.4, 7.2, 0.44, 3.6, 0.4],
+    [21.5, 2.6, 0.4, 6.3, 2.2],
+  ]
+  base.push('.twinkle{transform-box:fill-box;transform-origin:center}')
+  motion.push('@keyframes twinkle{0%,100%{transform:scale(1)}45%{transform:scale(.3)}60%{transform:scale(1.15)}}')
+  const stars = places.flatMap(([from, y, size, period, phase], i) => {
+    if (width - from <= 2) {
+      return []
+    }
+    motion.push(`.twinkle${i}{animation:twinkle ${period}s ease-in-out -${roundMs((clock + phase) % period)}s infinite}`)
+    return [star(round(width - from), y, size, i, `twinkle twinkle${i}`, STARLIGHT)]
+  })
+  // A wider beach's sky has stars all the way over the sand: one every 13 units or so, each at its
+  // own height above his head and its own pace, left of the moon's.
+  if (width > WIDE) {
+    const heights = [1, 2.9, 0.5, 2.2, 3.2, 1.6, 0.8, 2.6]
+    const sizes = [0.36, 0.3, 0.42, 0.32, 0.28, 0.38]
+    const periods = [4.5, 6, 3.6, 6.3, 5.25, 7, 4.2]
+    for (let k = 0, x = 5; x < width - 27; k++, x += 13) {
+      const i = places.length + k
+      const period = periods[k % periods.length] ?? 6
+      motion.push(onClock(`twinkle${i}`, 'twinkle', period, (k * 1.7) % period, clock))
+      stars.push(star(round(x + ((k * 5) % 4)), heights[k % heights.length] ?? 1, sizes[k % sizes.length] ?? 0.3, i, `twinkle twinkle${i}`, STARLIGHT))
+    }
+  }
+  // Now and then, on a sky wide enough, a shooting star: once every 42 s it streaks down across the
+  // sky over the sand in two thirds of a second, growing from its head and shrinking back into it.
+  if (width >= SCENIC) {
+    const [x0, y0, period] = [round(width * 0.36), 0.9, 42]
+    const at = (seconds: number) => pct(seconds / period)
+    base.push('.meteor{transform-box:fill-box;transform-origin:right bottom;transform:scale(0)}')
+    motion.push(
+      `@keyframes meteor{0%,${at(40)}{transform:translate(0,0) scale(0)}${at(40.12)}{transform:translate(.6px,.18px) scale(1)}` +
+        `${at(40.55)}{transform:translate(6px,1.8px) scale(1)}${at(40.7)},100%{transform:translate(7.4px,2.2px) scale(0)}}`,
+    )
+    motion.push(onClock('meteor', 'meteor', period, 23, clock, 'linear'))
+    stars.push(`<path class="meteor" d="M${x0} ${y0}l-3.6 -1.1l.12 -.3z" fill="${STARLIGHT}"/>`)
+  }
+
+  return `<g class="sky">${stars.join('')}${moon}</g>`
+}
+
+// ── The wide beach's scenery ───────────────────────────────────────────────────
+
+/** The beach a sandcastle needs, in units: a band of 71 columns beside a folder and the model, about 92 beside a branch and a count. */
+const SCENIC = 72
+/** The beach a beach umbrella needs, in units: a band of 91 columns beside a folder and the model, about 112 beside a branch and a count. */
+const SUNNY = 112
+/** The sky that holds a third cloud, in units: a band of 123 columns beside a folder and the model, about 144 beside a branch. */
+const ROOMY = 176
+/** The answered turns at which the sandcastle gains a piece: a mound, a tower, a wall and a second tower, a door, windows, a flag. */
+const CASTLE_TURNS = [1, 2, 3, 5, 8, 13]
+/** Where the sandcastle stands, in units: just past his place by the shell, so his strolls pass in front of it. */
+const CASTLE_AT = HOME + SPRITE_W + 4
+// The sandcastle's shaded side and openings, between the dry sand and its edge.
+const SAND_SHADE = '#D6B582'
+// The sun by day: a soft gold, as the moon is by night.
+const SUN = '#F0C35B'
+// Clouds: pale on top, a shade bluer underneath, so they read as clouds on the light page and the dark;
+// as the sun rises and sets, a peach glow underneath and a blush on top.
+const CLOUD = '#DFE6EC'
+const CLOUD_UNDER = '#C3D0DB'
+const CLOUD_GLOW = '#EDB99B'
+const CLOUD_BLUSH = '#F3D9CB'
+// The sun's glints on the water as it rises and sets: a warm gold in place of midday's white.
+const SUNSET_GLINT = '#F6C27A'
+// Gulls: a soft slate stroke that reads on both pages.
+const GULL = '#71808F'
+// Driftwood, for a mast and the umbrella's pole; a deeper clay for a hull and a rim.
+const MAST = '#7A4E37'
+const CLAY_DEEP = '#B65D40'
+// Cream, for a sail and the umbrella's panels, rimmed so it keeps an edge on the light page.
+const CREAM = '#F7F1E8'
+const SAIL_EDGE = '#9DB4C7'
+
+/** How built the sandcastle is (0 to 6) after `turns` answered turns, on a beach wide enough for one. */
+export function castleStage(turns: number, width: number): number {
+  return width < SCENIC ? 0 : CASTLE_TURNS.filter(at => turns >= at).length
+}
+
+/** A loop on the sea's clock: `period` divides its wrap (CLOCK_WRAP), so it goes on in step across it and a new frame never restarts it. */
+function onClock(name: string, keyframesName: string, period: number, phase: number, clock: number, ease = 'ease-in-out'): string {
+  return `.${name}{animation:${keyframesName} ${period}s ${ease} -${roundMs((clock + phase) % period)}s infinite}`
+}
+
+/** How high the sun and the moon ride, in units from the top: low over the sand and the sea at either end of their crossing, high at midday or midnight. */
+const SKY_LOW = 8.6
+const SKY_HIGH = 1.4
+// The sun as it rises and sets: a deeper, warmer gold than its midday one.
+const SUNSET = '#EE9A57'
+
+/**
+ * Where the sun stands by day, and the moon by night, on a beach `width` units wide, `step` steps
+ * into the day or the night (see skyStepAt): up from over the sand past where he strolls (and past
+ * the umbrella), high at midday or midnight, and down over the sea. `low`: how near the sand and the
+ * sea it hangs, 0 overhead to 1 at either end. The narrow beach's sky is too small to cross: its moon
+ * hangs over the sea all night.
+ */
+function skyAt(width: number, step: number, night: boolean): { x: number; y: number; low: number } {
+  if (width < WIDE) {
+    return { x: width - 6, y: 2.2, low: 0 }
+  }
+  const f = Math.min(1, Math.max(0, (step + 0.5) / skySteps(night)))
+  const from = width >= SUNNY ? umbrellaAt(width) + 10 : HOME + 1 + SPRITE_W + strollReach(width) + 4
+  const high = Math.sin(Math.PI * f)
+
+  return { x: round(from + (width - 5 - from) * f), y: round(SKY_LOW - (SKY_LOW - SKY_HIGH) * high), low: round(1 - high) }
+}
+
+// Between two colors (#RRGGBB), `t` of the way from the first to the second.
+function mixHex(a: string, b: string, t: number): string {
+  const channel = (hex: string, i: number) => Number.parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16)
+  const mixed = [0, 1, 2].map(i => Math.round(channel(a, i) + (channel(b, i) - channel(a, i)) * t))
+
+  return `#${mixed.map(n => n.toString(16).padStart(2, '0').toUpperCase()).join('')}`
+}
+
+/**
+ * The sky by day: the sun crossing it by the person's own clock (see skyAt), a warmer gold and a
+ * little larger as it rises and sets, and a few small clouds, each in its own place in the sky past
+ * where he strolls, swaying a little back and forth on the sea's clock. Then now and then a pair of
+ * gulls. Behind everything; still, the clouds hang where they are.
+ */
+function daySky(scene: Scene, clock: number, base: string[], motion: string[]): string {
+  const { width } = scene
+  if (width < WIDE) {
+    return ''
+  }
+  const { x, y, low } = skyAt(width, scene.sky, false)
+  const sun = `<circle class="sun" cx="${x}" cy="${y}" r="${round(1.45 + 0.4 * low)}" fill="${mixHex(SUN, SUNSET, low * low)}"/>`
+  // [left end, height, size, its sway's period and where in it the sea's clock starts, in seconds]
+  const open = HOME + 1 + SPRITE_W + strollReach(width)
+  const all: Array<[number, number, number, number, number]> = [
+    [open + (width - open) * 0.3, 0.5, 0.8, 63, 11],
+    [open + (width - open) * 0.66, 2.8, 0.62, 126, 70],
+    [open + (width - open) * 0.88, 0.2, 0.7, 42, 30],
+  ]
+  const clouds = all.slice(0, width >= ROOMY ? 3 : 2)
+  motion.push('@keyframes sway{0%,100%{transform:translateX(-1.2px)}50%{transform:translateX(1.2px)}}')
+  const drawn = clouds.map(([cx, cy, size, period, phase], i) => {
+    motion.push(onClock(`cloud${i}`, 'sway', period, phase, clock))
+    return `<g class="cloud cloud${i}">${cloudShape(round(cx), cy, size, low * low)}</g>`
+  })
+
+  return `<g class="sky">${sun}${drawn.join('')}${gulls(scene, clock, base, motion)}</g>`
+}
+
+// A soft cloud whose left end is at (x, y): three puffs on a flat base, a bluer underside, `glow` of
+// the way to sunrise's and sunset's peach.
+function cloudShape(x: number, y: number, size: number, glow: number): string {
+  const s = (n: number) => round(n * size)
+  const puffs = [
+    [s(2.2), s(1.6), s(1.5)],
+    [s(4.3), s(1.0), s(2.0)],
+    [s(6.6), s(1.7), s(1.4)],
+  ]
+  const body = puffs.map(([cx, cy, r]) => `<circle cx="${round(x + (cx ?? 0))}" cy="${round(y + (cy ?? 0))}" r="${r}"/>`).join('')
+  const flat = `<rect x="${round(x + s(0.8))}" y="${round(y + s(1.6))}" width="${s(7.4)}" height="${s(1.6)}" rx="${s(0.8)}"/>`
+
+  return `<g fill="${mixHex(CLOUD_UNDER, CLOUD_GLOW, glow)}" transform="translate(0 ${s(0.35)})">${flat}</g><g fill="${mixHex(CLOUD, CLOUD_BLUSH, glow)}">${body}${flat}</g>`
+}
+
+/**
+ * Now and then a pair of gulls flies over the beach, out toward the sea: once a minute (a half wrap
+ * of the sea's clock), a quarter of a minute to cross, flapping a couple of beats and gliding. Not
+ * by night, and never in a still frame (a gull is a moment).
+ */
+function gulls(scene: Scene, clock: number, base: string[], motion: string[]): string {
+  const { width } = scene
+  if (scene.still || width < SCENIC) {
+    return ''
+  }
+  const [period, cross] = [63, 15]
+  const wing = 'M-1.5 .1Q-.8 -.8 0 0Q.8 -.8 1.5 .1'
+  base.push('.gull{transform:translateX(-4px)}.wings{transform-box:fill-box;transform-origin:center bottom}')
+  motion.push(`@keyframes fly{0%{transform:translateX(-4px)}${pct(cross / period)},100%{transform:translateX(${width + 4}px)}}`)
+  motion.push('@keyframes flap{0%,36%,100%{transform:scaleY(1)}9%,27%{transform:scaleY(-.35)}18%{transform:scaleY(1.1)}}')
+  // [height, size, a beat behind the first, in seconds]
+  const pair: Array<[number, number, number]> = [
+    [3.1, 1, 0],
+    [1.7, 0.8, 1.1],
+  ]
+
+  return pair
+    .map(([y, size, behind], i) => {
+      motion.push(onClock(`gull${i}`, 'fly', period, 31 - behind, clock, 'linear'))
+      motion.push(`.wings${i}{animation:flap 1.4s ease-in-out -${roundMs((clock + i * 0.5) % 1.4)}s infinite}`)
+      return `<g class="gull gull${i}"><g transform="translate(0 ${y}) scale(${size})"><path class="wings wings${i}" d="${wing}" fill="none" stroke="${GULL}" stroke-width=".32" stroke-linecap="round" stroke-linejoin="round"/></g></g>`
+    })
+    .join('')
+}
+
+/**
+ * His sandcastle, built up a piece at a time as turns land in this conversation (castleStage): a
+ * bucket's mound, then a tower, a wall and a second tower, a door, windows, and a clay flag that
+ * flutters on the sea's clock, with the bucket that built it beside it. In the beach's own sand,
+ * its shaded side and openings a shade darker. It stands before the sea, so a tide that comes that
+ * far laps round it, and before him, so his strolls pass in front of it.
+ */
+function castle(scene: Scene, clock: number, base: string[], motion: string[]): string {
+  const stage = scene.castle
+  if (stage === 0) {
+    return ''
+  }
+  const x = CASTLE_AT
+  const foot = GROUND + 0.5
+  const block = (x0: number, top: number, w: number) =>
+    `<rect x="${round(x + x0)}" y="${round(top)}" width="${round(w)}" height="${round(foot - top)}" fill="${SAND}" stroke="${SAND_EDGE}" stroke-width=".3"/>` +
+    `<rect x="${round(x + x0 + w - 0.7)}" y="${round(top + 0.15)}" width=".55" height="${round(foot - top - 0.3)}" fill="${SAND_SHADE}"/>`
+  const merlons = (x0: number, top: number, at: number[]) =>
+    at.map(dx => `<rect x="${round(x + x0 + dx)}" y="${round(top - 0.9)}" width=".9" height="1" fill="${SAND}" stroke="${SAND_EDGE}" stroke-width=".3"/>`).join('')
+  // The bucket that built it, on its side of the castle away from him: blue, with a cream rim and a handle.
+  const bx = round(x + (stage >= 3 ? 11.6 : 6.4))
+  const bucket =
+    `<path d="M${round(bx + 0.15)} ${GROUND - 2.1}A1 1.1 0 0 1 ${round(bx + 2.05)} ${GROUND - 2.1}" fill="none" stroke="${SEA_DEEP}" stroke-width=".22"/>` +
+    `<path d="M${bx} ${GROUND - 2.1}H${round(bx + 2.2)}L${round(bx + 1.85)} ${round(GROUND + 0.45)}H${round(bx + 0.35)}Z" fill="${SEA}"/>` +
+    `<rect x="${round(bx - 0.1)}" y="${GROUND - 2.3}" width="2.4" height=".5" rx=".2" fill="${FOAM}"/>`
+  const pole = x + 2.4
+  // Each piece and the stage that adds it, back to front: the wall and the second tower stand behind
+  // the first tower, and the mound gives way to it.
+  const pieces: Array<[number, string]> = [
+    [1, stage === 1 ? `<path d="M${x} ${foot}L${round(x + 0.9)} ${GROUND - 2.4}H${round(x + 4.1)}L${x + 5} ${foot}Z" fill="${SAND}" stroke="${SAND_EDGE}" stroke-width=".3" stroke-linejoin="round"/>` : ''],
+    [3, block(4.4, GROUND - 2, 3) + merlons(4.4, GROUND - 2, [0.3, 1.7]) + block(7.2, GROUND - 3.2, 3) + merlons(7.2, GROUND - 3.2, [0, 2.1])],
+    [2, block(0.3, GROUND - 4, 4.2) + merlons(0.3, GROUND - 4, [0, 1.65, 3.3])],
+    [4, `<path d="M${round(x + 5.3)} ${foot}V${round(GROUND - 0.9)}A.6 .6 0 0 1 ${round(x + 6.5)} ${round(GROUND - 0.9)}V${foot}Z" fill="${WET}"/>`],
+    [5, `<rect x="${round(x + 2)}" y="${round(GROUND - 2.9)}" width=".8" height=".9" fill="${WET}"/><rect x="${round(x + 8.3)}" y="${round(GROUND - 2.2)}" width=".8" height=".8" fill="${WET}"/>`],
+    [
+      6,
+      `<path d="M${round(pole)} ${round(GROUND - 4.9)}V${round(GROUND - 7.6)}" stroke="${MAST}" stroke-width=".25"/>` +
+        `<g class="flag"><path d="M${round(pole)} ${round(GROUND - 7.6)}L${round(pole + 2.1)} ${round(GROUND - 7)}L${round(pole)} ${round(GROUND - 6.4)}Z" fill="${CLAY}"/></g>`,
+    ],
+    [1, bucket],
+  ]
+  if (stage >= 6) {
+    base.push('.flag{transform-box:fill-box;transform-origin:left center}')
+    motion.push('@keyframes flutter{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.8)}}')
+    motion.push(onClock('flag', 'flutter', 2.1, 0.4, clock))
+  }
+  // The piece this turn built pops up out of the sand as his arms go up, with a little bounce.
+  if (scene.built) {
+    base.push('.built{transform-box:fill-box;transform-origin:center bottom}')
+    motion.push(`@keyframes build{0%{transform:scale(0)}55%{transform:scale(1.18)}100%{transform:scale(1)}}.built{animation:build .5s ease-out ${round(ARMS_UP_S)}s 1 both}`)
+  }
+  const drawn = pieces
+    .filter(([at, svg]) => at <= stage && svg !== '')
+    .map(([at, svg]) => (scene.built && at === stage ? `<g class="built">${svg}</g>` : svg))
+
+  return `<g class="castle">${drawn.join('')}</g>`
+}
+
+/** Where the beach umbrella's pole stands, in units: midway between the farthest he strolls and the water's edge at 40% context. */
+function umbrellaAt(width: number): number {
+  return Math.round((HOME + 1 + SPRITE_W + strollReach(width) + width - water(40, width)) / 2)
+}
+
+/**
+ * A beach umbrella on a wide beach, past where he strolls: clay and cream panels, rimmed in a deeper
+ * clay, on a driftwood pole, with a striped towel in its shade. Its shade and towel lie on the sand
+ * (`under`, before him and the sea), the umbrella stands over them (`over`). A tide that comes up to
+ * it has had it packed away: there is none while the calm water reaches its shade.
+ */
+function umbrella(scene: Scene): { under: string; over: string } {
+  const x = umbrellaAt(scene.width)
+  const [top, rim, half] = [2.6, 5.9, 7]
+  if (scene.width < SUNNY || layout(scene).shore < x + half + 1.5) {
+    return { under: '', over: '' }
+  }
+  // The rim's points, right to left: five panels, clay at the middle and the edges.
+  const edges = [half, 4.2, 1.4, -1.4, -4.2, -half].map(dx => round(x + dx))
+  const dome = `M${round(x - half)} ${rim}C${round(x - half + 0.5)} ${round(top + 0.8)} ${round(x - 3.2)} ${top} ${x} ${top}C${round(x + 3.2)} ${top} ${round(x + half - 0.5)} ${round(top + 0.8)} ${round(x + half)} ${rim}`
+  const scallops = edges.slice(1).map((e, i) => `Q${round(((edges[i] ?? x) + e) / 2)} ${round(rim + 0.85)} ${e} ${rim}`).join('')
+  const canopy = `${dome}${scallops}Z`
+  const panels = edges.slice(1).map((e, i) => `<path d="M${x} ${top - 1}L${edges[i]} ${rim + 1.2}L${e} ${rim + 1.2}Z" fill="${i % 2 === 0 ? CLAY : CREAM}"/>`)
+  const towel = [0, 1, 2, 3].map(k => `<rect x="${round(x - 5.4 + k * 2.2)}" y="${GROUND + 0.95}" width=".9" height="1.25" fill="${CREAM}"/>`).join('')
+
+  return {
+    under:
+      `<g class="towel"><rect x="${round(x - 6.2)}" y="${GROUND + 0.95}" width="9.6" height="1.25" rx=".25" fill="${SEA}"/>${towel}` +
+      `<ellipse cx="${round(x + 0.8)}" cy="${round(GROUND + 0.6)}" rx="6.4" ry=".7" fill="${SHADOW}"/></g>`,
+    over:
+      `<g class="umbrella"><path d="M${x} ${top}V${round(GROUND + 0.8)}" stroke="${MAST}" stroke-width=".34"/>` +
+      `<clipPath id="canopy"><path d="${canopy}"/></clipPath><g clip-path="url(#canopy)">${panels.join('')}</g>` +
+      `<path d="${canopy}" fill="none" stroke="${CLAY_DEEP}" stroke-width=".25" stroke-linejoin="round"/>` +
+      `<circle cx="${x}" cy="${round(top - 0.3)}" r=".38" fill="${CLAY_DEEP}"/></g>`,
+  }
+}
+
+/**
+ * Now and then a little fish leaps out of the open sea and dives back in: once every 42 seconds on
+ * the sea's clock, an arc of a second, out where the water is wide enough on a beach of 64 units or
+ * more. It swims behind the water, so the sea hides it until it leaps. Never in a still frame.
+ */
+function fish(scene: Scene, shore: number, clock: number, base: string[], motion: string[]): string {
+  const { width } = scene
+  if (scene.still || width < WIDE || width - shore < 24) {
+    return ''
+  }
+  const x = round(shore + (width - shore) * 0.46)
+  const y = GROUND + 0.4
+  const [period, from, length, high] = [42, 20, 1.1, 4.2]
+  const at = (s: number) => pct((from + s) / period)
+  // Across at an even pace, up and over and down again: an arc, tipping nose up, level, nose down.
+  base.push('.fishy{transform-box:fill-box;transform-origin:center}')
+  motion.push(`@keyframes fishx{0%,${at(0)}{transform:translateX(0)}${at(length)},100%{transform:translateX(4px)}}`)
+  motion.push(
+    `@keyframes fishy{0%,${at(0)}{transform:translateY(0) rotate(-50deg);animation-timing-function:cubic-bezier(.2,.7,.5,1)}` +
+      `${at(length / 2)}{transform:translateY(-${high}px) rotate(0);animation-timing-function:cubic-bezier(.5,0,.8,.3)}${at(length)},100%{transform:translateY(0) rotate(50deg)}}`,
+  )
+  motion.push(onClock('fishx', 'fishx', period, 5, clock, 'linear'))
+  motion.push(onClock('fishy', 'fishy', period, 5, clock, 'linear'))
+  const body = `M${round(x - 0.9)} ${y}Q${x} ${round(y - 0.75)} ${round(x + 0.9)} ${y}Q${x} ${round(y + 0.75)} ${round(x - 0.9)} ${y}Z`
+  const tail = `M${round(x - 0.7)} ${y}L${round(x - 1.5)} ${round(y - 0.55)}V${round(y + 0.55)}Z`
+
+  return `<g class="fishx"><g class="fishy"><path d="${body}${tail}" fill="${SEA_DEEP}"/></g></g>`
+}
+
+/**
+ * A little sailboat far out on the open sea, bobbing on the swell on the sea's clock: a clay hull, a
+ * mast of driftwood, cream sails rimmed in blue, a clay pennant, and by night a lantern at its
+ * masthead. It floats on the water's top past the shore's shoulder, so no tide beaches it, and stays
+ * put when a splash's surge runs in.
+ */
+function boat(scene: Scene, clock: number, base: string[], motion: string[]): string {
+  const { width, night } = scene
+  if (width < WIDE) {
+    return ''
+  }
+  const x = round(Math.max(width - 8, layout(scene).shore + 6))
+  const y = GROUND - 0.9
+  const parts = [
+    `<path d="M${x} ${round(y - 0.3)}V${round(y - 5.8)}" stroke="${MAST}" stroke-width=".25"/>`,
+    `<path d="M${round(x + 0.25)} ${round(y - 5.5)}V${round(y - 0.8)}H${round(x + 3.1)}Z" fill="${CREAM}" stroke="${SAIL_EDGE}" stroke-width=".2" stroke-linejoin="round"/>`,
+    `<path d="M${round(x - 0.25)} ${round(y - 4.7)}V${round(y - 0.8)}H${round(x - 2.5)}Z" fill="${CREAM}" stroke="${SAIL_EDGE}" stroke-width=".2" stroke-linejoin="round"/>`,
+    `<path d="M${x} ${round(y - 5.8)}L${round(x + 1.2)} ${round(y - 5.45)}L${x} ${round(y - 5.1)}Z" fill="${CLAY}"/>`,
+    `<path d="M${round(x - 3.3)} ${round(y - 0.4)}H${round(x + 3.5)}L${round(x + 2.5)} ${round(y + 0.9)}H${round(x - 2.4)}Z" fill="${CLAY_DEEP}"/>`,
+  ]
+  if (night) {
+    parts.push(`<circle class="lantern" cx="${x}" cy="${round(y - 6.15)}" r=".38" fill="${STARLIGHT}"/>`)
+  }
+  base.push('.boat{transform-box:fill-box;transform-origin:center bottom}')
+  motion.push('@keyframes bob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(.3px) rotate(2.5deg)}}')
+  motion.push(onClock('boat', 'bob', 4.5, 1.1, clock))
+
+  return `<g class="boat">${parts.join('')}</g>`
 }
 
 function shell(): string {
@@ -1163,7 +1642,7 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     `<path d="${body}" fill="${SEA}"/>`,
     `<rect x="${shore}" y="${GROUND + 2}" width="${far - shore}" height="${H - GROUND - 2}" fill="${SEA_DEEP}" clip-path="url(#water)"/>`,
     `<g clip-path="url(#water)"><path class="roll2" d="${crest(GROUND + 1.6, shore - 6)}" fill="none" stroke="${SEA}" stroke-width=".5" opacity=".9"/>`,
-    `<path class="roll" d="${crest(top + 0.15, shore - 6)}" fill="none" stroke="${FOAM}" stroke-width=".55"/></g>`,
+    `<path class="roll" d="${crest(top + 0.15, shore - 6)}" fill="none" stroke="${FOAM}" stroke-width=".55"/>${glints(scene, shore, carried.clock, base, motion)}</g>`,
     `<path d="M${shore + 0.2} ${GROUND + 0.3}C${shore + 0.9} ${top + 0.1} ${shore + 1.6} ${top} ${shore + 3} ${top}" fill="none" stroke="${FOAM}" stroke-width=".6" stroke-linecap="round"/>`,
     `</g></g></g>`,
   ].join('')
@@ -1178,31 +1657,91 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     `@keyframes surge{0%{transform:translateX(${rushFrom === 0 ? 0 : `-${rushFrom}px`});${ease('cubic-bezier(.25,.8,.35,1)')}}24%{transform:translateX(-${run}px);${ease('ease-in-out')}}46%{transform:translateX(-${round(run * 0.9)}px);${ease('cubic-bezier(.45,0,.4,1)')}}100%{transform:translateX(0)}}`,
   )
   // Spray off the water just beside him, a unit of sky clear of his raised claw: each drop swells up
-  // out of the crest, leaps up and out to sea, hangs, and shrinks away as it falls, at full color
-  // all the while (a fade, in or out, turns a drop into a slate-gray smudge on the dark page halfway
-  // through). They leave the air together, by DROPS_END_S, the later ones on a shorter hop, so no
-  // lone speck is left hanging. The still frame holds the sea at his feet and the drops in the air
+  // out of the crest and arcs up and out to sea, the sea going back out under it, and falls back in
+  // just past the calm line, where the water is by then, shrinking away as it lands. It flies at an
+  // even pace outward (its own group, `dropx`) while it rises and falls (the drop), so its path is a
+  // true arc, never the straight legs a single transform draws between keyframes. At full color all
+  // the while (a fade, in or out, turns a drop into a slate-gray smudge on the dark page halfway
+  // through). They land together, by DROPS_END_S, the later ones on a shorter hop, so no lone speck
+  // is left hanging. The still frame holds the sea at his feet and the drops at the top of their arcs
   // (where motion plays, the surge and the drops' own animations take over).
   const by = start + (scene.still ? stillDx(scene) : leadOf(scene).dx) + SPRITE_W + 1.2
-  const peaks: Array<[number, number]> = [[0, 7.4], [0.8, 8.2], [1.6, 7.4], [2.4, 6.2]]
+  // A burst of four thrown from about one point, each its own way, so they scatter rather than fly
+  // in a line: [how high it flies, how far past the calm line it lands, its size, when it leaves].
+  const flights: Array<[number, number, number, number]> = [
+    [6.6, 0.6, 0.95, 0.4],
+    [3.4, 4.6, 0.7, 0.46],
+    [5, 6.8, 0.82, 0.55],
+    [4.2, 2.6, 0.6, 0.62],
+  ]
   base.push(`.surge{transform:translateX(-${run}px)}.drop{transform-box:fill-box;transform-origin:center}`)
   motion.push('@keyframes swell{from{scale:0}to{scale:1}}')
-  const drops = peaks.map(([dx, dy], i) => {
-    const delay = round(0.4 + 0.12 * i)
-    base.push(`.drop${i}{transform:translate(${dx}px,-${dy}px)}`)
-    motion.push(`.drop${i}{animation:drop${i} ${round(DROPS_END_S - delay)}s ease-out ${delay}s 1 both,swell .2s ease-out ${delay}s 1 both}`)
+  const drops = flights.map(([height, past, r, leaves], i) => {
+    const delay = round(leaves)
+    const length = round(DROPS_END_S - delay)
+    const cx = round(by + i * 0.8)
+    // Where it lands: past the calm line, where the sea is by then, inside the picture.
+    const out = round(Math.max(1.5, Math.min(width - 1, shore + past) - cx))
+    base.push(`.dropx${i}{transform:translateX(${round(out * PEAK_AT)}px)}.drop${i}{transform:translate(0,-${height}px)}`)
+    motion.push(`.dropx${i}{animation:dropx${i} ${length}s linear ${delay}s 1 both}@keyframes dropx${i}{from{transform:translateX(0)}to{transform:translateX(${out}px)}}`)
+    motion.push(`.drop${i}{animation:drop${i} ${length}s ease-out ${delay}s 1 both,swell .2s ease-out ${delay}s 1 both}`)
     motion.push(
-      `@keyframes drop${i}{0%{transform:translate(0,0) scale(1)}45%{transform:translate(${dx}px,-${dy}px) scale(1)}80%{transform:translate(${round(dx + 0.6 + i * 0.3)}px,-4px) scale(.8)}100%{transform:translate(${round(dx + 0.9 + i * 0.4)}px,-2px) scale(0)}}`,
+      `@keyframes drop${i}{0%{transform:translate(0,0) scale(1);animation-timing-function:cubic-bezier(.25,.6,.45,1)}${pct(PEAK_AT)}{transform:translate(0,-${height}px) scale(1);animation-timing-function:cubic-bezier(.55,0,.75,.4)}` +
+        `88%{transform:translate(0,.3px) scale(.85);animation-timing-function:ease-in}100%{transform:translate(0,1px) scale(0)}}`,
     )
 
-    return `<circle class="drop drop${i}" cx="${round(by + i * 1.5)}" cy="${GROUND - 1}" r=".95" fill="${i % 2 === 0 ? SEA : DROP}"/>`
+    return `<g class="dropx${i}"><circle class="drop drop${i}" cx="${cx}" cy="${GROUND - 1}" r="${r}" fill="${i % 2 === 0 ? SEA : DROP}"/></g>`
   })
 
   return { water, spray: drops.join('') }
 }
 
+/**
+ * Light on the water: by day, little white glints of sun scattered over the sea; by night, gold glints
+ * of moonlight in a path under the moon. Each pops up for a moment now and then, at its own pace, and
+ * is gone again: a glint is a moment of light, so the still frame (and a page that asks for less
+ * motion) has none. Only out on the water, clear of its front. They keep time by the sea's clock, as
+ * the crests do, so a new frame never cuts one short or pops one up afresh.
+ */
+function glints(scene: Scene, shore: number, clock: number, base: string[], motion: string[]): string {
+  const { width, night } = scene
+  if (scene.still) {
+    return ''
+  }
+  // By night they lie in a path under the moon, wherever it is over the water. By day they warm to
+  // gold as the sun rises and sets.
+  const moon = width - skyAt(width, scene.sky, true).x
+  const { low } = skyAt(width, scene.sky, false)
+  const sunlight = mixHex(SUNLIGHT, SUNSET_GLINT, low * low)
+  // [from the right edge, depth below the sand line, size, period and where in it the sea's clock
+  // starts, in seconds]. Each period divides the clock's wrap, as the stars' do.
+  const places: Array<[number, number, number, number, number]> = night
+    ? [
+        [moon - 0.6, 1.1, 0.36, 4.5, 0.6],
+        [moon + 0.8, 1.9, 0.3, 5.25, 2.9],
+        [moon - 1.4, 2.6, 0.26, 6.3, 4.4],
+      ]
+    : [
+        [3.2, 1.1, 0.34, 5.25, 1.2],
+        [8.6, 1.9, 0.3, 6.3, 3.8],
+        [13.4, 1.3, 0.32, 7.875, 5.6],
+      ]
+  base.push('.glint{transform-box:fill-box;transform-origin:center;transform:scale(0)}')
+  motion.push('@keyframes glint{0%,64%,100%{transform:scale(0)}74%{transform:scale(1)}84%{transform:scale(.45)}92%{transform:scale(.85)}}')
+
+  return places
+    .flatMap(([from, depth, size, period, phase], i) => {
+      if (width - from <= shore + 1.5 || from < 1) {
+        return []
+      }
+      motion.push(`.glint${i}{animation:glint ${period}s ease-in-out -${roundMs((clock + phase) % period)}s infinite}`)
+      return [star(round(width - from), round(GROUND + depth), size, i, `glint glint${i}`, night ? STARLIGHT : sunlight)]
+    })
+    .join('')
+}
+
 // How long each moment plays before the loop takes over, in seconds.
-const INTRO: Record<Exclude<Moment, null>, number> = { cheer: 4.2, splash: 2.6, wake: 0.9, hello: 2 }
+const INTRO: Record<Exclude<Moment, null>, number> = { cheer: 4.2, splash: 2.6, wake: 1.1, hello: 2 }
 
 // The moment that plays once before the loop takes over: a spin, a splash, waking up, or hello.
 function beatsOf(kind: Exclude<Moment, null>): Beat[] {
@@ -1210,13 +1749,22 @@ function beatsOf(kind: Exclude<Moment, null>): Beat[] {
     case 'cheer':
       return [...SPIN.map((_, i) => ({ at: round(i * 0.2), pose: `spin${i}`, x: 0 })), { at: round(SPIN.length * 0.2), pose: 'up', x: 0 }]
     case 'splash':
+      // The hit, eyes shut and arms up; then, cold feet, a hop from one pair to the other while
+      // the water is at them, a look round at it going back out, and he settles.
       return [
         { at: 0, pose: 'splash', x: 0 },
-        { at: 1.2, pose: 'lookR', x: 0 },
+        { at: 0.7, pose: 'hopL', x: 0 },
+        { at: 0.85, pose: 'hopR', x: 0 },
+        { at: 1, pose: 'walkR1', x: 0 },
+        { at: 1.15, pose: 'walkR2', x: 0 },
+        { at: 1.3, pose: 'lookR', x: 0 },
       ]
     case 'wake':
-      // Up from his curl, standing with his eyes still shut, before he opens them.
-      return [{ at: 0, pose: 'blink', x: 0 }]
+      // Up from his curl with a big stretch, arms up and eyes still shut; arms down; then he opens them.
+      return [
+        { at: 0, pose: 'stretch', x: 0 },
+        { at: 0.6, pose: 'blink', x: 0 },
+      ]
     case 'hello':
       // A moment after the frame appears, one claw up, down, and up again: Claude Code's wave.
       return [
@@ -1229,28 +1777,62 @@ function beatsOf(kind: Exclude<Moment, null>): Beat[] {
   }
 }
 
+/** When his arms go up in a cheer, after the spin (seconds). */
+const ARMS_UP_S = SPIN.length * 0.2
+
+// Two little hops of joy as his arms go up, the second a touch lower: up quick, down soft, a
+// unit (three pixels) at the most, so at rest he is back on his whole pixels.
+function hop(length: number): string {
+  const at = (seconds: number) => pct((ARMS_UP_S + seconds) / length)
+  const y = (units: number, ease: string) => `{transform:translateY(${units}px);animation-timing-function:${ease}}`
+  // His shadow stays on the sand, a little smaller while he is up.
+  const wide = (scale: number, ease: string) => `{transform:scaleX(${scale});animation-timing-function:${ease}}`
+
+  return (
+    `.hop{animation:hop ${length}s linear 1 both}` +
+    `@keyframes hop{0%,${at(0)}${y(0, 'ease-out')}${at(0.12)}${y(-1, 'ease-in')}${at(0.26)}${y(0, 'linear')}${at(0.4)}${y(0, 'ease-out')}` +
+    `${at(0.5)}${y(-0.67, 'ease-in')}${at(0.62)},100%${y(0, 'linear')}}` +
+    `.shadow{animation:shadow ${length}s linear 1 both}` +
+    `@keyframes shadow{0%,${at(0)}${wide(1, 'ease-out')}${at(0.12)}${wide(0.8, 'ease-in')}${at(0.26)}${wide(1, 'linear')}${at(0.4)}${wide(1, 'ease-out')}` +
+    `${at(0.5)}${wide(0.86, 'ease-in')}${at(0.62)},100%${wide(1, 'linear')}}`
+  )
+}
+
+/**
+ * His shadow on the sand, under his feet: a soft, flat oval in a darker sand, which walks with him
+ * and stays on the ground when he hops. Drawn smooth, under his crisp pixels.
+ */
+function shadow(): string {
+  return `<ellipse class="shadow" cx="9" cy="10.35" rx="6.6" ry=".62" fill="${SHADOW}" shape-rendering="geometricPrecision"/>`
+}
+
 // Three little clay sparkles while his arms are up after the spin. Each pops up from a point,
-// one a beat after another, and shrinks back to a point as the cheer ends: never faded, since a
-// half-faded clay star on the dark page is a muddy brown smudge.
+// one a beat after another, glints once (a quick swell and a turn, as a star twinkles), and
+// shrinks back to a point as the cheer ends: never faded, since a half-faded clay star on the dark
+// page is a muddy brown smudge.
 function sparkles(length: number, base: string[], motion: string[]): string {
-  const from = SPIN.length * 0.2
   // Held in the still frame; where motion plays, each pops up in turn and shrinks away.
   base.push('.star{transform-box:fill-box;transform-origin:center}')
   ;[0, 1, 2].forEach(i => {
-    const at = from + i * 0.12
-    const scale = (n: number) => `transform:scale(${n})`
+    const at = ARMS_UP_S + i * 0.12
+    // (Only the glint turns: a list without its rotate() is read as one with rotate(0) between them.)
+    const scale = (n: number, turn = 0) => `transform:scale(${n})${turn === 0 ? '' : ` rotate(${turn}deg)`}`
     motion.push(`.star${i}{animation:star${i} ${length}s linear 1 both}`)
     motion.push(
-      `@keyframes star${i}{0%,${pct(at / length)}{${scale(0)}}${pct((at + 0.18) / length)}{${scale(1.2)};animation-timing-function:ease-out}${pct((at + 0.36) / length)},${pct((length - 0.5) / length)}{${scale(1)};animation-timing-function:ease-in}100%{${scale(0)}}}`,
+      `@keyframes star${i}{0%,${pct(at / length)}{${scale(0)}}${pct((at + 0.18) / length)}{${scale(1.2)};animation-timing-function:ease-out}` +
+        `${pct((at + 0.36) / length)},${pct((at + 0.52) / length)}{${scale(1)};animation-timing-function:ease-in-out}${pct((at + 0.64) / length)}{${scale(1.25, 15)};animation-timing-function:ease-in-out}` +
+        `${pct((at + 0.78) / length)},${pct((length - 0.5) / length)}{${scale(1)};animation-timing-function:ease-in}100%{${scale(0)}}}`,
     )
   })
 
   return `<g class="spark">${star(-2.5, 3, 1, 0)}${star(19.5, 1, 1, 1)}${star(20.5, 6.5, 0.7, 2)}</g>`
 }
 
-function star(x: number, y: number, size: number, i: number): string {
+// A four-point sparkle centered on (x, y): the cheer's, in clay, or the night sky's, in starlight.
+function star(x: number, y: number, size: number, i: number, kind = `star star${i}`, fill = CLAY): string {
   const s = size
-  return `<path class="star star${i}" d="M${x} ${y - 1.6 * s}L${x + 0.45 * s} ${y - 0.45 * s}L${x + 1.6 * s} ${y}L${x + 0.45 * s} ${y + 0.45 * s}L${x} ${y + 1.6 * s}L${x - 0.45 * s} ${y + 0.45 * s}L${x - 1.6 * s} ${y}L${x - 0.45 * s} ${y - 0.45 * s}Z" fill="${CLAY}"/>`
+  const p = (n: number) => round(n)
+  return `<path class="${kind}" d="M${p(x)} ${p(y - 1.6 * s)}L${p(x + 0.45 * s)} ${p(y - 0.45 * s)}L${p(x + 1.6 * s)} ${p(y)}L${p(x + 0.45 * s)} ${p(y + 0.45 * s)}L${p(x)} ${p(y + 1.6 * s)}L${p(x - 0.45 * s)} ${p(y + 0.45 * s)}L${p(x - 1.6 * s)} ${p(y)}L${p(x - 0.45 * s)} ${p(y - 0.45 * s)}Z" fill="${fill}"/>`
 }
 
 function heart(x: number, y: number): string {
@@ -1309,7 +1891,7 @@ function nap(isMoving: boolean, from: number, isCurled: boolean, zsInto: number,
       motion.push(keyframes(`n-${name}`, intro, beats, beat => `opacity:${beat.pose === name ? 1 : 0}`))
     }
     const poses = names.map(name => `<g class="n-${name}">${frame(name)}</g>`).join('')
-    settling = `<g class="clawd sleepy"><g class="homeward">${poses}</g></g>`
+    settling = `<g class="clawd sleepy"><g class="homeward">${shadow()}${poses}</g></g>`
   }
 
   return `<g transform="translate(${HOME} ${TOP})">${settling}<g class="clawd curl">${pixels(curled())}</g></g>${zs}`

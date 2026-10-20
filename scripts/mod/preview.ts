@@ -16,9 +16,9 @@ import { join, resolve } from "node:path";
 import { copyMod, modName, seconds, stream, testFiles } from "./common.ts";
 import type { Shot } from "./preview/paint.ts";
 
-const SCENARIOS = ["fresh", "idle", "cheer", "working", "reading", "thinking", "oops", "high", "nap", "pet"];
+const SCENARIOS = ["fresh", "idle", "cheer", "working", "reading", "thinking", "oops", "high", "nap", "pet", "compact"];
 
-export const PREVIEW_SWITCHES = new Set(["png", "gifs"]);
+export const PREVIEW_SWITCHES = new Set(["png", "gifs", "strips"]);
 
 export const PREVIEW_HELP = `bun run mod preview <dir> [options]
 
@@ -28,29 +28,47 @@ to --out: report.txt, frames.txt (the terminal band as text), shots.jsonl (every
 paint only once they look right.
 
   --out <dir>            where to write (default: <tmp>/mod-preview/<mod>)
-  --styles a,b           run /<command> <style> before drawing each (default: as installed)
+  --styles a,b           run /<command> <style> as each session starts (default: as installed)
   --command <name>       the command that switches styles (default: band)
   --scenarios a,b        the moments to play (default: ${SCENARIOS.join(",")})
   --widths 64,100,140    band widths in columns; --animate-at 100 is the one animated
+  --frames 24            how many frames the animated width films, 125 ms apart
+  --at <time>            when the session plays, as Date.parse reads it, in UTC (the runner's zone)
+  --folder <path>        play the session in this folder, outside any repository (default: in a
+                         repository, on a branch with uncommitted changes)
   --surfaces terminal,desktop
   --shots <file>         check and paint an earlier shots.jsonl instead of running the mod
   --png                  paint contact sheets (needs Chromium: Playwright's, or Chrome)
   --gifs                 also animated GIFs (needs Python with Pillow)
+  --strips               a sheet per style and moment at the animated width, at 2x: the band alone in
+                         each distinct terminal frame, and on the desktop seeked every --step seconds
+                         (default 0.25) for --span seconds (default 6), dark and light
   --max-rows 3 --slack 2 --max-changes 4 --allow "…"   the checks' limits`;
 
 const list = (flags: Map<string, string[]>, name: string, fallback: string[]) =>
   flags.get(name)?.at(-1)?.split(",").filter(Boolean) ?? fallback;
 const one = (flags: Map<string, string[]>, name: string) => flags.get(name)?.at(-1);
 
-async function collect(dir: string, config: object, scenarios: string[], out: string): Promise<Shot[]> {
+async function collect(
+  dir: string,
+  config: { styles: (string | null)[] },
+  scenarios: string[],
+  out: string,
+): Promise<Shot[]> {
   const copy = copyMod(dir);
   try {
     for (const file of testFiles(copy.path)) rmSync(file);
     mkdirSync(join(copy.path, "tests"), { recursive: true });
     const template = readFileSync(join(import.meta.dir, "preview", "shots.test.tmpl"), "utf8");
     for (const scenario of scenarios) {
-      const source = template.replace("__CONFIG__", JSON.stringify({ ...config, scenarios: [scenario] }));
-      writeFileSync(join(copy.path, "tests", `zz-preview-${scenario}.test.ts`), source);
+      for (const style of config.styles) {
+        const source = template.replace(
+          "__CONFIG__",
+          JSON.stringify({ ...config, styles: [style], scenarios: [scenario] }),
+        );
+        const name = style === null ? scenario : `${scenario}-${style}`;
+        writeFileSync(join(copy.path, "tests", `zz-preview-${name}.test.ts`), source);
+      }
     }
     const shots: Shot[] = [];
     const log: string[] = [];
@@ -236,6 +254,64 @@ async function paint(shots: Shot[], out: string, gifs: boolean, animateAt: numbe
   }
 }
 
+/**
+ * A sheet per style and moment at the animated width, at twice the pixels: the band alone in each
+ * distinct terminal frame, then the desktop's band seeked every `step` seconds for `span`. A desktop
+ * drawing's pictures restart whenever its tree changes, so each moment is seeked from when the tree
+ * it shows first came up.
+ */
+async function strips(shots: Shot[], out: string, animateAt: number, step: number, span: number): Promise<void> {
+  const { desktopBand, esc, page, seekScript, svgSources, terminalBand } = await import("./preview/paint.ts");
+  const browser = await launch();
+  try {
+    const pg = await (await browser.newContext({ deviceScaleFactor: 2 })).newPage();
+    const styles = [...new Set(shots.map((s) => s.style))];
+    const scenarios = SCENARIOS.filter((name) => shots.some((s) => s.scenario === name));
+    const row = (label: string, cells: string[]) =>
+      `<div style="display:flex;align-items:center;gap:10px;margin:0 0 6px"><div style="width:64px;font:11px monospace;color:#444;text-align:right">${esc(label)}</div>${cells.join("")}</div>`;
+    for (const style of styles) {
+      for (const scenario of scenarios) {
+        const of = (surface: Shot["surface"]) =>
+          shots
+            .filter(
+              (s) => s.style === style && s.scenario === scenario && s.surface === surface && s.columns === animateAt,
+            )
+            .sort((a, b) => a.frame - b.frame);
+        let body = `<div style="font-size:16px;font-weight:600;margin-bottom:8px">${esc(style ?? "default")} · ${esc(scenario)} @ ${animateAt} columns</div>`;
+        let last = "";
+        for (const shot of of("terminal")) {
+          const tree = JSON.stringify(shot.tree);
+          if (tree === last) continue;
+          last = tree;
+          body += row(`+${shot.ms} ms`, [terminalBand(shot, "dark"), terminalBand(shot, "light")]);
+        }
+        const desk = of("desktop");
+        // When each picture's source first came up in the drawings before this one: it plays from there.
+        const since = new Map<Shot, Map<string, number>>();
+        desk.forEach((shot, i) => {
+          const before = since.get(desk[i - 1]!) ?? new Map<string, number>();
+          since.set(shot, new Map(svgSources(shot.tree).map((source) => [source, before.get(source) ?? shot.ms])));
+        });
+        for (let t = 0; desk.length > 0 && t <= span + 1e-9; t += step) {
+          const ms = Math.round(t * 1000);
+          const shot = desk.filter((s) => s.ms <= ms).at(-1) ?? desk[0]!;
+          const seek = (source: string) => (ms - (since.get(shot)?.get(source) ?? shot.ms)) / 1000;
+          body += row(`${t.toFixed(2)} s`, [desktopBand(shot, "dark", seek), desktopBand(shot, "light", seek)]);
+        }
+        await pg.setViewportSize({ width: 1400, height: 800 });
+        await pg.setContent(page(body), { waitUntil: "load" });
+        await pg.evaluate(seekScript);
+        await pg.waitForTimeout(100);
+        const file = join(out, `strip-${style ?? "default"}-${scenario}.png`);
+        await pg.screenshot({ path: file, fullPage: true });
+        console.log(`wrote ${file}`);
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
 export async function previewMod(dir: string, flags: Map<string, string[]>): Promise<number> {
   const started = performance.now();
   const name = modName(dir);
@@ -247,6 +323,8 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
   if (unknown.length > 0) throw new Error(`no scenario ${unknown.join(", ")}; there are ${SCENARIOS.join(", ")}`);
   const widths = list(flags, "widths", ["64", "100", "140"]).map(Number);
   const animateAt = Number(one(flags, "animate-at") ?? (widths.includes(100) ? 100 : widths[0]));
+  const at = one(flags, "at") === undefined ? null : Date.parse(one(flags, "at")!);
+  if (Number.isNaN(at)) throw new Error(`--at ${one(flags, "at")} is not a time; try 2026-07-15T14:00:00Z`);
 
   let shots: Shot[];
   const given = one(flags, "shots");
@@ -262,6 +340,9 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
       styles: styles.length > 0 ? styles : [null],
       widths,
       animateAt,
+      frames: Number(one(flags, "frames") ?? 24),
+      at,
+      folder: one(flags, "folder") ?? null,
       surfaces: list(flags, "surfaces", ["terminal", "desktop"]),
     };
     console.log(`Playing ${scenarios.length} moments through ${name}…`);
@@ -294,6 +375,9 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
   console.log(`Wrote ${join(out, "frames.txt")} and ${join(out, "report.txt")}.`);
 
   if (flags.has("png") || flags.has("gifs")) await paint(shots, out, flags.has("gifs"), animateAt);
+  if (flags.has("strips")) {
+    await strips(shots, out, animateAt, Number(one(flags, "step") ?? 0.25), Number(one(flags, "span") ?? 6));
+  }
   console.log(`Took ${seconds(started)}.`);
   return errors.length === 0 ? 0 : 1;
 }

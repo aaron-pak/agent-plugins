@@ -31,6 +31,7 @@ import {
   pendingWakes,
   prettyModel,
   runningAfter,
+  skyTurnsIn,
   stepDesk,
   stepHeld,
   todosAfterTurn,
@@ -64,12 +65,32 @@ const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLAS
  * The module's timers: `desk`, the desktop's next look at what it holds; `nap`, the redraw that shows
  * him asleep; `landing`, the one that ends a landing that never came; `starting`, the one that ends a
  * start the host never confirmed; `stride`, the beach's desktop waiting out a stride of the tide (see
- * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes. Each
- * look lets go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
+ * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes;
+ * `sky`, the beach's redraw as its sky next moves (the sun's or the moon's next step); `held`, the
+ * desktop band's next look while something else holds its place (see HELD_LOOK_MS). Each look lets
+ * go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
  * `isFresh` until this activation first draws: a reload drops every timer, so the first draw arms
  * again whatever the facts say is still to come.
  */
-type Timers = { desk: Timer | null; nap: Timer | null; landing: Timer | null; starting: Timer | null; stride: Timer | null; bead: Timer | null; isFresh: boolean }
+type Timers = {
+  desk: Timer | null
+  nap: Timer | null
+  landing: Timer | null
+  starting: Timer | null
+  stride: Timer | null
+  bead: Timer | null
+  sky: Timer | null
+  held: Timer | null
+  isFresh: boolean
+}
+
+/**
+ * How often the desktop band, stepped aside for what holds its place (a survey, and by the look of
+ * it the app's own notice above the prompt, such as its effort warning), asks to be drawn again. The
+ * app asks for the band again only when the engine says it changed, so the band asks until its place
+ * is free.
+ */
+const HELD_LOOK_MS = 2_000
 
 /**
  * How soon before an Esc'd turn's end a failed call counts as the Esc's own (the call it cut), not a
@@ -99,7 +120,7 @@ export const register: Register = (on, options) => {
   // and its id): a look drawn where the other one stood is a module swapped under a band on screen,
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
   const drawnLooks = new Map<string, Look>()
-  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, isFresh: true }
+  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, held: null, isFresh: true }
   const landing: Landing = { sawWork: false, quietSince: null }
   const scenes = desktopScenes()
   // git's answers at a turn's end, each stamped: one that comes back after a newer one has landed
@@ -206,8 +227,10 @@ export const register: Register = (on, options) => {
       }
       // One toast per crossing: it comes again only once the context has dropped back under.
       isToast = percent >= warnAt && !before.isWarned
+      // The tide back up to where a compaction left the starfish washes it away.
+      const isWashed = before.treasurePercent !== null && percent >= before.treasurePercent
 
-      return { ...figures(e), isWarned: percent >= warnAt }
+      return { ...figures(e), isWarned: percent >= warnAt, ...(isWashed ? { treasurePercent: null } : {}) }
     })
     if (isToast && percent !== undefined) {
       $.ui.toast(toastFor(await lookOf($, activation, configured), percent), { timeoutMs: 8000 })
@@ -215,6 +238,21 @@ export const register: Register = (on, options) => {
 
     return next(e)
   })
+
+  // A compaction lets the tide out (a measure says how far), and leaves a starfish on the sand at the
+  // high-water mark: the context as it stood before the compaction ran, read first, since a measure
+  // may land while it runs. The main conversation's only, and only one that went through (not a
+  // precompute, nor one a hook skipped).
+  on('session.compact', async ($, e, next) => {
+    const isMain = e.agentId === undefined && e.trigger !== 'precompute'
+    const high = isMain ? whole((await orNothing(read($, info))) ?? EMPTY).percent : null
+    const result = await next(e)
+    if (high !== null && result.messages !== undefined) {
+      await patch($, before => ({ treasurePercent: high, treasures: before.treasures + 1 }))
+    }
+
+    return result
+  }).catch((_$, e, next) => next(e))
 
   // A /model, the picker or a fallback names the new model on line 3 at once. Only the main loop's
   // switch counts (a subagent's runs its own model), and the git hold still keeps it off the line
@@ -435,7 +473,7 @@ export const register: Register = (on, options) => {
       letGo(timers)
       settled()
       const now = await $.clock.now()
-      await patch($, () => ({
+      await patch($, before => ({
         ...figures(null),
         lastActiveAt: now,
         lastTurn: null,
@@ -463,6 +501,9 @@ export const register: Register = (on, options) => {
         oopsNoun: null,
         oopsPercent: null,
         splashAt: null,
+        treasurePercent: null,
+        // The sandcastle belongs to the conversation: the next one builds its own.
+        castleFrom: before.cheers,
         turnWorked: false,
         workedAt: null,
         woke: false,
@@ -577,9 +618,31 @@ export const register: Register = (on, options) => {
   }).catch((_$, e, next) => next(e))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (e.surface !== 'terminal' && e.surface !== 'desktop')) {
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') {
       return next(e)
     }
+    if (e.props.hasSurvey) {
+      // Something else holds the band's place: Claude Code's survey (and on the desktop, by the look
+      // of it, the app's own notice above the prompt). Step aside, but keep watching: a draw that
+      // read nothing is never drawn again by a write, so read the facts (any change to them draws
+      // the band again), and on the desktop ask to be drawn again every HELD_LOOK_MS until the place
+      // is free. The terminal draws the band again itself as its survey goes.
+      await orNothing(read($, info))
+      if (e.surface === 'desktop') {
+        timers.held ??= after($, HELD_LOOK_MS, () => {
+          timers.held = null
+          try {
+            $.ui.invalidate('ui.render')
+          } catch {
+            // Nothing to draw again: the band is gone with its session.
+          }
+        })
+      }
+
+      return next(e)
+    }
+    timers.held?.cancel()
+    timers.held = null
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
     const [now, stored, motion, pick, kept] = await Promise.all([
@@ -665,6 +728,8 @@ export const register: Register = (on, options) => {
       }
       timers.stride?.cancel()
       timers.stride = null
+      timers.sky?.cancel()
+      timers.sky = null
       // Both surfaces show the line the facts' hold settled on (stepHeld), so they name the same tools,
       // however quick: the terminal's band only takes it up on a tick of its own clock.
       const props = {
@@ -736,6 +801,12 @@ export const register: Register = (on, options) => {
     nap = null
     timers.bead?.cancel()
     timers.bead = null
+    // The sun crosses the beach's sky by the person's own clock, and the moon and stars come out as
+    // night falls: one redraw at the sky's next step, armed from whichever draw comes first (a second
+    // late, so the minute has turned).
+    timers.sky ??= nudge($, skyTurnsIn(now) + 1_000, () => {
+      timers.sky = null
+    })
     // Under a splash the words are those its end hands the line on to (see deskAt), so the terminal's
     // splash, ending on its own frame clock, never shows a moment of what comes before them.
     const props = tideProps(tideInfo(deskAt(known, now)), motion, landed || isStarting, warnAt, columns, now, shownForMs, e.surface === 'desktop', greetedMs)

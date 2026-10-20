@@ -9,7 +9,13 @@ const React = await import("react");
 const { Box, Text, renderToString } = await import("ink");
 
 export type Tree = string | number | boolean | null | undefined | TreeElement;
-export type TreeElement = { type: string; props?: Record<string, unknown>; children?: Tree[] };
+/** A drawn element; `hover`, a Box's styles while a pointer rests on it, sits beside its props. */
+export type TreeElement = {
+  type: string;
+  props?: Record<string, unknown>;
+  hover?: Record<string, unknown>;
+  children?: Tree[];
+};
 export type Shot = {
   scenario: string;
   style: string | null;
@@ -100,24 +106,41 @@ const TERM: Record<Scheme, { theme: Theme; bg: string; fg: string }> = {
   light: { theme: CC_LIGHT, bg: "#fbfbf8", fg: "#1b1b1b" },
 };
 // claude.ai's palette, which the desktop app's Code tab wears: approximations of its page.
-type Desk = { theme: Theme; bg: string; card: string; border: string; fg: string; dim: string; claude: string };
+// Claude Code Desktop's Code tab: the page (`bg`), the card it draws the AbovePrompt band in (`band`),
+// the composer (`card`, `border`) and the footer under it (`foot`). Dark is measured from the app on
+// a Retina screen; light is estimated from the same layout.
+type Desk = {
+  theme: Theme;
+  bg: string;
+  band: string;
+  card: string;
+  border: string;
+  fg: string;
+  dim: string;
+  foot: string;
+  claude: string;
+};
 const DESK: Record<Scheme, Desk> = {
   dark: {
     theme: CC_DARK,
-    bg: "#262624",
-    card: "#30302e",
-    border: "#45443f",
-    fg: "#ecebe4",
-    dim: "#a6a49b",
+    bg: "#151515",
+    band: "#212121",
+    card: "#20201f",
+    border: "#4d4d4c",
+    fg: "#f0efec",
+    dim: "#898782",
+    foot: "#c3c2b8",
     claude: "#d97757",
   },
   light: {
     theme: CC_LIGHT,
     bg: "#faf9f5",
+    band: "#f0eee6",
     card: "#ffffff",
     border: "#dedcd1",
     fg: "#141413",
     dim: "#73726c",
+    foot: "#3d3d3a",
     claude: "#d97757",
   },
 };
@@ -432,6 +455,15 @@ function cellsHtml(rows: Cell[][], scheme: { bg: string; fg: string }): { html: 
 
 const WORKING = new Set(["working", "thinking", "reading", "oops"]);
 
+/** The band alone as a terminal draws it, as cells in HTML on the theme's background. */
+export function terminalBand(shot: Shot, schemeName: Scheme): string {
+  const scheme = TERM[schemeName];
+  const band = inkTree(shot.tree, scheme.theme) ?? h(Text, null, "");
+  const el = h(Box, { width: shot.columns, flexDirection: "column", overflow: "hidden" }, band);
+  const { html, w, h: hgt } = cellsHtml(parseAnsi(renderToString(el, { columns: shot.columns })), scheme);
+  return `<div style="position:relative;width:${w + 16}px;height:${hgt + 12}px;background:${scheme.bg};font-family:'DejaVu Sans Mono',Menlo,monospace;font-size:15px;border-radius:6px"><div style="position:absolute;left:8px;top:6px">${html}</div></div>`;
+}
+
 /** The band in a terminal, between the last output and the prompt box, as cells in HTML. */
 function terminalScreen(shot: Shot, schemeName: Scheme) {
   const scheme = TERM[schemeName];
@@ -480,14 +512,23 @@ const ROW = 20;
 const size = (v: unknown, axis: "x" | "y") =>
   typeof v === "string" ? v : `${Number(v) * (axis === "y" ? ROW : CELL)}px`;
 
-function deskTree(node: Tree, scheme: Desk): string {
+/**
+ * How a desktop drawing is painted: `isHovered`, with a pointer resting on the band (each Box's
+ * `hover` styles applied); `seek`, with each Svg inlined in a frame of its own, `data-t` naming the
+ * second its animations are to be seeked to (see seekScript), rather than as a running image. A
+ * picture's animations start over only when its source changes, so each is seeked by its source.
+ */
+type DeskPaint = { isHovered?: boolean; seek?: (source: string) => number };
+
+function deskTree(node: Tree, scheme: Desk, paint: DeskPaint = {}): string {
   if (node === null || node === undefined || typeof node === "boolean") return "";
   if (!isElement(node)) return esc(node);
-  const p = node.props ?? {};
+  const hover = paint.isHovered === true && node.type === "Box" ? node.hover : undefined;
+  const p = { ...node.props, ...hover };
   const theme = scheme.theme;
   const inner = () =>
     kids(node)
-      .map((c) => deskTree(c, scheme))
+      .map((c) => deskTree(c, scheme, paint))
       .join("");
   switch (node.type) {
     case "Box": {
@@ -553,6 +594,10 @@ function deskTree(node: Tree, scheme: Desk): string {
       const w = p.width !== undefined ? `width:${String(p.width)}px;` : "";
       const hgt = p.height !== undefined ? `height:${String(p.height)}px;` : "";
       const source = String(p.source ?? "");
+      if (paint.seek !== undefined) {
+        const doc = `<!doctype html><html><head><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}svg{display:block;${w}${hgt}}</style></head><body>${source}</body></html>`;
+        return `<iframe data-t="${paint.seek(source)}" title="${esc(p.alt)}" style="border:0;${w}${hgt}flex-shrink:0;background:transparent" srcdoc="${esc(doc).replace(/"/g, "&quot;")}"></iframe>`;
+      }
       if (p.isInteractive === true) {
         const doc = `<!doctype html><html><head><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}svg{display:block;${w}${hgt}}</style></head><body>${source}</body></html>`;
         return `<iframe sandbox="" title="${esc(p.alt)}" style="border:0;${w}${hgt}flex-shrink:0;background:transparent" srcdoc="${esc(doc).replace(/"/g, "&quot;")}"></iframe>`;
@@ -582,21 +627,62 @@ function deskTree(node: Tree, scheme: Desk): string {
   }
 }
 
-/** The band in the desktop app's Code tab, above its rounded composer, as HTML. */
-export function desktopScreen(shot: Shot, schemeName: Scheme): string {
-  const s = DESK[schemeName];
+/**
+ * The band as the desktop app draws it: its own box, which clips what is parked across its edges
+ * (a picture a hover moves in), with the pointer resting on it in the pet scenario.
+ */
+function deskBand(shot: Shot, s: Desk, seek?: (source: string) => number): string {
   const width = Math.round(shot.columns * CELL);
+  const paint: DeskPaint = { isHovered: shot.scenario === "pet", ...(seek === undefined ? {} : { seek }) };
+  return `<div style="position:relative;overflow:hidden;width:${width}px;display:flex;flex-direction:column">${deskTree(shot.tree, s, paint)}</div>`;
+}
+
+/**
+ * The band alone, in the card the desktop draws it in, each picture seeked to the second `seek`
+ * gives its source (see seekScript).
+ */
+export function desktopBand(shot: Shot, schemeName: Scheme, seek: (source: string) => number): string {
+  const s = DESK[schemeName];
+  return `<div style="display:inline-block;background:${s.band};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:10px 8px;border-radius:10px">${deskBand(shot, s, seek)}</div>`;
+}
+
+/**
+ * Run in the page once it has loaded: pauses every animation in each seekable picture (desktopBand)
+ * at the second its frame names, so a page shows one exact moment of the motion.
+ */
+/** The source of every Svg a drawing holds. */
+export function svgSources(tree: Tree): string[] {
+  if (!isElement(tree)) return [];
+  const own = tree.type === "Svg" ? [String(tree.props?.source ?? "")] : [];
+  return [...own, ...kids(tree).flatMap(svgSources)];
+}
+
+export const seekScript = `for (const frame of document.querySelectorAll("iframe[data-t]")) {
+  const t = Number(frame.dataset.t) * 1000;
+  for (const animation of frame.contentDocument?.getAnimations() ?? []) {
+    animation.pause();
+    animation.currentTime = t;
+  }
+}`;
+
+/**
+ * The band in the desktop app's Code tab as it draws it (measured on a Retina screen): the band in
+ * its own card, the composer 6 px under it, the footer under that, on the page. With `seek`, each
+ * picture is seekable, as desktopBand's are.
+ */
+export function desktopScreen(shot: Shot, schemeName: Scheme, seek?: (source: string) => number): string {
+  const s = DESK[schemeName];
+  const width = Math.round(shot.columns * CELL) + 16;
   const spinner = WORKING.has(shot.scenario)
-    ? `<div style="color:${s.claude};font-size:13px;margin-bottom:6px">✶ Pondering… <span style="color:${s.dim}">12s</span></div>`
+    ? `<div style="color:${s.claude};font-size:13px;margin:0 0 8px 4px">✶ Pondering… <span style="color:${s.dim}">12s</span></div>`
     : "";
-  return `<div style="width:${width + 40}px;background:${s.bg};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:14px 20px 16px;box-sizing:border-box">
-    <div style="color:${s.dim};font-size:13px;margin-bottom:10px">Updated <span style="font-family:monospace">hooks/band.tsx</span> with 12 additions and 4 removals</div>
+  return `<div style="width:${width + 40}px;background:${s.bg};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:16px 20px 12px;box-sizing:border-box">
     ${spinner}
-    <div style="position:relative;margin-bottom:8px;width:${width}px;display:flex;flex-direction:column">${deskTree(shot.tree, s)}</div>
-    <div style="border:1px solid ${s.border};background:${s.card};border-radius:18px;padding:14px 16px 12px">
-      <div style="color:${s.dim};font-size:15px">Reply to Claude…</div>
-      <div style="display:flex;justify-content:space-between;margin-top:14px;color:${s.dim};font-size:12px"><span>＋ &nbsp; ⚙ &nbsp; Auto-accept</span><span style="background:${s.claude};color:#fff;border-radius:8px;padding:2px 9px">↑</span></div>
+    <div style="width:${width}px;box-sizing:border-box;background:${s.band};border-radius:10px;padding:10px 8px">${deskBand(shot, s, seek)}</div>
+    <div style="width:${width}px;box-sizing:border-box;margin-top:6px;border:1px solid ${s.border};background:${s.card};border-radius:16px;padding:11px 16px;display:flex;justify-content:space-between;align-items:center">
+      <span style="color:${s.dim};font-size:15px"><span style="color:${s.fg};margin-right:12px">＋</span>Type / for commands</span><svg width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="${s.dim}" stroke-width="1.4"><rect x="3" y="1" width="6" height="9" rx="3"/><path d="M1 7.5a5 5 0 0 0 10 0M6 12.5V15"/></svg>
     </div>
+    <div style="width:${width}px;display:flex;justify-content:space-between;margin-top:10px;padding:0 16px;box-sizing:border-box;font-size:13px;color:${s.foot}"><span>Auto</span><span>Opus 5.5 <span style="color:${s.dim}">High</span></span></div>
   </div>`;
 }
 

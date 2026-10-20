@@ -12,13 +12,20 @@ const CONFIG: {
   scenarios: string[]
   widths: number[]
   animateAt: number
+  frames: number
+  at: number | null
+  folder: string | null
   surfaces: ('terminal' | 'desktop')[]
 } = __CONFIG__
 const PLUGIN = CONFIG.plugin
 const STYLES = CONFIG.styles
 const WIDTHS = CONFIG.widths
 const SURFACES = CONFIG.surfaces
-const T0 = 10_000_000
+// When the session plays (the test runner keeps its clock in UTC): --at, else early on 1 January 1970.
+const T0 = CONFIG.at ?? 10_000_000
+// Where the session plays: --folder, outside any repository, else in a repository on a branch.
+const REPO = '/Users/aaron/projects/agent-plugins'
+const CWD = CONFIG.folder ?? REPO
 
 type Surface = 'terminal' | 'desktop'
 
@@ -35,6 +42,9 @@ function measured(percent: number, usd: number, five: number): SessionMeasureInp
   }
 }
 
+// What a compaction leaves: one summary message (it always leaves at least one).
+const SUMMARY = { role: 'user' as const, text: 'Summary of the conversation so far.', toolUses: [] }
+
 type World = { clock: ReturnType<typeof mock.clock>; hold: (tool: string) => void; release: () => void }
 
 function world(on: On): World {
@@ -48,21 +58,25 @@ function world(on: On): World {
     value: { startedAt: T0 - 47 * 60_000, context: { window: 200_000 }, rateLimits: [], cost: { usd: 0 } },
   }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
-  on('session.repo', () => ({ value: { root: '/Users/aaron/projects/agent-plugins', remote: null, internal: false, name: null } }))
+  on('session.repo', () => ({ value: CONFIG.folder === null ? { root: REPO, remote: null, internal: false, name: null } : null }))
   on('process.run', ($, e) => ({
-    value: {
-      exitCode: 0,
-      stdout: e.argv.includes('rev-parse') ? 'claude/first-mod\n' : ' M hooks/band.tsx\n M hooks/register.tsx\n?? notes.md\n',
-      stderr: '',
-      isStdoutTruncated: false,
-      isStderrTruncated: false,
-    },
+    value:
+      CONFIG.folder === null
+        ? {
+            exitCode: 0,
+            stdout: e.argv.includes('rev-parse') ? 'claude/first-mod\n' : ' M hooks/band.tsx\n M hooks/register.tsx\n?? notes.md\n',
+            stderr: '',
+            isStdoutTruncated: false,
+            isStderrTruncated: false,
+          }
+        : { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository', isStdoutTruncated: false, isStderrTruncated: false },
   }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('ui.toast', () => ({ value: undefined }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('session.compact', () => ({ messages: [SUMMARY] }))
   on('tool.call', async ($, e) => {
     if (held !== null && e.tool === held) {
       await new Promise<void>(resolve => waiting.push(resolve))
@@ -90,8 +104,20 @@ function world(on: On): World {
   }
 }
 
+// The style the test plays, switched to as the session starts, so the moments that follow are its own
+// (a band switched to after a moment began may rightly never play it).
+let styleNow: string | null = null
+
 async function begin($: Engine, percent = 42, usd = 0.31, five = 23): Promise<void> {
-  await $.session.start({ cwd: '/Users/aaron/projects/agent-plugins', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
+  if (styleNow !== null) {
+    await $.command.run({
+      command: CONFIG.command,
+      args: styleNow,
+      origin: { kind: 'composer' },
+      presentation: { isFullscreen: false, columns: 100 },
+    })
+  }
   await $.session.measure(measured(percent, usd, five))
 }
 
@@ -157,7 +183,7 @@ type Scenario = {
 }
 
 const STILL = [0]
-const ANIM = Array.from({ length: 24 }, (_, i) => (i === 0 ? 0 : 125))
+const ANIM = Array.from({ length: CONFIG.frames }, (_, i) => (i === 0 ? 0 : 125))
 
 const SCENARIOS: Scenario[] = [
   { name: 'fresh', isWorking: false, frames: ANIM, setup: async $ => begin($, 3, 0.02, 4) },
@@ -245,23 +271,32 @@ const SCENARIOS: Scenario[] = [
     },
   },
   { name: 'pet', isWorking: false, frames: ANIM, pet: true, setup: async $ => begin($) },
+  {
+    // High tide, then a compaction lets it out: the band draws as the new reading lands.
+    name: 'compact',
+    isWorking: false,
+    frames: ANIM,
+    setup: async ($, w) => {
+      await begin($, 86, 1.94, 81)
+      await turn($)
+      await w.clock.advance(20_000)
+      await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+      await $.session.measure(measured(12, 1.97, 81))
+    },
+  },
 ]
 
+// A session of its own for each style and surface, so each plays the moment from its start: every
+// width at the moment the scenario reaches, the animated one last, its frames from there on.
 for (const scenario of SCENARIOS.filter(s => CONFIG.scenarios.includes(s.name))) {
-  test(`preview ${scenario.name}`, { timeoutMs: 600_000 }, async ($, on) => {
-    const w = world(on)
-    await scenario.setup($, w)
-    for (const style of STYLES) {
-      if (style !== null) {
-        await $.command.run({
-          command: CONFIG.command,
-          args: style,
-          origin: { kind: 'composer' },
-          presentation: { isFullscreen: false, columns: 100 },
-        })
-      }
-      for (const surface of SURFACES) {
-        for (const columns of WIDTHS) {
+  for (const style of STYLES) {
+    for (const surface of SURFACES) {
+      test(`preview ${scenario.name}${style === null ? '' : ` ${style}`} ${surface}`, { timeoutMs: 600_000 }, async ($, on) => {
+        const w = world(on)
+        styleNow = style
+        await scenario.setup($, w)
+        const widths = [...WIDTHS.filter(c => c !== CONFIG.animateAt), ...WIDTHS.filter(c => c === CONFIG.animateAt)]
+        for (const columns of widths) {
           // Animations only at one width, to keep the dump small.
           const frames = columns === CONFIG.animateAt ? scenario.frames : STILL
           const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band(columns, scenario.isWorking) })
@@ -289,8 +324,8 @@ for (const scenario of SCENARIOS.filter(s => CONFIG.scenarios.includes(s.name)))
           }
           await ui.unmount()
         }
-      }
+        w.release()
+      })
     }
-    w.release()
-  })
+  }
 }
