@@ -119,21 +119,28 @@ export function sceneMemory(): {
       }
     }
     strideSince = null
+    // A step of the sky alone never reloads a frame too old for his walk to carry on from (a long
+    // tool running): his loop would start over. The sky catches up with the frame's next change. A
+    // nap sleeps on through it (see `curled`), so the sky crosses on over him.
+    if (shownScene !== null && shownScene.key !== key && scene.mood !== 'nap' && !isRecent(shownScene, now) && isSkyStep(shownScene.scene, scene)) {
+      return { scene: shownScene.scene, wakeIn: null, isNew: false }
+    }
     if (shownScene === null || shownScene.key !== key || isWaveOver) {
       const last = shownScene
-      const isRecent = last !== null && now - last.at < NAP_AFTER_MS + SCENE_MEMORY_MS
+      const isTrusted = last !== null && isRecent(last, now)
       // Still too: a still frame holds him where the last one had him (see stillDx in desk.tsx). Up
       // from a nap, though, a still frame stands him at his loop's start, as the lively walk home from
       // the shell would: the nap curls him by the shell, a step in from where he stands, and holding
       // him there would quietly move his still home for the rest of the session. Standing up from
       // the curl is a new pose anyway, so the step can't be seen.
       const isUp = scene.still && scene.mood !== 'nap' && last !== null && last.scene.mood === 'nap'
-      const from = isRecent && !isUp ? positionAt(last.scene, now - last.at) : null
+      const from = isTrusted && !isUp ? positionAt(last.scene, now - last.at) : null
       // The same walk on the same sand (a stride far out to sea): he carries straight on with it.
-      const phase = isRecent ? carriedPhase(last.scene, now - last.at, scene) : undefined
+      const phase = isTrusted ? carriedPhase(last.scene, now - last.at, scene) : undefined
       // A nap taking over from one he is already curled up in (a /band still or lively, a new
-      // width): he sleeps on, never standing up to curl down again, and his z's drift on as they were.
-      const curled = scene.mood === 'nap' && !scene.still && isRecent && isCurledAt(last.scene, now - last.at)
+      // width, the sky's next step): he sleeps on, never standing up to curl down again, and his z's
+      // drift on as they were. However long ago that frame came up: asleep then, he is curled by now.
+      const curled = scene.mood === 'nap' && !scene.still && last !== null && isCurledAt(last.scene, now - last.at)
       const doze = curled ? dozeAt(last.scene, now - last.at) : null
       const carried = { ...scene, from, ...(phase === undefined ? {} : { phase }), ...(curled ? { curled } : {}), ...(doze === null ? {} : { doze }) }
       const sea = last === null ? null : seaAfter(last.scene, now - last.at, carried)
@@ -262,6 +269,16 @@ function isSplashOver(shown: Scene, scene: Scene): boolean {
 // A lively splash's frame whose splash is over: it has gone on into the work (see isSplashOver).
 function isSplashKept(shown: Scene, ms: number): boolean {
   return shown.moment === 'splash' && !shown.still && ms >= SPLASH_MS
+}
+
+// Whether the frame that came up with `shown` is recent enough to trust where it has him (see SCENE_MEMORY_MS).
+function isRecent(shown: ShownScene, now: number): boolean {
+  return now - shown.at < NAP_AFTER_MS + SCENE_MEMORY_MS
+}
+
+// The same scene with only its sky moved on: the sun's or the moon's step, nightfall or daybreak.
+function isSkyStep(shown: Scene, scene: Scene): boolean {
+  return sceneKey({ ...scene, sky: shown.sky, night: shown.night }) === sceneKey(shown)
 }
 
 // The same working loop, only its tide moved on a stride.

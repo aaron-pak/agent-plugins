@@ -312,7 +312,10 @@ activation's first draw arms again what the facts say is still to come (`pending
   (`skyStepAt`, `skySteps`), nightfall and daybreak among them. Nothing in the session announces a
   step, so every draw arms one redraw for the next (`skyTurnsIn`, a second late), kept until it
   fires; a reload arms it again on its first draw. A step is a new desktop frame, which carries on
-  as any new frame does.
+  as any new frame does; a nap sleeps on through it curled up, however long ago its last frame came
+  up, rather than standing to lie down again. While he is awake, a step alone never reloads a frame
+  too old for his walk to carry on from (a tool running for more than four minutes, see
+  `SCENE_MEMORY_MS`): the sky catches up with the frame's next change.
 - **Robustness.** `session.start`, `prompt.submit`, `turn.complete`, `session.compact` and
   `config.set` end in `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that
   went wrong off the running list: a state write that throws leaves the event untouched, and a tool

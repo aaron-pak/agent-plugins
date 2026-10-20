@@ -2583,6 +2583,28 @@ test('desktop: he dozes off where he stood and walks home to the shell; a pet\'s
   await ui.unmount()
 })
 
+test('desktop: a long nap sleeps on through the sky\'s steps: each new frame opens with him curled up and his z\'s where they were', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  await turn($, clock)
+  const { ui, look } = await band($, 'desktop')
+  await clock.advance(4 * 60_000)
+  await ui.redraw(BAND)
+  const first = (await look()).svg?.source ?? ''
+  expect(first).toContain('<g class="clawd sleepy">')
+  // An hour asleep: three steps of the sky, each a new frame that the band draws by itself.
+  const frames = new Set<string>([first])
+  for (let i = 0; i < 60; i++) {
+    await clock.advance(60_000)
+    frames.add((await look()).svg?.source ?? '')
+  }
+  const last = (await look()).svg?.source ?? ''
+  expect(frames.size).toBeGreaterThan(3)
+  // Curled from the first beat, never the walk home and the stand with his eyes shut.
+  expect([last.includes('<g class="clawd sleepy">'), last.includes('class="clawd curl"'), last.includes('@keyframes homeward')]).toEqual([false, true, false])
+  await ui.unmount()
+})
+
 test('desktop: a nap carried on by /band still and lively, or by a new width, opens with him curled up, never standing to lie down again', async ($, on) => {
   // (Just after a step of the sky, which would be a new frame of its own.)
   const { clock } = world(on, { now: localAt(15, 13) })
@@ -4671,6 +4693,27 @@ test('desktop: on a wide beach the sun crosses the sky through the day, warmer a
     await wait(250)
   }
   expect((sunOf((await look()).svg?.source ?? '')?.x ?? 0) > (before?.x ?? 0)).toBe(true)
+  await ui.unmount()
+})
+
+test('desktop: a step of the sky during a long tool waits for the frame\'s next change, so his walk never starts over; the sky catches up then', async ($, on) => {
+  const { clock, release } = world(on, { now: localAt(15, 13, 5) })
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'run the long tests', wait: false, origin: { kind: 'composer' } })
+  await ui.redraw({ ...BAND, isWorking: true })
+  const running = $.tool.call({ tool: 'Read', file_path: '/work/held.ts' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  // 13:20 comes and goes 15 minutes into the tool: the frame his walk is on stays up.
+  for (let i = 0; i < 18; i++) await clock.advance(60_000)
+  expect((await look()).svg?.source).toBe(working)
+  release()
+  await running
+  await $.turn.complete({ answer: 'Done.', durationMs: 1_100_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  await ui.redraw(BAND)
+  const cheer = (await look()).svg?.source ?? ''
+  expect((sunOf(cheer)?.x ?? 0) > (sunOf(working)?.x ?? 0)).toBe(true)
   await ui.unmount()
 })
 
