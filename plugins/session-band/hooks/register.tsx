@@ -66,8 +66,9 @@ const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLAS
  * him asleep; `landing`, the one that ends a landing that never came; `starting`, the one that ends a
  * start the host never confirmed; `stride`, the beach's desktop waiting out a stride of the tide (see
  * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes;
- * `sky`, the beach's redraw as its sky next moves (the sun's or the moon's next step). Each look
- * lets go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
+ * `sky`, the beach's redraw as its sky next moves (the sun's or the moon's next step); `held`, the
+ * desktop band's next look while something else holds its place (see HELD_LOOK_MS). Each look lets
+ * go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
  * `isFresh` until this activation first draws: a reload drops every timer, so the first draw arms
  * again whatever the facts say is still to come.
  */
@@ -79,8 +80,17 @@ type Timers = {
   stride: Timer | null
   bead: Timer | null
   sky: Timer | null
+  held: Timer | null
   isFresh: boolean
 }
+
+/**
+ * How often the desktop band, stepped aside for what holds its place (a survey, and by the look of
+ * it the app's own notice above the prompt, such as its effort warning), asks to be drawn again. The
+ * app asks for the band again only when the engine says it changed, so the band asks until its place
+ * is free.
+ */
+const HELD_LOOK_MS = 2_000
 
 /**
  * How soon before an Esc'd turn's end a failed call counts as the Esc's own (the call it cut), not a
@@ -110,7 +120,7 @@ export const register: Register = (on, options) => {
   // and its id): a look drawn where the other one stood is a module swapped under a band on screen,
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
   const drawnLooks = new Map<string, Look>()
-  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, isFresh: true }
+  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, held: null, isFresh: true }
   const landing: Landing = { sawWork: false, quietSince: null }
   const scenes = desktopScenes()
   // git's answers at a turn's end, each stamped: one that comes back after a newer one has landed
@@ -608,9 +618,31 @@ export const register: Register = (on, options) => {
   }).catch((_$, e, next) => next(e))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (e.surface !== 'terminal' && e.surface !== 'desktop')) {
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') {
       return next(e)
     }
+    if (e.props.hasSurvey) {
+      // Something else holds the band's place: Claude Code's survey (and on the desktop, by the look
+      // of it, the app's own notice above the prompt). Step aside, but keep watching: a draw that
+      // read nothing is never drawn again by a write, so read the facts (any change to them draws
+      // the band again), and on the desktop ask to be drawn again every HELD_LOOK_MS until the place
+      // is free. The terminal draws the band again itself as its survey goes.
+      await orNothing(read($, info))
+      if (e.surface === 'desktop') {
+        timers.held ??= after($, HELD_LOOK_MS, () => {
+          timers.held = null
+          try {
+            $.ui.invalidate('ui.render')
+          } catch {
+            // Nothing to draw again: the band is gone with its session.
+          }
+        })
+      }
+
+      return next(e)
+    }
+    timers.held?.cancel()
+    timers.held = null
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
     const [now, stored, motion, pick, kept] = await Promise.all([

@@ -183,7 +183,7 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over, and the next conversation builds its own sandcastle (`castleFrom`). |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
-| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while Claude Code shows a survey there. Arms the redraw at the sky's next step. |
+| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. Arms the redraw at the sky's next step. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
 percent; the cost and the limit shown; when the session was last active; the tools running
@@ -316,6 +316,13 @@ activation's first draw arms again what the facts say is still to come (`pending
   up, rather than standing to lie down again. While he is awake, a step alone never reloads a frame
   too old for his walk to carry on from (a tool running for more than four minutes, see
   `SCENE_MEMORY_MS`): the sky catches up with the frame's next change.
+- **The band's place, held.** While something else holds it (`hasSurvey`), the band steps aside:
+  Claude Code's survey does, and on the desktop the app's own notice above the prompt (its effort
+  warning) looks to do the same. The band still reads the facts as it steps aside, since a draw that
+  read nothing is never drawn again by a write. The desktop app asks for the band again only when
+  the engine says it changed (`ui_invalidate`), so the desktop band asks to be drawn again every two
+  seconds (`HELD_LOOK_MS`) until its place is free; the terminal draws the band again itself as its
+  survey goes.
 - **Robustness.** `session.start`, `prompt.submit`, `turn.complete`, `session.compact` and
   `config.set` end in `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that
   went wrong off the running list: a state write that throws leaves the event untouched, and a tool
@@ -781,6 +788,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
 - **A wait on you:** whether the band shows beside Claude Code's own question is up to the host.
 - **Ambiguous-width glyphs on the hearth:** its meters (`━`) and the en dash before the first
   reading would shift line 2 on a terminal that draws them wide.
+- **The desktop app's own notices** are known only through the engine's side of the protocol: the
+  band comes back within two seconds of the app no longer passing `hasSurvey`, but has not been
+  watched in the app as its effort warning comes and goes.
 - **The sky is the machine's.** The night, the sun and the moon follow the clock and time zone of
   the machine the session runs on, which for a remote session may not be the person's own. On a light terminal the
   stars are the theme's dim gray, faint by design; the desktop's gold moon is fainter on the light
@@ -852,7 +862,8 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   turn ran, "Next:" never cut to one word, a switch back to the beach or `/band lively` at any
   point of a splash or a still cheer, the first frame while git is slow at every width (and git's
   answer after a start that failed partway, or one a turn's answer overtook), `/band off` by what is
-  on, and every terminal color against its 256-color rounding, with every other color a theme key.
+  on, every terminal color against its 256-color rounding, with every other color a theme key, and
+  the band stepping aside while something holds its place and coming back once it is free.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
