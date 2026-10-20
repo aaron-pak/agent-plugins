@@ -909,7 +909,7 @@ test('a switch mid-session keeps Clawd\'s day: no second hello, no replayed chee
   expect(after.key).toBe('band')
   expect(after.text).toContain('Done in 41s')
   // No sparkles beside him (the words' dim ✻ is the settled line's, as Claude Code marks a finished turn).
-  expect(after.rows.slice(0, 3).join('')).not.toMatch(/[✻✶]/u)
+  expect(after.rows.slice(0, 3).join('')).not.toMatch(/[✻✽✶✢]/u)
 })
 
 test('a reload keeps the session: a napping Clawd stays asleep, and the counts carry on', async ($, on) => {
@@ -3654,14 +3654,14 @@ test('terminal: /clear in the middle of a cheer or a splash ends it at once on t
         await band.ui.redraw(BAND)
       }
       const playing = (await band.look()).text
-      expect([look, moment, /Done|Splash|✻|✶|✢|▗▟/u.test(playing)]).toEqual([look, moment, true])
+      expect([look, moment, /Done|Splash|✻|✽|✶|✢|▗▟/u.test(playing)]).toEqual([look, moment, true])
       await $.session.end({ reason: 'clear', sessionId: `s-${n}`, resume: { id: `s-${n}` } })
       // From two ticks after /clear on (a busy second waits for room, as every change does): the fresh
       // conversation's words, and Clawd at rest beside them.
       const after = (await filmBoth(clock, band, null, 4_000)).filter(frame => frame.at >= 500)
       for (const frame of after) {
         expect([look, moment, frame.at, frame.term.includes('Ready')]).toEqual([look, moment, frame.at, true])
-        expect([look, moment, frame.at, /Done|Splash|failed|Hiccup|✻|✶|✢|▗▟/u.test(frame.term)]).toEqual([look, moment, frame.at, false])
+        expect([look, moment, frame.at, /Done|Splash|failed|Hiccup|✻|✽|✶|✢|▗▟/u.test(frame.term)]).toEqual([look, moment, frame.at, false])
       }
       await filmBoth(clock, band, null, 2_000)
     }

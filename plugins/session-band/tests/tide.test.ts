@@ -33,6 +33,14 @@ const HEART = '▟▙▟▙'
 // What a terminal row may hold: block elements, box drawing, ASCII, and the glyphs Claude Code uses
 // (its spinner's sparkles, its tool-result corner, and the ellipsis it ends a cut line with).
 const SAFE = /^[ -~─-▟·✢✳✶✻✽⎿…]*$/u
+// The cheer's sparkles: the ✻ (by his right claw) and the ✶ (by his left), each twinkling to its other
+// form, a heavy ✽ and a little ✢, every half second of a lively finale, as Claude Code's spinner does.
+const BURSTS = '✻✽'
+const STARS = '✶✢'
+const isBurst = (ch: string | undefined) => ch !== undefined && ch !== '' && BURSTS.includes(ch)
+const isStar = (ch: string | undefined) => ch !== undefined && ch !== '' && STARS.includes(ch)
+const isSparkle = (ch: string | undefined) => isBurst(ch) || isStar(ch)
+const SPARKLE = /[✻✽✶✢]/u
 // The sand's colors (dry, and damp with its specks): nothing above the sand line wears them.
 const SAND_COLORS = ['#DAB27F', '#B27F4C']
 // The sea's color on the terminal, and the foam on the wave's lip.
@@ -975,7 +983,7 @@ test('terminal: a pet during the cheer\'s spin leaves him facing you until his a
     // From the pet (his wink, on the first tick with room for a change, see pace.ts) to his arms up
     // (a ✻ in the sky beside him), he faces you: a wink, then open eyes.
     const petted = heads.findIndex(head => head.includes('▛███▂█'))
-    const up = heads.findIndex(head => head.includes('✻'))
+    const up = heads.findIndex(head => [...head].some(isBurst))
     expect([columns, petted >= 0 && petted <= 1, up > petted + 8]).toEqual([columns, true, true])
     for (const [i, head] of heads.slice(petted, up).entries()) {
       expect([columns, i, /▛███[▛▂]█/u.test(head)]).toEqual([columns, i, true])
@@ -1011,7 +1019,7 @@ for (const [env, motion] of [[undefined, 'lively'], [undefined, 'still'], [{ TER
             if (i * 250 === at) await ui.pointer({ type: 'down', x: 4, y: 1, button: 'left', in: 'band' })
             await wait(250)
             const top = (await look()).scene[0] ?? ''
-            ticks.push({ up: top.includes('▗▟'), sparkle: /[✻✶]/u.test(top), wink: top.includes('▂') })
+            ticks.push({ up: top.includes('▗▟'), sparkle: SPARKLE.test(top), wink: top.includes('▂') })
           }
           const film = ticks.map(t => (t.sparkle ? 'U' : t.wink ? 'W' : t.up ? 'u' : '.')).join('')
           // Every stretch of arms up, and every stretch of sparkles, holds a second (4 ticks), unless
@@ -1083,7 +1091,7 @@ for (const [env, motion] of [[undefined, 'lively'], [undefined, 'still'], [{ TER
           const top = cellsOf(view.rows[0])
           const isHim = (col: number) => (top[col]?.color === 'clawd_body' && top[col]?.ch !== ' ') || top[col]?.bg === 'clawd_body'
           const him = clawdAt(view)
-          const marks = top.flatMap(({ ch }, col) => (ch === '✶' || ch === '✻' ? [col] : []))
+          const marks = top.flatMap(({ ch }, col) => (isSparkle(ch) ? [col] : []))
           const where = [percent, columns, i, view.scene[0]]
           for (const col of marks) {
             // Off the band's edge, and a breath of sky off his claws on both sides.
@@ -1092,7 +1100,7 @@ for (const [env, motion] of [[undefined, 'lively'], [undefined, 'still'], [{ TER
           }
           if (marks.length > 0) {
             // A sparkle in each claw: the ✶ by his left, the ✻ by his right.
-            const [star, burst] = [top.findIndex(({ ch }) => ch === '✶'), top.findIndex(({ ch }) => ch === '✻')]
+            const [star, burst] = [top.findIndex(({ ch }) => isStar(ch)), top.findIndex(({ ch }) => isBurst(ch))]
             expect([...where, marks.length, star >= 0 && star < Math.min(...him), burst > Math.max(...him)]).toEqual([...where, 2, true, true])
             pairs += 1
           }
@@ -1147,10 +1155,10 @@ for (const motion of ['still', 'lively'] as const) {
             const view = await look()
             const top = cellsOf(view.rows[0])
             const isHim = (col: number) => (top[col]?.color === 'clawd_body' && top[col]?.ch !== ' ') || top[col]?.bg === 'clawd_body'
-            const marks = top.flatMap(({ ch }, col) => (ch === '✶' || ch === '✻' ? [col] : []))
+            const marks = top.flatMap(({ ch }, col) => (isSparkle(ch) ? [col] : []))
             if (marks.length === 0) continue
             const him = clawdAt(view)
-            const [star, burst] = [top.findIndex(({ ch }) => ch === '✶'), top.findIndex(({ ch }) => ch === '✻')]
+            const [star, burst] = [top.findIndex(({ ch }) => isStar(ch)), top.findIndex(({ ch }) => isBurst(ch))]
             const flush = marks.some(col => (isHim(col - 1) && INK_RIGHT.includes(top[col - 1]?.ch ?? ' ')) || (isHim(col + 1) && INK_LEFT.includes(top[col + 1]?.ch ?? ' ')))
             expect([...where, i, view.scene[0], marks.length, star >= 1 && star < Math.min(...him), burst > Math.max(...him), flush]).toEqual([...where, i, view.scene[0], 2, true, true, false])
             pairs += 1
@@ -1287,7 +1295,7 @@ function poseOf(view: View): string {
     .map(row => cellsOf(row).flatMap((cell, col) => ((cell.color === 'clawd_body' && cell.ch !== ' ') || cell.bg === 'clawd_body' ? [`${col - x}${cell.ch}`] : [])).join(''))
     .join('|')
 
-  return `${sprite} ${/[✶✻]/u.test(view.scene[0] ?? '') ? 'sparkles' : ''} ${heartAt(view) >= 0 ? 'heart' : ''}`
+  return `${sprite} ${SPARKLE.test(view.scene[0] ?? '') ? 'sparkles' : ''} ${heartAt(view) >= 0 ? 'heart' : ''}`
 }
 
 // Where the pet's heart is drawn (its first cell on the top row), or -1.
@@ -1361,12 +1369,12 @@ for (const env of [undefined, { TERM_PROGRAM: 'Apple_Terminal' }]) {
       for (let i = 0; i < 24; i++) {
         const { scene } = await look()
         expect([columns, i, scene[1]?.startsWith(SHELL + ' '), SAND_BY_SHELL.test(scene[2] ?? '')]).toEqual([columns, i, true, true])
-        sparkles += scene.join('').includes('✶') ? 1 : 0
+        sparkles += [...scene.join('')].some(isStar) ? 1 : 0
         // Nor right on top of it: a sparkle over the shell would read as the shell's.
         const [top = '', middle = ''] = scene
         const below = [...middle]
         for (const [col, ch] of [...top].entries()) {
-          if (ch === '✶' || ch === '✻') expect([columns, i, top, middle, col < SHELL.length && below[col] !== ' ']).toEqual([columns, i, top, middle, false])
+          if (isSparkle(ch)) expect([columns, i, top, middle, col < SHELL.length && below[col] !== ' ']).toEqual([columns, i, top, middle, false])
         }
         await wait(250)
       }
@@ -1402,7 +1410,7 @@ test('terminal, in Apple’s Terminal: wherever he cheers, a sparkle a cell out 
         const isHim = (col: number) => (top[col]?.color === 'clawd_body' && top[col]?.ch !== ' ') || top[col]?.bg === 'clawd_body'
         for (const [col, { ch }] of top.entries()) {
           // A sparkle with sky between it and him stands out on its own, so it must read as his.
-          if ((ch === '✶' || ch === '✻') && !isHim(col - 1) && !isHim(col + 1)) {
+          if (isSparkle(ch) && !isHim(col - 1) && !isHim(col + 1)) {
             expect([columns, n, i, view.scene[0], view.scene[1], isShell(col - 1) || isShell(col) || isShell(col + 1)]).toEqual([columns, n, i, view.scene[0], view.scene[1], false])
           }
         }
@@ -1444,7 +1452,7 @@ for (const when of ['up as the turn ends', 'put up mid-spin'] as const) {
         const top = [...(view.scene[0] ?? '')]
         const below = [...(view.scene[1] ?? '')]
         const isShell = (col: number) => col >= 0 && col < SHELL.length && (below[col] ?? ' ') !== ' '
-        const marks = top.flatMap((ch, col) => (ch === '✶' || ch === '✻' ? [col] : []))
+        const marks = top.flatMap((ch, col) => (isSparkle(ch) ? [col] : []))
         pairs += marks.length === 2 ? 1 : 0
         for (const col of marks) {
           // A cell of sky at least off the band's edge, and nothing of the shell under it or a corner away.
@@ -2888,7 +2896,7 @@ test('terminal: a look switch in a cheer’s last second starts the beach at res
   const view = await late.look()
   expect(view.words[0]).toMatch(/^✻ Done in 9s/)
   expect(runs(view.rows[3]).find(run => run.text === 'Done')?.color).toBeUndefined()
-  expect(view.scene.join('')).not.toMatch(/[✻✶]/u)
+  expect(view.scene.join('')).not.toMatch(SPARKLE)
   await late.ui.unmount()
 })
 
@@ -2915,6 +2923,76 @@ test('desktop: still, a cheer is one frame: arms up and the sparkles held; where
   expect(lively).toContain('.pose{opacity:0}.p-up{opacity:1}')
   expect(lively).toMatch(/@media \(prefers-reduced-motion:no-preference\)\{.*\.p-up\{opacity:0\}\.p-stand\{opacity:1\}/u)
   expect(lively).toContain('spin0')
+  await ui.unmount()
+})
+
+// The finale, a tick at a time from his arms going up: lively, his sparkles twinkle every other half
+// second in their own cells (the ✻ swelling to a heavy ✽ as the ✶ draws in to a ✢, as Claude Code's
+// spinner does) while his feet dance to the same beat, one pair lifted and then the other; still, it
+// is one held frame, ✶ and ✻, both feet down.
+for (const motion of ['lively', 'still'] as const) {
+  test(`terminal, ${motion}: his cheer's finale ${motion === 'lively' ? 'twinkles its sparkles and dances his feet to one beat' : 'is one held frame'}`, async ($, on) => {
+    const { clock } = world(on)
+    await start($)
+    if (motion === 'still') await run($, 'band', 'still')
+    const { ui, look, wait } = await band($, 'terminal')
+    await $.prompt.submit({ text: 'tidy up', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't1', reason: 'answer' })
+    const finale: Array<{ sparkles: string; at: string; feet: string }> = []
+    for (let i = 0; i < SPIN.length + 10; i++) {
+      const view = await look()
+      const top = cellsOf(view.rows[0])
+      const marks = top.flatMap(({ ch }, col) => (isSparkle(ch) ? [{ ch, col }] : []))
+      if (marks.length > 0) {
+        const x = Math.min(...clawdAt(view))
+        // Which of his two pairs of feet stand on the sand: his left (two cells in), his right (six in).
+        const feet = cellsOf(view.rows[2]).flatMap((cell, col) => (cell.color === 'clawd_body' && cell.ch !== ' ' ? [col - x] : []))
+        const pairs = `${feet.includes(1) ? 'L' : '-'}${feet.includes(6) ? 'R' : '-'}`
+        finale.push({ sparkles: marks.map(({ ch }) => ch).join(''), at: marks.map(({ col }) => col).join(' '), feet: pairs })
+      }
+      await wait(250)
+      await clock.advance(250)
+    }
+    // Every tick of it in the same two cells.
+    expect(new Set(finale.map(tick => tick.at)).size).toBe(1)
+    if (motion === 'still') {
+      expect(finale.length).toBeGreaterThanOrEqual(4)
+      expect([...new Set(finale.map(tick => `${tick.sparkles} ${tick.feet}`))]).toEqual(['✶✻ LR'])
+    } else {
+      expect(finale.map(tick => `${tick.sparkles} ${tick.feet}`)).toEqual(['✶✻ LR', '✶✻ LR', '✢✽ L-', '✢✽ L-', '✶✻ -R', '✶✻ -R', '✢✽ LR'])
+    }
+    await ui.unmount()
+  })
+}
+
+test('desktop: his cheer hops twice for joy as his arms go up and each sparkle glints once, only where motion plays', async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'tidy up', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  const lively = (await look()).svg?.source ?? ''
+  const motion = lively.slice(lively.indexOf('@media (prefers-reduced-motion:no-preference)'))
+  // His poses hop in a group of their own inside his walk, so the walk and the sparkles stay put.
+  expect(lively).toContain('<g class="walk clawd"><g class="hop">')
+  const hop = /@keyframes hop\{([^@]*?)\}\}/u.exec(motion)?.[1] ?? ''
+  const heights = [...hop.matchAll(/translateY\((-?[\d.]+)px\)/gu)].map(found => Number(found[1]))
+  // Up a unit, down, up a touch less, down: at rest on his whole pixels before and after.
+  expect(heights).toEqual([0, -1, 0, 0, -0.67, 0])
+  expect(motion).toMatch(/\.hop\{animation:hop 4\.2s linear 1 both\}/u)
+  // Each of the three sparkles swells and turns once while held, then shrinks away as before.
+  for (const i of [0, 1, 2]) {
+    expect(motion).toMatch(new RegExp(`@keyframes star${i}\\{[^@]*scale\\(1\\.25\\) rotate\\(15deg\\)[^@]*100%\\{transform:scale\\(0\\)\\}\\}`, 'u'))
+  }
+  // A page that asks for less motion, and /band still, get no hop and no glint.
+  expect(lively.slice(0, lively.indexOf('@media'))).not.toContain('hop{')
+  await run($, 'band', 'still')
+  await clock.advance(20_000)
+  await $.prompt.submit({ text: 'again', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't2', reason: 'answer' })
+  const still = (await look()).svg?.source ?? ''
+  expect(still).toContain('class="spark"')
+  expect(still).not.toContain('@keyframes')
   await ui.unmount()
 })
 
@@ -3661,8 +3739,7 @@ for (const [percent, env] of [[12], [42], [86], [70, { TERM_PROGRAM: 'Apple_Term
         const [top = '', middle = ''] = (await look()).scene
         const row = [...top]
         const below = [...middle]
-        const at = (ch: string) => row.indexOf(ch)
-        const [one, two] = [at('✻'), at('✶')]
+        const [one, two] = [row.findIndex(isBurst), row.findIndex(isStar)]
         const where = [columns, row.join(''), below.join('')]
         expect([...where, one >= 0]).toEqual([...where, true])
         seen.add(`${one} ${two}`)
@@ -3708,7 +3785,7 @@ test('terminal: at high tide the crest stands back two cells for the cheer\'s �
     let [star, up] = [-1, -1]
     for (let tick = 0; tick < SPIN.length + 13; tick++) {
       const [top = '', middle = ''] = (await look()).scene
-      if (up < 0 && top.includes('✻')) [star, up] = [[...top].indexOf('✻'), tick]
+      if (up < 0 && [...top].some(isBurst)) [star, up] = [[...top].findIndex(isBurst), tick]
       crests.push([...middle].join('').indexOf('▀▛'))
       await wait(250)
     }

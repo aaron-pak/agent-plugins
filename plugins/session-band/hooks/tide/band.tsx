@@ -1058,7 +1058,7 @@ function clawd(live: Live, beach: number): { rows: [Row, Row, Row]; marks: Place
       return { rows: posed({ eyes: 'open', arms: 'down', feet: 'both' }), marks, cheer: null }
     }
 
-    return { rows: posed({ eyes: 'open', arms: 'up', feet: 'both' }), marks, cheer: cheerPlaces(live, x) }
+    return { rows: posed({ eyes: 'open', arms: 'up', feet: danceFeet(live) }), marks, cheer: cheerPlaces(live, x) }
   }
   // Home for his nap: the step that brings him there lands standing, and he curls up on the next tick.
   if (isCurled || (isNapping(live) && x === homeOf(beach) && (still || since(live, live.stepAt) > 0))) {
@@ -1227,6 +1227,44 @@ function cheerRoom(live: Live, beach: number): number {
 
   return isStill || live.isCheerCut ? 0 : room - (t - CHEER_TICKS + 1)
 }
+
+/**
+ * Which half second of the cheer's finale this tick is in, from 0 as his arms go up; null while it is
+ * no lively finale (still, it is one held frame). The sparkles twinkle and his feet dance to it.
+ */
+function finaleBeat(live: Live): number | null {
+  const from = finaleAt(live)
+
+  return from === null || live.props.isStill || live.tick < from ? null : Math.floor((live.tick - from) / BEAT_TICKS)
+}
+
+/**
+ * The cheer's sparkles, twinkling as Claude Code's spinner does: every other half second of the
+ * finale they swap to their other form, the ✻ swelling to a heavy ✽ as the ✶ draws in to a ✢. Each
+ * keeps its cell. Still, they hold their first form, one frame for the whole cheer.
+ */
+function twinkled(live: Live, place: Mark[] | undefined): Mark[] | undefined {
+  const beat = finaleBeat(live)
+  if (place === undefined || beat === null || beat % 2 === 0) {
+    return place
+  }
+
+  return place.map(mark => ({ ...mark, cell: { ...mark.cell, ch: TWINKLE[mark.cell.ch] ?? mark.cell.ch } }))
+}
+
+/**
+ * His feet in the finale, arms up: a happy shuffle to the sparkles' beat (as the hearth's Clawd
+ * shuffles in his cheer), one pair lifted and then the other, and both down again to end on.
+ */
+function danceFeet(live: Live): Feet {
+  const beat = finaleBeat(live)
+
+  return beat === 1 ? 'left' : beat === 2 ? 'right' : 'both'
+}
+
+/** Each sparkle's other form, and how long a beat of the finale lasts (half a second). */
+const TWINKLE: Record<string, string> = { '✻': '✽', '✶': '✢' }
+const BEAT_TICKS = 2
 
 /** Which cheer, beach and spot a choice of sparkles was made for. */
 function cheerKey(live: Live, beach: number): string {
@@ -1557,7 +1595,7 @@ function scene(live: Live, beach: number): Row[] {
     // The cheer's sparkles are placed once, as his arms go up, and held for the whole cheer: a wave
     // lapping in, or the tide rising on a late reading, never sends them hopping about.
     const held = live.cheerMarks?.key === key ? cheer[live.cheerMarks.index] : undefined
-    draw(held !== undefined && held.every(isClear) ? held : cheer[choose(cheer)])
+    draw(twinkled(live, held !== undefined && held.every(isClear) ? held : cheer[choose(cheer)]))
   }
 
   return rows

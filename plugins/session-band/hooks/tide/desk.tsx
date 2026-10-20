@@ -1056,7 +1056,10 @@ function diorama(scene: Scene): string {
     const stood = still ? stillDx(scene) : 0
     if (stood !== 0) base.push(`.walk${isCheer ? ',.at' : ''}{transform:translateX(${stood}px)}`)
     const spark = isCheer ? `<g class="at">${sparkles(INTRO.cheer, base, motion)}</g>` : ''
-    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd">${poses}</g>${spark}</g>`)
+    // He hops for joy as his arms go up (twice, as the hearth's Clawd does): his own little jump, so
+    // the sparkles stay where they popped up.
+    if (isCheer) motion.push(hop(INTRO.cheer))
+    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd"><g class="hop">${poses}</g></g>${spark}</g>`)
   }
 
   parts.push(spray)
@@ -1229,19 +1232,38 @@ function beatsOf(kind: Exclude<Moment, null>): Beat[] {
   }
 }
 
+/** When his arms go up in a cheer, after the spin (seconds). */
+const ARMS_UP_S = SPIN.length * 0.2
+
+// Two little hops of joy as his arms go up, the second a touch lower: up quick, down soft, a
+// unit (three pixels) at the most, so at rest he is back on his whole pixels.
+function hop(length: number): string {
+  const at = (seconds: number) => pct((ARMS_UP_S + seconds) / length)
+  const y = (units: number, ease: string) => `{transform:translateY(${units}px);animation-timing-function:${ease}}`
+
+  return (
+    `.hop{animation:hop ${length}s linear 1 both}` +
+    `@keyframes hop{0%,${at(0)}${y(0, 'ease-out')}${at(0.12)}${y(-1, 'ease-in')}${at(0.26)}${y(0, 'linear')}${at(0.4)}${y(0, 'ease-out')}` +
+    `${at(0.5)}${y(-0.67, 'ease-in')}${at(0.62)},100%${y(0, 'linear')}}`
+  )
+}
+
 // Three little clay sparkles while his arms are up after the spin. Each pops up from a point,
-// one a beat after another, and shrinks back to a point as the cheer ends: never faded, since a
-// half-faded clay star on the dark page is a muddy brown smudge.
+// one a beat after another, glints once (a quick swell and a turn, as a star twinkles), and
+// shrinks back to a point as the cheer ends: never faded, since a half-faded clay star on the dark
+// page is a muddy brown smudge.
 function sparkles(length: number, base: string[], motion: string[]): string {
-  const from = SPIN.length * 0.2
   // Held in the still frame; where motion plays, each pops up in turn and shrinks away.
   base.push('.star{transform-box:fill-box;transform-origin:center}')
   ;[0, 1, 2].forEach(i => {
-    const at = from + i * 0.12
-    const scale = (n: number) => `transform:scale(${n})`
+    const at = ARMS_UP_S + i * 0.12
+    // (Only the glint turns: a list without its rotate() is read as one with rotate(0) between them.)
+    const scale = (n: number, turn = 0) => `transform:scale(${n})${turn === 0 ? '' : ` rotate(${turn}deg)`}`
     motion.push(`.star${i}{animation:star${i} ${length}s linear 1 both}`)
     motion.push(
-      `@keyframes star${i}{0%,${pct(at / length)}{${scale(0)}}${pct((at + 0.18) / length)}{${scale(1.2)};animation-timing-function:ease-out}${pct((at + 0.36) / length)},${pct((length - 0.5) / length)}{${scale(1)};animation-timing-function:ease-in}100%{${scale(0)}}}`,
+      `@keyframes star${i}{0%,${pct(at / length)}{${scale(0)}}${pct((at + 0.18) / length)}{${scale(1.2)};animation-timing-function:ease-out}` +
+        `${pct((at + 0.36) / length)},${pct((at + 0.52) / length)}{${scale(1)};animation-timing-function:ease-in-out}${pct((at + 0.64) / length)}{${scale(1.25, 15)};animation-timing-function:ease-in-out}` +
+        `${pct((at + 0.78) / length)},${pct((length - 0.5) / length)}{${scale(1)};animation-timing-function:ease-in}100%{${scale(0)}}}`,
     )
   })
 

@@ -347,6 +347,10 @@ heart or the cheer's ✻ shows.
   a cell out from his right claw, which fills its cell, and the ✶ beside his left, whose quadrant
   leaves half a cell. With no room on his left, both go on his right a cell apart, else the ✻ alone.
   Apple's Clawd ends in quadrants, so his stand a cell out each side, or at his claws if no room.
+  Lively, they twinkle as Claude Code's spinner does: every other half second of the finale the ✻
+  swells to a heavy ✽ as the ✶ draws in to a ✢, each in its own cell (`twinkled`), while his feet
+  dance to the same beat, one pair lifted and then the other (`danceFeet`), as the hearth's Clawd
+  shuffles in his cheer. Still, the finale is one held frame.
 - **The cheer's step out** (`stepOut`). Cheering from home, he steps a cell out so the ✶ has sky
   all around. By the band's edge (no shell) every cheer does, still and in Apple's Terminal too, the
   step riding on the pose change as his arms go up, and `reach` lets him stand there with the tide
@@ -370,7 +374,7 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | A new session | Half a second in, Claude Code's one-claw wave, twice. Never on a switch, a reload, still, or in Apple's Terminal. "Ready when you are". | The first frame waves by the shell, then idles; the wave is forgotten after a minute. |
 | Idle | A blink every 19 to 31 s, a lap every 25 to 36 s, a 3 s look out to sea every 45 to 75 s, a short scuttle every 60 to 100 s. | A loop of about 27 s; the alt says "Clawd strolls on the sand". |
 | At work | He potters every 10 to 18 s. "Editing register.tsx · 3 of 7 done". | A reading loop until the turn changes something, then a work loop. |
-| Turn finished | The 13-frame spin, then arms up with ✻ and ✶, 5 s in all. "✻ Done in 41s · 7 tools · 2 files changed" (the tools leave out todo bookkeeping), clay and green while he cheers. A turn that lands mid-splash has its cheer within a tick, his pose and "Done", while the sea ebbs on from where the wave had it (`isSplashShown`). | The same in pixels; the sparkles pop and shrink, never fading. A turn that lands mid-splash replaces the splash's frame with the cheer's. |
+| Turn finished | The 13-frame spin, then arms up with ✻ and ✶, twinkling while his feet dance, 5 s in all. "✻ Done in 41s · 7 tools · 2 files changed" (the tools leave out todo bookkeeping), clay and green while he cheers. A turn that lands mid-splash has its cheer within a tick, his pose and "Done", while the sea ebbs on from where the wave had it (`isSplashShown`). | The same in pixels, with two hops of joy as his arms go up (a unit, then a touch less); the sparkles pop, glint once and shrink, never fading. A turn that lands mid-splash replaces the splash's frame with the cheer's. |
 | Stopped, or an error | No spin. "Stopped after 12s" (dim), or "Stopped on an error after 12s". | No cheer; the same words. |
 | A tool failed | Eyes shut, arms up, the water rushing to his feet with spray, then sliding back. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s. Four drops swell out of the crest, leap and shrink away at full color, never fading, all back in the sea by 2.2 s (`DROPS_END_S`). Each failure is a new frame (`data-wave`); one in the first 1.25 s of the same turn rides along. |
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
@@ -747,8 +751,8 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
   the Svg's CSS (and the hover heart's walk against his); films of a pet at every 250 ms of a cheer,
-  the sparkles at every width from 34 to 60 at six tides, the one heart, the step home, a turn
-  landing mid-splash, and his feet never on damp sand.
+  the sparkles at every width from 34 to 60 at six tides, the finale's twinkle and dance, the one
+  heart, the step home, a turn landing mid-splash, and his feet never on damp sand.
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
   line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
   moment, the bead, calm, petting and the `hh-` classes.
