@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "deeper-task",
+  "description": "Ask for a deeper version of a task, not a bigger one: what an expert would do, the rawest material, their methods and tools, and an outside check, then a rewritten prompt. From Felix Rieseberg.",
+  "author": {
+    "name": "Felix Rieseberg"
+  }
+}
