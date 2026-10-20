@@ -106,24 +106,41 @@ const TERM: Record<Scheme, { theme: Theme; bg: string; fg: string }> = {
   light: { theme: CC_LIGHT, bg: "#fbfbf8", fg: "#1b1b1b" },
 };
 // claude.ai's palette, which the desktop app's Code tab wears: approximations of its page.
-type Desk = { theme: Theme; bg: string; card: string; border: string; fg: string; dim: string; claude: string };
+// Claude Code Desktop's Code tab: the page (`bg`), the card it draws the AbovePrompt band in (`band`),
+// the composer (`card`, `border`) and the footer under it (`foot`). Dark is measured from the app on
+// a Retina screen; light is estimated from the same layout.
+type Desk = {
+  theme: Theme;
+  bg: string;
+  band: string;
+  card: string;
+  border: string;
+  fg: string;
+  dim: string;
+  foot: string;
+  claude: string;
+};
 const DESK: Record<Scheme, Desk> = {
   dark: {
     theme: CC_DARK,
-    bg: "#262624",
-    card: "#30302e",
-    border: "#45443f",
-    fg: "#ecebe4",
-    dim: "#a6a49b",
+    bg: "#151515",
+    band: "#212121",
+    card: "#20201f",
+    border: "#4d4d4c",
+    fg: "#f0efec",
+    dim: "#898782",
+    foot: "#c3c2b8",
     claude: "#d97757",
   },
   light: {
     theme: CC_LIGHT,
     bg: "#faf9f5",
+    band: "#f0eee6",
     card: "#ffffff",
     border: "#dedcd1",
     fg: "#141413",
     dim: "#73726c",
+    foot: "#3d3d3a",
     claude: "#d97757",
   },
 };
@@ -620,10 +637,13 @@ function deskBand(shot: Shot, s: Desk, seek?: (source: string) => number): strin
   return `<div style="position:relative;overflow:hidden;width:${width}px;display:flex;flex-direction:column">${deskTree(shot.tree, s, paint)}</div>`;
 }
 
-/** The band alone on the desktop's page, each picture seeked to the second `seek` gives its source (see seekScript). */
+/**
+ * The band alone, in the card the desktop draws it in, each picture seeked to the second `seek`
+ * gives its source (see seekScript).
+ */
 export function desktopBand(shot: Shot, schemeName: Scheme, seek: (source: string) => number): string {
   const s = DESK[schemeName];
-  return `<div style="display:inline-block;background:${s.bg};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:8px 10px;border-radius:6px">${deskBand(shot, s, seek)}</div>`;
+  return `<div style="display:inline-block;background:${s.band};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:10px 8px;border-radius:10px">${deskBand(shot, s, seek)}</div>`;
 }
 
 /**
@@ -645,21 +665,24 @@ export const seekScript = `for (const frame of document.querySelectorAll("iframe
   }
 }`;
 
-/** The band in the desktop app's Code tab, above its rounded composer, as HTML. */
-export function desktopScreen(shot: Shot, schemeName: Scheme): string {
+/**
+ * The band in the desktop app's Code tab as it draws it (measured on a Retina screen): the band in
+ * its own card, the composer 6 px under it, the footer under that, on the page. With `seek`, each
+ * picture is seekable, as desktopBand's are.
+ */
+export function desktopScreen(shot: Shot, schemeName: Scheme, seek?: (source: string) => number): string {
   const s = DESK[schemeName];
-  const width = Math.round(shot.columns * CELL);
+  const width = Math.round(shot.columns * CELL) + 16;
   const spinner = WORKING.has(shot.scenario)
-    ? `<div style="color:${s.claude};font-size:13px;margin-bottom:6px">✶ Pondering… <span style="color:${s.dim}">12s</span></div>`
+    ? `<div style="color:${s.claude};font-size:13px;margin:0 0 8px 4px">✶ Pondering… <span style="color:${s.dim}">12s</span></div>`
     : "";
-  return `<div style="width:${width + 40}px;background:${s.bg};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:14px 20px 16px;box-sizing:border-box">
-    <div style="color:${s.dim};font-size:13px;margin-bottom:10px">Updated <span style="font-family:monospace">hooks/band.tsx</span> with 12 additions and 4 removals</div>
+  return `<div style="width:${width + 40}px;background:${s.bg};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:16px 20px 12px;box-sizing:border-box">
     ${spinner}
-    <div style="margin-bottom:8px">${deskBand(shot, s)}</div>
-    <div style="border:1px solid ${s.border};background:${s.card};border-radius:18px;padding:14px 16px 12px">
-      <div style="color:${s.dim};font-size:15px">Reply to Claude…</div>
-      <div style="display:flex;justify-content:space-between;margin-top:14px;color:${s.dim};font-size:12px"><span>＋ &nbsp; ⚙ &nbsp; Auto-accept</span><span style="background:${s.claude};color:#fff;border-radius:8px;padding:2px 9px">↑</span></div>
+    <div style="width:${width}px;box-sizing:border-box;background:${s.band};border-radius:10px;padding:10px 8px">${deskBand(shot, s, seek)}</div>
+    <div style="width:${width}px;box-sizing:border-box;margin-top:6px;border:1px solid ${s.border};background:${s.card};border-radius:16px;padding:11px 16px;display:flex;justify-content:space-between;align-items:center">
+      <span style="color:${s.dim};font-size:15px"><span style="color:${s.fg};margin-right:12px">＋</span>Type / for commands</span><svg width="12" height="16" viewBox="0 0 12 16" fill="none" stroke="${s.dim}" stroke-width="1.4"><rect x="3" y="1" width="6" height="9" rx="3"/><path d="M1 7.5a5 5 0 0 0 10 0M6 12.5V15"/></svg>
     </div>
+    <div style="width:${width}px;display:flex;justify-content:space-between;margin-top:10px;padding:0 16px;box-sizing:border-box;font-size:13px;color:${s.foot}"><span>Auto</span><span>Opus 5.5 <span style="color:${s.dim}">High</span></span></div>
   </div>`;
 }
 

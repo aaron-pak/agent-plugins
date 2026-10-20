@@ -14,6 +14,7 @@ const CONFIG: {
   animateAt: number
   frames: number
   at: number | null
+  folder: string | null
   surfaces: ('terminal' | 'desktop')[]
 } = __CONFIG__
 const PLUGIN = CONFIG.plugin
@@ -22,6 +23,9 @@ const WIDTHS = CONFIG.widths
 const SURFACES = CONFIG.surfaces
 // When the session plays (the test runner keeps its clock in UTC): --at, else early on 1 January 1970.
 const T0 = CONFIG.at ?? 10_000_000
+// Where the session plays: --folder, outside any repository, else in a repository on a branch.
+const REPO = '/Users/aaron/projects/agent-plugins'
+const CWD = CONFIG.folder ?? REPO
 
 type Surface = 'terminal' | 'desktop'
 
@@ -54,15 +58,18 @@ function world(on: On): World {
     value: { startedAt: T0 - 47 * 60_000, context: { window: 200_000 }, rateLimits: [], cost: { usd: 0 } },
   }))
   on('session.model', () => ({ value: 'claude-opus-5-5[1m]' }))
-  on('session.repo', () => ({ value: { root: '/Users/aaron/projects/agent-plugins', remote: null, internal: false, name: null } }))
+  on('session.repo', () => ({ value: CONFIG.folder === null ? { root: REPO, remote: null, internal: false, name: null } : null }))
   on('process.run', ($, e) => ({
-    value: {
-      exitCode: 0,
-      stdout: e.argv.includes('rev-parse') ? 'claude/first-mod\n' : ' M hooks/band.tsx\n M hooks/register.tsx\n?? notes.md\n',
-      stderr: '',
-      isStdoutTruncated: false,
-      isStderrTruncated: false,
-    },
+    value:
+      CONFIG.folder === null
+        ? {
+            exitCode: 0,
+            stdout: e.argv.includes('rev-parse') ? 'claude/first-mod\n' : ' M hooks/band.tsx\n M hooks/register.tsx\n?? notes.md\n',
+            stderr: '',
+            isStdoutTruncated: false,
+            isStderrTruncated: false,
+          }
+        : { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository', isStdoutTruncated: false, isStderrTruncated: false },
   }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
@@ -102,7 +109,7 @@ function world(on: On): World {
 let styleNow: string | null = null
 
 async function begin($: Engine, percent = 42, usd = 0.31, five = 23): Promise<void> {
-  await $.session.start({ cwd: '/Users/aaron/projects/agent-plugins', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: CWD, surface: 'terminal', isInteractive: true })
   if (styleNow !== null) {
     await $.command.run({
       command: CONFIG.command,

@@ -34,6 +34,8 @@ paint only once they look right.
   --widths 64,100,140    band widths in columns; --animate-at 100 is the one animated
   --frames 24            how many frames the animated width films, 125 ms apart
   --at <time>            when the session plays, as Date.parse reads it, in UTC (the runner's zone)
+  --folder <path>        play the session in this folder, outside any repository (default: in a
+                         repository, on a branch with uncommitted changes)
   --surfaces terminal,desktop
   --shots <file>         check and paint an earlier shots.jsonl instead of running the mod
   --png                  paint contact sheets (needs Chromium: Playwright's, or Chrome)
@@ -340,6 +342,7 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
       animateAt,
       frames: Number(one(flags, "frames") ?? 24),
       at,
+      folder: one(flags, "folder") ?? null,
       surfaces: list(flags, "surfaces", ["terminal", "desktop"]),
     };
     console.log(`Playing ${scenarios.length} moments through ${name}…`);
