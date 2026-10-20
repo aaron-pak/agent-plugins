@@ -59,6 +59,8 @@ export type Info = {
   /** The high-water mark a compaction left a starfish at, and how many have been left (see the shared facts). */
   treasurePercent: number | null
   treasures: number
+  /** `cheers` when the conversation began: the answered turns since build the sandcastle. */
+  castleFrom: number
   /** The last tool to finish failed, and none has started since: the line keeps what failed, quietly. */
   isSlipped: boolean
   /** When this (or the last) turn's prompt was sent. */
@@ -143,12 +145,16 @@ export type BandProps = {
   isAppleTerminal: boolean
   /** Night by the person's own clock (see isNightAt): the stars are out over the beach. */
   isNight: boolean
+  /** How far the sun has crossed the desktop's sky by day, or the moon by night, in steps (see skyStepAt). */
+  sky: number
   /**
    * A starfish on the sand where a compaction let the tide out: the context fill the water stood at
    * just before (null: none), and how many the session has seen, so a new one is noticed.
    */
   treasure: number | null
   treasures: number
+  /** The turns answered in this conversation, which the desktop's sandcastle is built from. */
+  castle: number
   /** The band's first few seconds in a fresh session, before any turn: Clawd waves hello. Once a session. */
   isGreeting: boolean
   /**

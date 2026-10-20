@@ -132,6 +132,7 @@ export const EMPTY: Info = {
   waves: 0,
   treasurePercent: null,
   treasures: 0,
+  castleFrom: 0,
   turnAt: null,
   greetedAt: null,
   isWarned: false,
@@ -578,19 +579,37 @@ export function isNightAt(now: number): boolean {
   return hour >= NIGHT_FROM_HOUR || hour < NIGHT_UNTIL_HOUR
 }
 
-/** How long from `now` until night falls or day breaks, in milliseconds, by the person's own clock. */
-export function nightTurnsIn(now: number): number {
-  const next = new Date(now)
-  const hour = next.getHours()
-  next.setMinutes(0, 0, 0)
-  if (!isNightAt(now)) {
-    next.setHours(NIGHT_FROM_HOUR)
-  } else {
-    if (hour >= NIGHT_FROM_HOUR) next.setDate(next.getDate() + 1)
-    next.setHours(NIGHT_UNTIL_HOUR)
-  }
+/** The sun crosses the beach's sky by day, and the moon by night, a step every this many minutes. */
+export const SKY_STEP_MINUTES = 20
 
-  return Math.max(0, next.getTime() - now)
+/**
+ * How many steps (SKY_STEP_MINUTES each) the sun has taken across the sky by day, or the moon by
+ * night, at `now`, by the person's own clock: 0 as day breaks or night falls.
+ */
+export function skyStepAt(now: number): number {
+  const at = new Date(now)
+  const from = (isNightAt(now) ? NIGHT_FROM_HOUR : NIGHT_UNTIL_HOUR) * 60
+  const minutes = (at.getHours() * 60 + at.getMinutes() - from + 24 * 60) % (24 * 60)
+
+  return Math.floor(minutes / SKY_STEP_MINUTES)
+}
+
+/** How many steps the sun takes across the sky in a day (`isNight` false), or the moon in a night. */
+export function skySteps(isNight: boolean): number {
+  const hours = isNight ? 24 - NIGHT_FROM_HOUR + NIGHT_UNTIL_HOUR : NIGHT_FROM_HOUR - NIGHT_UNTIL_HOUR
+
+  return (hours * 60) / SKY_STEP_MINUTES
+}
+
+/**
+ * How long from `now` until the sky next moves, in milliseconds, by the person's own clock: the sun's
+ * or the moon's next step, nightfall and daybreak among them (each falls on a step).
+ */
+export function skyTurnsIn(now: number): number {
+  const at = new Date(now)
+  const into = ((at.getMinutes() % SKY_STEP_MINUTES) * 60 + at.getSeconds()) * 1000 + at.getMilliseconds()
+
+  return SKY_STEP_MINUTES * 60_000 - into
 }
 
 export function figures(usage: Figures | null): Partial<Info> {

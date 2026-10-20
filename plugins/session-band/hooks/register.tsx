@@ -27,11 +27,11 @@ import {
   isPhrase,
   nameIn,
   nextTodos,
-  nightTurnsIn,
   nounOf,
   pendingWakes,
   prettyModel,
   runningAfter,
+  skyTurnsIn,
   stepDesk,
   stepHeld,
   todosAfterTurn,
@@ -66,10 +66,10 @@ const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLAS
  * him asleep; `landing`, the one that ends a landing that never came; `starting`, the one that ends a
  * start the host never confirmed; `stride`, the beach's desktop waiting out a stride of the tide (see
  * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes;
- * `night`, the beach's redraw as night falls or day breaks. Each look lets go of the other's wait as
- * it draws, so a switch never leaves one waiting on the other's. `isFresh` until this activation
- * first draws: a reload drops every timer, so the first draw arms again whatever the facts say is
- * still to come.
+ * `sky`, the beach's redraw as its sky next moves (the sun's or the moon's next step). Each look
+ * lets go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
+ * `isFresh` until this activation first draws: a reload drops every timer, so the first draw arms
+ * again whatever the facts say is still to come.
  */
 type Timers = {
   desk: Timer | null
@@ -78,7 +78,7 @@ type Timers = {
   starting: Timer | null
   stride: Timer | null
   bead: Timer | null
-  night: Timer | null
+  sky: Timer | null
   isFresh: boolean
 }
 
@@ -110,7 +110,7 @@ export const register: Register = (on, options) => {
   // and its id): a look drawn where the other one stood is a module swapped under a band on screen,
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
   const drawnLooks = new Map<string, Look>()
-  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, night: null, isFresh: true }
+  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, isFresh: true }
   const landing: Landing = { sawWork: false, quietSince: null }
   const scenes = desktopScenes()
   // git's answers at a turn's end, each stamped: one that comes back after a newer one has landed
@@ -463,7 +463,7 @@ export const register: Register = (on, options) => {
       letGo(timers)
       settled()
       const now = await $.clock.now()
-      await patch($, () => ({
+      await patch($, before => ({
         ...figures(null),
         lastActiveAt: now,
         lastTurn: null,
@@ -492,6 +492,8 @@ export const register: Register = (on, options) => {
         oopsPercent: null,
         splashAt: null,
         treasurePercent: null,
+        // The sandcastle belongs to the conversation: the next one builds its own.
+        castleFrom: before.cheers,
         turnWorked: false,
         workedAt: null,
         woke: false,
@@ -694,8 +696,8 @@ export const register: Register = (on, options) => {
       }
       timers.stride?.cancel()
       timers.stride = null
-      timers.night?.cancel()
-      timers.night = null
+      timers.sky?.cancel()
+      timers.sky = null
       // Both surfaces show the line the facts' hold settled on (stepHeld), so they name the same tools,
       // however quick: the terminal's band only takes it up on a tick of its own clock.
       const props = {
@@ -767,10 +769,11 @@ export const register: Register = (on, options) => {
     nap = null
     timers.bead?.cancel()
     timers.bead = null
-    // The stars come out over the beach as night falls by the person's own clock, and go as day
-    // breaks: one redraw then, armed from whichever draw comes first (a second late, so the hour has turned).
-    timers.night ??= nudge($, nightTurnsIn(now) + 1_000, () => {
-      timers.night = null
+    // The sun crosses the beach's sky by the person's own clock, and the moon and stars come out as
+    // night falls: one redraw at the sky's next step, armed from whichever draw comes first (a second
+    // late, so the minute has turned).
+    timers.sky ??= nudge($, skyTurnsIn(now) + 1_000, () => {
+      timers.sky = null
     })
     // Under a splash the words are those its end hands the line on to (see deskAt), so the terminal's
     // splash, ending on its own frame clock, never shows a moment of what comes before them.

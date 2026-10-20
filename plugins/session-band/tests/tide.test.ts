@@ -5,9 +5,10 @@ import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnComplet
 import { HEART_ALT, SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
 import { SAND, WET, layoutOf, resumeSplash } from '../hooks/tide/band'
 import { STRIDE_WAIT_MS } from '../hooks/tide/props'
-import { isNightAt, nightTurnsIn } from '../hooks/facts'
-import { HEART_PARKED, HEART_SHOWN, ROW_PX, poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
+import { isNightAt, skyStepAt, skySteps, skyTurnsIn } from '../hooks/facts'
+import { HEART_PARKED, HEART_SHOWN, ROW_PX, beachWidth, poseAt, positionAt, seaAfter, seaAt } from '../hooks/tide/desk'
 import type { Scene } from '../hooks/tide/desk'
+import type { Words } from '../hooks/tide/types'
 
 const BAND: RenderPropsOf['AbovePrompt'] = {
   hasSurvey: false,
@@ -2535,7 +2536,8 @@ test('desktop: a narrow beach keeps the /compact nudge, giving up "context" and 
 })
 
 test('desktop: he dozes off where he stood and walks home to the shell; a pet\'s heart rides home with him and settles over him as he curls up', async ($, on) => {
-  const { clock } = world(on)
+  // (Just after a step of the sky, which would be a new frame of its own: see "the sky's steps".)
+  const { clock } = world(on, { now: localAt(15, 13) })
   await start($)
   await turn($, clock)
   await clock.advance(10_000)
@@ -2582,7 +2584,8 @@ test('desktop: he dozes off where he stood and walks home to the shell; a pet\'s
 })
 
 test('desktop: a nap carried on by /band still and lively, or by a new width, opens with him curled up, never standing to lie down again', async ($, on) => {
-  const { clock } = world(on)
+  // (Just after a step of the sky, which would be a new frame of its own.)
+  const { clock } = world(on, { now: localAt(15, 13) })
   await start($)
   await turn($, clock)
   const { ui, look } = await band($, 'desktop')
@@ -2838,7 +2841,7 @@ function measure(surface: Surface, row: Node): number {
 test('desktop: from 34 to 52 columns the beach narrows, so every line fits beside it; the frame is 64 px tall at every width', { timeoutMs: 60_000 }, async ($, on) => {
   const { clock } = world(on)
   await start($, 86, 1.94)
-  const widths: number[] = []
+  const widths: Array<[number, number]> = []
   const check = async (what: string) => {
     for (let columns = 34; columns <= 160; columns += columns < 52 ? 1 : 12) {
       const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: columns })
@@ -2846,7 +2849,7 @@ test('desktop: from 34 to 52 columns the beach narrows, so every line fits besid
       const svg = find(view.tree, 'Svg')[0]
       expect([columns, svg?.props?.height]).toEqual([columns, 64])
       const width = Number(svg?.props?.width)
-      if (what === 'idle') widths.push(width)
+      if (what === 'idle') widths.push([columns, width])
       // The words' room: the band's width less the diorama and its two-cell margin.
       const room = columns * 7.6 - width - 2 * 7.6
       for (const row of view.rows) {
@@ -2865,10 +2868,16 @@ test('desktop: from 34 to 52 columns the beach narrows, so every line fits besid
   await $.turn.complete({ answer: 'Done.', durationMs: 41_000, isAborted: false, turnId: 't1', reason: 'answer' })
   await check('cheer')
   await clock.advance(20_000)
-  // 120 px at the narrowest, 6 px wider a column, 192 px from 48 columns on: never narrower as the band widens.
-  expect(widths.slice(0, 3)).toEqual([120, 120, 120])
-  expect(widths.at(-1)).toBe(192)
-  widths.slice(1).forEach((w, i) => expect(w).toBeGreaterThanOrEqual(widths[i] ?? 0))
+  // 120 px at the narrowest, 6 px wider a column, 192 px from 48 columns, then wider again once the
+  // words have their room, 6 px a column at most, up to 672 px: never narrower as the band widens, and
+  // never so much wider that the words' room shrinks.
+  expect(widths.slice(0, 3).map(([, w]) => w)).toEqual([120, 120, 120])
+  expect(widths.filter(([columns]) => columns >= 48 && columns <= 64).map(([, w]) => w)).toEqual([192, 192, 192, 192, 192, 192])
+  expect(widths.at(-1)).toEqual([160, 672])
+  widths.slice(1).forEach(([columns, w], i) => {
+    const [was, before] = widths[i] ?? [0, 0]
+    expect([columns, w >= before, w - before <= 6 * (columns - was)]).toEqual([columns, true, true])
+  })
 })
 
 test('nothing comes back as the band narrows: each line only loses words, on both surfaces, in every mood', { timeoutMs: 120_000 }, async ($, on) => {
@@ -4087,9 +4096,13 @@ function sceneWrites(on: On): (clock: ReturnType<typeof mock.clock>) => Promise<
   }
 }
 
-/** Each glint's and star's place in its loop as a frame opens: its period, and the seconds into it. */
+/**
+ * Each loop a desktop source keeps on the sea's clock (the crests, the glints and the stars, the
+ * clouds, the boat, the gulls, the fish, the flag) and its place as the frame opens: its period, and
+ * the seconds into it.
+ */
 function loops(source: string): Map<string, { period: number; into: number }> {
-  const found = source.matchAll(/\.((?:glint|twinkle)\d)\{animation:(?:glint|twinkle) ([\d.]+)s ease-in-out -([\d.]+)s infinite\}/gu)
+  const found = source.matchAll(/\.([a-z]+\d*)\{animation:[a-z]+ ([\d.]+)s (?:linear|ease-in-out) -([\d.]+)s infinite\}/gu)
 
   return new Map([...found].map(([, name, period, into]) => [name ?? '', { period: Number(period), into: Number(into) }]))
 }
@@ -4212,8 +4225,9 @@ for (const columns of [100, 44]) {
     expect(carried).toBeGreaterThan(scenes.length)
     // Something did move across those frames: the surge, the tide coming in and going out.
     expect(scenes.some(one => (one.scene.sea?.glide ?? 0) !== 0)).toBe(true)
-    // The tide coming in to high while he strolled out on the sand: the water waited for him.
-    expect(waited.length).toBeGreaterThan(0)
+    // The tide coming in to high while he strolled out on the sand: the water waited for him. (On the
+    // wide beach a 100-column band has, the stride finds him back home.)
+    if (columns === 44) expect(waited.length).toBeGreaterThan(0)
     // The stride's frame (straight from the splash's, which went on into the work), then the
     // cheer's a moment into its glide (which the cheer carries on).
     const [beforeStride, stride, cheer] = scenes.slice(4, 7)
@@ -4222,7 +4236,7 @@ for (const columns of [100, 44]) {
 }
 
 test('desktop: a frame that takes the sea over keeps the wave lip and the crests exactly where the last frame had them, whatever the millisecond: the same lap going on (the cheer handing over to his sit), or a nap\'s slower lap waiting for the last to run out', async () => {
-  const cheer: Scene = { mood: 'idle', tide: 30, still: false, moment: 'cheer', from: null, width: 64, wave: 0, night: false, treasure: null, sea: null }
+  const cheer: Scene = { mood: 'idle', tide: 30, still: false, moment: 'cheer', from: null, width: 64, wave: 0, night: false, treasure: null, castle: 0, built: false, sky: 0, sea: null }
   const handovers: Array<[Scene, Scene]> = [
     [cheer, { ...cheer, moment: null, from: 0 }],
     [{ ...cheer, moment: null }, { ...cheer, moment: null, mood: 'nap', from: 0 }],
@@ -4389,12 +4403,17 @@ test('desktop: the splash\'s drops swell up out of the crest and shrink away at 
 // any time zone (a summer's day far from any change of the clocks).
 const localAt = (day: number, hour: number, minute = 0, second = 0) => new Date(2026, 6, day, hour, minute, second).getTime()
 
-test('night falls at 8pm and day breaks at 6am, by the person\'s own clock', () => {
+test('night falls at 8pm and day breaks at 6am, and the sun and the moon cross the sky a step every 20 minutes, by the person\'s own clock', () => {
   const hours: Array<[number, number]> = [[19, 59], [20, 0], [23, 30], [0, 0], [5, 59], [6, 0], [13, 0]]
   expect(hours.map(([hour, minute]) => isNightAt(localAt(15, hour, minute)))).toEqual([false, true, true, true, true, false, false])
-  expect(nightTurnsIn(localAt(15, 19))).toBe(60 * 60_000)
-  expect(nightTurnsIn(localAt(15, 23))).toBe(7 * 60 * 60_000)
-  expect(nightTurnsIn(localAt(15, 3, 30))).toBe(2.5 * 60 * 60_000)
+  // The sun's steps count from daybreak, 42 of them; the moon's from nightfall, 30.
+  expect([[6, 0], [6, 19], [6, 20], [13, 0], [19, 59]].map(([hour, minute]) => skyStepAt(localAt(15, hour ?? 0, minute)))).toEqual([0, 0, 1, 21, 41])
+  expect([skyStepAt(localAt(15, 20)), skyStepAt(localAt(15, 23, 30)), skyStepAt(localAt(16, 0, 10)), skyStepAt(localAt(16, 5, 59))]).toEqual([0, 10, 12, 29])
+  expect([skySteps(false), skySteps(true)]).toEqual([42, 30])
+  // The next step comes on the twenty minutes; nightfall and daybreak are steps.
+  expect(skyTurnsIn(localAt(15, 13))).toBe(20 * 60_000)
+  expect(skyTurnsIn(localAt(15, 19, 50))).toBe(10 * 60_000)
+  expect(skyTurnsIn(localAt(15, 5, 59, 30))).toBe(30_000)
 })
 
 // The stars in a terminal band: their cells (row, column, glyph), each faint.
@@ -4463,7 +4482,7 @@ test('terminal: a star twinkles only on the frames where a wave washes up the sa
   await ui.unmount()
 })
 
-test('desktop: at night a crescent moon and twinkling stars hang over the sea, and the alt says so; by day the sky is clear', async ($, on) => {
+test('desktop: at night a crescent moon and twinkling stars hang over the sea, and the alt says so; by day there are none', async ($, on) => {
   const { clock } = world(on, { now: localAt(15, 22) })
   await start($)
   await turn($, clock)
@@ -4471,8 +4490,12 @@ test('desktop: at night a crescent moon and twinkling stars hang over the sea, a
   const night = (await look()).svg
   const source = night?.source ?? ''
   expect(night?.alt).toMatch(/ The stars are out\.$/u)
-  expect(source).toContain('<g class="sky"><path d="M')
-  expect([...source.matchAll(/class="twinkle twinkle\d"/gu)].length).toBe(4)
+  expect(source).toMatch(/<g class="sky">.*<path class="moon" d="M/u)
+  // Four over the sea, and on this wide beach more over the sand; the narrow beach has the four.
+  expect([...source.matchAll(/class="twinkle twinkle\d+"/gu)].length).toBeGreaterThan(4)
+  const { ui: narrow, look: lookNarrow } = await band($, 'desktop', { ...BAND, bodyColumns: 44 })
+  expect([...((await lookNarrow()).svg?.source ?? '').matchAll(/class="twinkle twinkle\d+"/gu)].length).toBe(4)
+  await narrow.unmount()
   // The sky is drawn first, behind the sand, the sea and him.
   expect(source.indexOf('class="sky"')).toBeLessThan(source.indexOf('clipPath id="sand"'))
   // They twinkle only where motion plays, shrinking to a glint and back, never fading.
@@ -4489,7 +4512,7 @@ test('desktop: at night a crescent moon and twinkling stars hang over the sea, a
   // Noon the next day: no moon, no stars, and the alt says nothing of them.
   await clock.set(localAt(16, 12))
   const day = (await look()).svg
-  expect(day?.source).not.toContain('class="sky"')
+  expect(day?.source).not.toMatch(/class="moon"|twinkle/u)
   expect(day?.alt).not.toContain('stars')
   await ui.unmount()
 })
@@ -4534,22 +4557,26 @@ test('desktop: glints of light come and go out on the water, the sun\'s white by
   const motion = day.slice(day.indexOf('@media (prefers-reduced-motion:no-preference)'))
   expect(/@keyframes glint\{[^@]*?\}\}/u.exec(motion)?.[0]).not.toContain('opacity')
   expect(day.slice(0, day.indexOf('@media'))).toContain('.glint{transform-box:fill-box;transform-origin:center;transform:scale(0)}')
-  // At low tide, only those out on the water show, clear of its front.
-  await $.session.measure(measured(8, 0.31))
+  // At the lowest tide, only those out on the water show, clear of its front.
+  await $.session.measure(measured(0, 0.31))
   await turn($, clock)
   const low = (await look()).svg?.source ?? ''
   expect([glints(low).length > 0, glints(low).length < 3]).toEqual([true, true])
   glints(low).forEach(glint => expect(glint.x).toBeGreaterThan(front(low) + 1.5))
   // Their periods, and the stars', divide the sea clock's wrap, so they go on in step across it.
   await $.session.measure(measured(42, 0.31))
+  // At 10pm the moon has only just risen, over the sand: no moonlight on the water yet.
   await clock.set(localAt(15, 22))
+  expect(glints((await look()).svg?.source ?? '')).toEqual([])
+  await clock.set(localAt(16, 2))
   const night = (await look()).svg?.source ?? ''
-  expect([loops(day).size, loops(night).size]).toEqual([3, 7])
+  const glinting = (source: string) => [...loops(source).keys()].filter(name => name.startsWith('glint'))
+  expect([glinting(day).length, glinting(night).length]).toEqual([3, 3])
   for (const source of [day, night]) {
     for (const { period } of loops(source).values()) expect(Math.abs(126 / period - Math.round(126 / period))).toBeLessThan(1e-9)
   }
-  // By night, a path of moonlight on the water under the moon.
-  const moon = Number(/<g class="sky"><path d="M([\d.]+) /u.exec(night)?.[1])
+  // By night, a path of moonlight on the water under the moon, wherever it has crossed to.
+  const moon = Number(/<path class="moon" d="M([\d.]+) /u.exec(night)?.[1])
   const moonlit = glints(night)
   expect(moonlit.map(glint => glint.fill)).toEqual(['#E9C77E', '#E9C77E', '#E9C77E'])
   moonlit.forEach(glint => expect(Math.abs(glint.x - moon)).toBeLessThan(2))
@@ -4568,7 +4595,7 @@ for (const surface of SURFACES) {
     const { ui, look, wait } = await band($, surface)
     const hasStars = async () => {
       const view = await look()
-      return surface === 'terminal' ? starsOf(view).length > 0 : (view.svg?.source ?? '').includes('class="sky"')
+      return surface === 'terminal' ? starsOf(view).length > 0 : (view.svg?.source ?? '').includes('class="moon"')
     }
     expect(await hasStars()).toBe(false)
     // 8pm comes and goes on both clocks, a tick at a time, with no event of the session's.
@@ -4580,6 +4607,243 @@ for (const surface of SURFACES) {
     await ui.unmount()
   })
 }
+
+// ── The wide desktop beach ──────────────────────────────────────────────────────
+
+test('desktop: a wider band\'s beach widens into the room its words leave, two units a column, so the words\' room never shrinks', () => {
+  const place = (...texts: string[]): Words => texts.map((text, i) => (i === 0 ? { text } : { text, tone: 'dim' as const }))
+  const short = place('aaronpak', ' · Opus 5.5')
+  const long = place('agent-plugins', ' · claude/first-mod · 3 uncommitted', ' · Opus 5.5')
+  // The narrow rule up to 48 columns, then 64 units until the words have their room.
+  expect([36, 44, 48, 60, 66].map(columns => beachWidth(columns, short))).toEqual([40, 56, 64, 64, 64])
+  // The Mac app's 768 px column (96 columns): 122 units beside a folder and the model, 78 beside a
+  // branch and a count. At most 224.
+  expect([beachWidth(96, short), beachWidth(96, long), beachWidth(200, short)]).toEqual([122, 78, 224])
+  // A count going from 9 to 10 never moves it.
+  const count = (n: number) => place('agent-plugins', ` · claude/first-mod · ${n} uncommitted`, ' · Opus 5.5')
+  expect(beachWidth(120, count(10))).toBe(beachWidth(120, count(9)))
+  // The words' room only grows as the band widens, and beside a widened beach it keeps 290 px and
+  // the where-line whole.
+  for (const line of [short, long]) {
+    const where = line.reduce((sum, piece) => sum + textPx(piece.text, false), 0)
+    let room = Number.NEGATIVE_INFINITY
+    for (let columns = 34; columns <= 220; columns++) {
+      const width = beachWidth(columns, line)
+      const now = columns * 7.6 - width * 3 - 3 * 7.6 - 1
+      expect([columns, now >= room, width <= 64 || now >= Math.max(290, where)]).toEqual([columns, true, true])
+      room = now
+    }
+  }
+})
+
+// The sun's place in a desktop source, and the moon's.
+function sunOf(source: string): { x: number; y: number; r: number; fill: string } | null {
+  const found = /<circle class="sun" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" fill="(#[0-9A-F]{6})"\/>/u.exec(source)
+
+  return found === null ? null : { x: Number(found[1]), y: Number(found[2]), r: Number(found[3]), fill: found[4] ?? '' }
+}
+const moonOf = (source: string) => Number(/<path class="moon" d="M([\d.]+) /u.exec(source)?.[1] ?? Number.NaN)
+
+test('desktop: on a wide beach the sun crosses the sky through the day, warmer and larger as it rises and sets, and the moon through the night; each step is a frame the band draws by itself', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 6, 20) })
+  await start($)
+  await turn($, clock)
+  const { ui, look, wait } = await band($, 'desktop')
+  const at = async (day: number, hour: number, minute = 0) => {
+    await clock.set(localAt(day, hour, minute))
+    return (await look()).svg?.source ?? ''
+  }
+  const [morning, noon, evening] = [sunOf(await at(15, 6, 30)), sunOf(await at(15, 13)), sunOf(await at(15, 19, 30))]
+  // Up from over the sand, high at midday, down over the sea: and never over his stroll.
+  expect([(morning?.x ?? 0) < (noon?.x ?? 0), (noon?.x ?? 0) < (evening?.x ?? 0)]).toEqual([true, true])
+  expect([(noon?.y ?? 9) < (morning?.y ?? 0), (noon?.y ?? 9) < (evening?.y ?? 0)]).toEqual([true, true])
+  // A soft gold at midday; a warmer one, a little larger, as it rises and sets.
+  expect(noon?.fill).toBe('#F0C35B')
+  expect([morning?.fill !== noon?.fill, evening?.fill !== noon?.fill, (morning?.r ?? 0) > (noon?.r ?? 9), (evening?.r ?? 0) > (noon?.r ?? 9)]).toEqual([true, true, true, true])
+  // By night the moon crosses the same way, and the sun has set.
+  const [late, midnight, dawn] = [await at(15, 21), await at(16, 1), await at(16, 5, 30)]
+  expect(sunOf(late)).toBeNull()
+  expect([moonOf(late) < moonOf(midnight), moonOf(midnight) < moonOf(dawn)]).toEqual([true, true])
+  // A step every 20 minutes, which nothing in the session announces: the band draws it by itself.
+  const before = sunOf(await at(16, 13, 19))
+  for (let i = 0; i < 4 * 80; i++) {
+    await clock.advance(250)
+    await wait(250)
+  }
+  expect((sunOf((await look()).svg?.source ?? '')?.x ?? 0) > (before?.x ?? 0)).toBe(true)
+  await ui.unmount()
+})
+
+test('desktop: the narrow beach\'s sky never moves, so its step never reloads the frame; its moon hangs over the sea all night', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 22) })
+  await start($)
+  await turn($, clock)
+  const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: 44 })
+  const first = (await look()).svg?.source ?? ''
+  await clock.set(localAt(16, 3))
+  await ui.redraw({ ...BAND, bodyColumns: 44 })
+  const later = (await look()).svg?.source ?? ''
+  expect(moonOf(later)).toBe(moonOf(first))
+  // By day it has no sun, nor clouds or a boat: the 56-unit beach as it always was.
+  await clock.set(localAt(16, 13))
+  await ui.redraw({ ...BAND, bodyColumns: 44 })
+  expect((await look()).svg?.source).not.toMatch(/class="(?:sun|cloud|boat|castle|umbrella|gull)/u)
+  await ui.unmount()
+})
+
+test('desktop: the wide beach\'s scenery comes in by width: a sailboat, clouds, gulls and a leaping fish, the sandcastle, then the umbrella; a still frame keeps only what stands still', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  await turn($, clock)
+  const has = (source: string) => ({
+    sun: source.includes('class="sun"'),
+    clouds: [...source.matchAll(/class="cloud cloud\d"/gu)].length,
+    boat: source.includes('class="boat"'),
+    gulls: source.includes('class="gull gull0"'),
+    fish: source.includes('class="fishx"'),
+    castle: source.includes('class="castle"'),
+    umbrella: source.includes('class="umbrella"'),
+  })
+  const at = async (columns: number) => {
+    const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: columns })
+    const source = (await look()).svg?.source ?? ''
+    await ui.unmount()
+    return source
+  }
+  // 64 units (60 columns), 108 (100), 148 (120).
+  expect(has(await at(60))).toEqual({ sun: true, clouds: 2, boat: true, gulls: false, fish: false, castle: false, umbrella: false })
+  const wide = await at(100)
+  expect(has(wide)).toEqual({ sun: true, clouds: 2, boat: true, gulls: true, fish: true, castle: true, umbrella: false })
+  expect(has(await at(120))).toEqual({ sun: true, clouds: 2, boat: true, gulls: true, fish: true, castle: true, umbrella: true })
+  // The scenery stands behind him: drawn before his walk, the sky before the sand.
+  for (const name of ['sky', 'castle', 'boat']) expect([name, wide.indexOf(`class="${name}"`) < wide.indexOf('class="walk clawd"')]).toEqual([name, true])
+  expect(wide.indexOf('class="sky"')).toBeLessThan(wide.indexOf('clipPath id="sand"'))
+  // The fish swims behind the water, which hides it until it leaps.
+  expect(wide.indexOf('class="fishx"')).toBeLessThan(wide.indexOf('<clipPath id="water">'))
+  // By night: a lantern at the boat's masthead and now and then a shooting star; no gulls.
+  await clock.set(localAt(15, 23))
+  const night = await at(100)
+  expect([night.includes('class="lantern"'), night.includes('class="meteor"'), night.includes('class="gull')]).toEqual([true, true, false])
+  // Still: the boat, the clouds and the castle stand where they are; nothing comes and goes.
+  await clock.set(localAt(16, 13))
+  await run($, 'band', 'still')
+  const still = await at(100)
+  expect([still.includes('@keyframes'), has(still).clouds, has(still).boat, has(still).castle, has(still).gulls, has(still).fish]).toEqual([false, 2, true, true, false, false])
+})
+
+test('desktop: the clouds keep their places in the sky past where he strolls, swaying a little, so none ever crosses his head', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  await turn($, clock)
+  for (const columns of [60, 100, 120, 160]) {
+    const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: columns })
+    const source = (await look()).svg?.source ?? ''
+    // His farthest right: where his loop starts, out as far as it walks him, and his 18 units.
+    const start = Number(/<g transform="translate\(([\d.]+) 4\)"><g class="walk clawd">/u.exec(source)?.[1])
+    const reach = Math.max(...[...(/@keyframes walk\{(.*?)\}\}/u.exec(source)?.[1] ?? '').matchAll(/translateX\(([\d.]+)px\)/gu)].map(([, x]) => Number(x)))
+    const lefts = [...source.matchAll(/<g class="cloud cloud\d"><g fill="#[0-9A-F]{6}" transform="[^"]*"><rect x="([\d.]+)"/gu)].map(([, x]) => Number(x))
+    expect(lefts.length).toBeGreaterThan(0)
+    for (const left of lefts) expect([columns, left - 1.2 > start + reach + 18]).toEqual([columns, true])
+    expect(source).toContain('@keyframes sway{0%,100%{transform:translateX(-1.2px)}50%{transform:translateX(1.2px)}}')
+    await ui.unmount()
+  }
+})
+
+test('desktop: his sandcastle grows a piece at a time with the conversation\'s answered turns, the new piece popping up in its cheer; /clear starts the next one from nothing', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  const keptScene = sceneWrites(on)
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  const source = async () => (await look()).svg?.source ?? ''
+  // A turn answered, and the frame of its cheer.
+  const answer = async () => {
+    await $.prompt.submit({ text: 'tidy up', wait: false, origin: { kind: 'composer' } })
+    await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't', reason: 'answer' })
+    const cheer = await source()
+    await clock.advance(10_000)
+    return cheer
+  }
+  expect(await source()).not.toContain('class="castle"')
+  const stages: number[] = []
+  const built: boolean[] = []
+  for (let turns = 1; turns <= 13; turns++) {
+    const cheer = await answer()
+    stages.push((await keptScene(clock))?.scene.castle ?? -1)
+    built.push(cheer.includes('<g class="built">'))
+  }
+  // A mound, a tower, a wall and a second tower, a door, windows, a flag: at 1, 2, 3, 5, 8 and 13.
+  expect(stages).toEqual([1, 2, 3, 3, 4, 4, 4, 5, 5, 5, 5, 5, 6])
+  expect(built).toEqual([true, true, true, false, true, false, false, true, false, false, false, false, true])
+  const flagged = await source()
+  expect(flagged).toContain('<g class="flag">')
+  // The settled frame after the cheer has the piece simply standing.
+  expect(flagged).not.toContain('class="built"')
+  // /clear: the next conversation starts its own.
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: { id: 's1' } })
+  await clock.advance(1_000)
+  expect(await source()).not.toContain('class="castle"')
+  const first = await answer()
+  expect([first.includes('class="castle"'), (await keptScene(clock))?.scene.castle]).toEqual([true, 1])
+  await ui.unmount()
+})
+
+test('desktop: the cheer that builds a piece of the castle pops it up out of the sand as his arms go up, and a still cheer just shows it', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'tidy up', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  const lively = (await look()).svg?.source ?? ''
+  // Grown from nothing at its foot, with a bounce, once, as the sparkles pop up; only where motion plays.
+  expect(lively).toMatch(/@keyframes build\{0%\{transform:scale\(0\)\}55%\{transform:scale\(1\.18\)\}100%\{transform:scale\(1\)\}\}\.built\{animation:build \.5s ease-out [\d.]+s 1 both\}/u)
+  expect(lively.slice(0, lively.indexOf('@media'))).toContain('.built{transform-box:fill-box;transform-origin:center bottom}')
+  const delay = Number(/\.built\{animation:build \.5s ease-out ([\d.]+)s/u.exec(lively)?.[1])
+  const sparkle = Number(/@keyframes star0\{0%,([\d.]+)%/u.exec(lively)?.[1]) / 100
+  expect(Math.abs(delay - sparkle * 4.2)).toBeLessThan(0.05)
+  await clock.advance(10_000)
+  await run($, 'band', 'still')
+  await $.prompt.submit({ text: 'again', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't2', reason: 'answer' })
+  const still = (await look()).svg?.source ?? ''
+  expect([still.includes('class="castle"'), still.includes('class="built"')]).toEqual([true, false])
+  await ui.unmount()
+})
+
+test('desktop: the beach umbrella stands midway out on the sand past his stroll, and is packed away when the tide comes up to its shade', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  await turn($, clock)
+  const props = { ...BAND, bodyColumns: 120 }
+  const { ui, look } = await band($, 'desktop', props)
+  const source = (await look()).svg?.source ?? ''
+  expect([source.includes('class="umbrella"'), source.includes('class="towel"')]).toEqual([true, true])
+  // Its shade and towel lie on the sand, under the castle and him; the umbrella stands before the sea.
+  expect(source.indexOf('class="towel"')).toBeLessThan(source.indexOf('class="walk clawd"'))
+  expect(source.indexOf('class="umbrella"')).toBeLessThan(source.indexOf('<clipPath id="water">'))
+  // The tide coming up to it: packed away, towel and all.
+  await $.session.measure(measured(70, 0.5))
+  await turn($, clock)
+  const high = (await look()).svg?.source ?? ''
+  expect([high.includes('class="umbrella"'), high.includes('class="towel"')]).toEqual([false, false])
+  await ui.unmount()
+})
+
+test('desktop: at sunrise and sunset the clouds blush peach underneath and the glints on the water turn gold', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  await turn($, clock)
+  const { ui, look } = await band($, 'desktop')
+  const colors = (source: string) => ({
+    under: /<g class="cloud cloud0"><g fill="(#[0-9A-F]{6})"/u.exec(source)?.[1],
+    glints: [...source.matchAll(/<path class="glint glint\d" d="[^"]*" fill="(#[0-9A-F]{6})"\/>/gu)].map(([, fill]) => fill),
+  })
+  const noon = colors((await look()).svg?.source ?? '')
+  await clock.set(localAt(15, 19, 45))
+  const dusk = colors((await look()).svg?.source ?? '')
+  expect([noon.under, noon.glints[0]]).toEqual(['#C3D0DB', '#FFFFFF'])
+  expect([dusk.under !== noon.under, dusk.glints.length > 0 && dusk.glints.every(fill => fill !== '#FFFFFF')]).toEqual([true, true])
+  await ui.unmount()
+})
 
 // The starfish in a terminal band: its column in the ground row, or -1.
 function starfishOf(view: View): number {

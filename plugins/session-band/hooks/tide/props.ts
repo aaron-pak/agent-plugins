@@ -1,8 +1,8 @@
 // The tide's props: the facts, with every line of words already written, and the desktop scene it
 // last handed out.
 
-import { NAP_AFTER_MS, SPLASH_MS, isNightAt } from '../facts'
-import { carriedPhase, dioramaWidth, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
+import { NAP_AFTER_MS, SPLASH_MS, isNightAt, skyStepAt } from '../facts'
+import { beachWidth, carriedPhase, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
 import type { Scene } from './desk'
 import type { Motion } from '../../types'
 import type { BandProps, Info } from './types'
@@ -62,8 +62,10 @@ export function bandProps(
     shownForMs,
     isAppleTerminal: known.isAppleTerminal,
     isNight: isNightAt(now),
+    sky: skyStepAt(now),
     treasure: pct(known.treasurePercent),
     treasures: known.treasures,
+    castle: Math.max(0, known.cheers - known.castleFrom),
     isGreeting: greetedMs !== null && known.lastTurn === null && !isWorking,
     greetedMs: greetedMs !== null && known.lastTurn === null && !isWorking ? greetedMs : null,
     words: wordsFor(known, isWorking, isHigh, now, isDesktop),
@@ -169,8 +171,13 @@ export function sceneMemory(): {
  * draw in the same redraws, so neither ever finds the other drawing a second on its own.)
  */
 const STALE_MS = 1_000
-/** The beach widths remembered at most: a desktop dragged through many widths keeps only its latest few. */
-const WIDTHS_KEPT = 8
+/**
+ * The beach widths remembered at most: a desktop dragged through many widths keeps only its latest
+ * few. Above 64 units a beach is two units wider a column, so desktops side by side each draw their
+ * own width; this keeps far more than ever draw together, since one evicted before it draws again
+ * would start afresh on every redraw, and the widest would write its kept scene each time.
+ */
+const WIDTHS_KEPT = 16
 
 /**
  * The desktop scenes, one memory per beach width (see sceneMemory). A session may draw its band on
@@ -192,7 +199,7 @@ export function desktopScenes(): {
   // Once the other look has drawn, the kept copy is no longer on screen to carry on from.
   let isKeptStale = false
   const settle = (props: BandProps, now: number, kept: unknown) => {
-    const width = dioramaWidth(props.columns)
+    const width = beachWidth(props.columns, props.words.place[0] ?? [])
     const others = [...beaches.entries()].filter(([at]) => at !== width)
     const othersLast = Math.max(Number.NEGATIVE_INFINITY, ...others.map(([, other]) => other.drawnAt))
     let beach = beaches.get(width)
@@ -235,7 +242,10 @@ function isShownScene(kept: unknown): kept is ShownScene {
     typeof scene.still === 'boolean' &&
     typeof scene.wave === 'number' &&
     typeof scene.night === 'boolean' &&
+    typeof scene.sky === 'number' &&
     (scene.treasure === null || typeof scene.treasure === 'number') &&
+    typeof scene.castle === 'number' &&
+    typeof scene.built === 'boolean' &&
     'from' in scene &&
     'sea' in scene &&
     // Only a scene this build would draw the same: its key is what this build makes of it.

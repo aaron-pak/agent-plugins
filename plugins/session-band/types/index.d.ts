@@ -168,6 +168,11 @@ export type Info = {
    */
   treasurePercent: number | null
   treasures: number
+  /**
+   * `cheers` when the conversation began (0, or what it was at the last /clear): the answered turns
+   * since are the ones the beach's sandcastle is built from, so a new conversation starts a new one.
+   */
+  castleFrom: number
   /** When the current (or last) turn's prompt was sent. */
   turnAt: number | null
 
