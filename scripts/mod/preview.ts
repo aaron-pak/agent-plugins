@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { copyMod, modName, seconds, stream, testFiles } from "./common.ts";
 import type { Shot } from "./preview/paint.ts";
 
-const SCENARIOS = ["fresh", "idle", "cheer", "working", "reading", "thinking", "oops", "high", "nap", "pet"];
+const SCENARIOS = ["fresh", "idle", "cheer", "working", "reading", "thinking", "oops", "high", "nap", "pet", "compact"];
 
 export const PREVIEW_SWITCHES = new Set(["png", "gifs", "strips"]);
 
@@ -33,6 +33,7 @@ paint only once they look right.
   --scenarios a,b        the moments to play (default: ${SCENARIOS.join(",")})
   --widths 64,100,140    band widths in columns; --animate-at 100 is the one animated
   --frames 24            how many frames the animated width films, 125 ms apart
+  --at <time>            when the session plays, as Date.parse reads it, in UTC (the runner's zone)
   --surfaces terminal,desktop
   --shots <file>         check and paint an earlier shots.jsonl instead of running the mod
   --png                  paint contact sheets (needs Chromium: Playwright's, or Chrome)
@@ -320,6 +321,8 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
   if (unknown.length > 0) throw new Error(`no scenario ${unknown.join(", ")}; there are ${SCENARIOS.join(", ")}`);
   const widths = list(flags, "widths", ["64", "100", "140"]).map(Number);
   const animateAt = Number(one(flags, "animate-at") ?? (widths.includes(100) ? 100 : widths[0]));
+  const at = one(flags, "at") === undefined ? null : Date.parse(one(flags, "at")!);
+  if (Number.isNaN(at)) throw new Error(`--at ${one(flags, "at")} is not a time; try 2026-07-15T14:00:00Z`);
 
   let shots: Shot[];
   const given = one(flags, "shots");
@@ -336,6 +339,7 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
       widths,
       animateAt,
       frames: Number(one(flags, "frames") ?? 24),
+      at,
       surfaces: list(flags, "surfaces", ["terminal", "desktop"]),
     };
     console.log(`Playing ${scenarios.length} moments through ${name}…`);

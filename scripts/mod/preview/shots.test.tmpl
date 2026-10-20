@@ -13,13 +13,15 @@ const CONFIG: {
   widths: number[]
   animateAt: number
   frames: number
+  at: number | null
   surfaces: ('terminal' | 'desktop')[]
 } = __CONFIG__
 const PLUGIN = CONFIG.plugin
 const STYLES = CONFIG.styles
 const WIDTHS = CONFIG.widths
 const SURFACES = CONFIG.surfaces
-const T0 = 10_000_000
+// When the session plays (the test runner keeps its clock in UTC): --at, else early on 1 January 1970.
+const T0 = CONFIG.at ?? 10_000_000
 
 type Surface = 'terminal' | 'desktop'
 
@@ -35,6 +37,9 @@ function measured(percent: number, usd: number, five: number): SessionMeasureInp
     changed: ['context', 'cost', 'rateLimits'],
   }
 }
+
+// What a compaction leaves: one summary message (it always leaves at least one).
+const SUMMARY = { role: 'user' as const, text: 'Summary of the conversation so far.', toolUses: [] }
 
 type World = { clock: ReturnType<typeof mock.clock>; hold: (tool: string) => void; release: () => void }
 
@@ -64,6 +69,7 @@ function world(on: On): World {
   on('ui.toast', () => ({ value: undefined }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('session.compact', () => ({ messages: [SUMMARY] }))
   on('tool.call', async ($, e) => {
     if (held !== null && e.tool === held) {
       await new Promise<void>(resolve => waiting.push(resolve))
@@ -258,6 +264,19 @@ const SCENARIOS: Scenario[] = [
     },
   },
   { name: 'pet', isWorking: false, frames: ANIM, pet: true, setup: async $ => begin($) },
+  {
+    // High tide, then a compaction lets it out: the band draws as the new reading lands.
+    name: 'compact',
+    isWorking: false,
+    frames: ANIM,
+    setup: async ($, w) => {
+      await begin($, 86, 1.94, 81)
+      await turn($)
+      await w.clock.advance(20_000)
+      await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+      await $.session.measure(measured(12, 1.97, 81))
+    },
+  },
 ]
 
 // A session of its own for each style and surface, so each plays the moment from its start: every
