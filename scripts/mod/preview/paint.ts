@@ -461,7 +461,8 @@ export function terminalBand(shot: Shot, schemeName: Scheme): string {
   const band = inkTree(shot.tree, scheme.theme) ?? h(Text, null, "");
   const el = h(Box, { width: shot.columns, flexDirection: "column", overflow: "hidden" }, band);
   const { html, w, h: hgt } = cellsHtml(parseAnsi(renderToString(el, { columns: shot.columns })), scheme);
-  return `<div style="position:relative;width:${w + 16}px;height:${hgt + 12}px;background:${scheme.bg};font-family:'DejaVu Sans Mono',Menlo,monospace;font-size:15px;border-radius:6px"><div style="position:absolute;left:8px;top:6px">${html}</div></div>`;
+  // Its cells are placed absolutely, so it has no width of its own to keep: it must not shrink in a row.
+  return `<div style="position:relative;flex-shrink:0;width:${w + 16}px;height:${hgt + 12}px;background:${scheme.bg};font-family:'DejaVu Sans Mono',Menlo,monospace;font-size:15px;border-radius:6px"><div style="position:absolute;left:8px;top:6px">${html}</div></div>`;
 }
 
 /** The band in a terminal, between the last output and the prompt box, as cells in HTML. */
@@ -646,10 +647,6 @@ export function desktopBand(shot: Shot, schemeName: Scheme, seek: (source: strin
   return `<div style="display:inline-block;background:${s.band};color:${s.fg};font-family:system-ui,'DejaVu Sans',sans-serif;font-size:14px;line-height:${ROW}px;padding:10px 8px;border-radius:10px">${deskBand(shot, s, seek)}</div>`;
 }
 
-/**
- * Run in the page once it has loaded: pauses every animation in each seekable picture (desktopBand)
- * at the second its frame names, so a page shows one exact moment of the motion.
- */
 /** The source of every Svg a drawing holds. */
 export function svgSources(tree: Tree): string[] {
   if (!isElement(tree)) return [];
@@ -657,6 +654,10 @@ export function svgSources(tree: Tree): string[] {
   return [...own, ...kids(tree).flatMap(svgSources)];
 }
 
+/**
+ * Run in the page once it has loaded: pauses every animation in each seekable picture (desktopBand)
+ * at the second its frame names, so a page shows one exact moment of the motion.
+ */
 export const seekScript = `for (const frame of document.querySelectorAll("iframe[data-t]")) {
   const t = Number(frame.dataset.t) * 1000;
   for (const animation of frame.contentDocument?.getAnimations() ?? []) {

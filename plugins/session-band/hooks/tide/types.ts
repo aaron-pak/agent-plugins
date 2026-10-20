@@ -69,6 +69,8 @@ export type Info = {
   isCalm: boolean
   /** Apple's Terminal, where Claude Code draws a simpler Clawd. */
   isAppleTerminal: boolean
+  /** Ghostty, where Claude Code's spinner draws its ✽ as a ✻. */
+  isGhostty: boolean
 }
 
 /** How a run of text is colored; each surface maps it to theme keys (`clay` is Claude's own, `claude`). */
@@ -143,6 +145,8 @@ export type BandProps = {
   isSwapped?: boolean
   /** Apple's Terminal: Claude Code's simpler Clawd, with no spin. */
   isAppleTerminal: boolean
+  /** Ghostty: the cheer's ✻ never swells to a ✽ there, as Claude Code's spinner's never does. */
+  isGhostty: boolean
   /** Night by the person's own clock (see isNightAt): the stars are out over the beach. */
   isNight: boolean
   /** How far the sun has crossed the desktop's sky by day, or the moon by night, in steps (see skyStepAt). */
@@ -163,6 +167,12 @@ export type BandProps = {
    * start. Absent: it begins as the band appears.
    */
   greetedMs?: number | null
+  /**
+   * The desktop's: how wide its context and where-lines have been at their widest, in pixels (see
+   * linesPx). The beach keeps room for them, so a part that comes and goes (a count of uncommitted
+   * files, the nudge to /compact) narrows it once, never back and forth.
+   */
+  wordsPx?: number
   /**
    * The three lines beside the beach, in each mood the surface module may be in, each as its forms,
    * longest first: each form takes something away from the one before (a part from the end, a

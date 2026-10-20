@@ -6,6 +6,7 @@ import {
   DEFAULT_WARN_AT,
   EMPTY,
   FILE_TOOLS,
+  GIT_WAIT_MS,
   GREET_MS,
   LANDING_MS,
   LOOK_TOOLS,
@@ -41,7 +42,7 @@ import { CHEER_FOR_MS, FLINCH_MS, desk } from './hearth/desk'
 import { bandProps as hearthProps, doing } from './hearth/props'
 import { hearthActivity, hearthInfo, slipAt } from './hearth/view'
 import { LOOK_KEY, configuredLook, isLook, isLookRow, isPickOn, lookNow, migrateMotion, newActivation, offReply, parseBand, replyFor, shownSince, toastFor, troubleReply, upgradeToast } from './look'
-import { CHEER_MS, desktopBand } from './tide/desk'
+import { CHEER_MS, desktopBand, linesPx, widthLines } from './tide/desk'
 import { STRIDE_WAIT_MS, bandProps as tideProps, desktopScenes } from './tide/props'
 import type { ShownScene } from './tide/props'
 import { tideInfo } from './tide/view'
@@ -67,8 +68,9 @@ const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLAS
  * start the host never confirmed; `stride`, the beach's desktop waiting out a stride of the tide (see
  * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes;
  * `sky`, the beach's redraw as its sky next moves (the sun's or the moon's next step); `held`, the
- * desktop band's next look while something else holds its place (see HELD_LOOK_MS). Each look lets
- * go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
+ * desktop band's next look while something else holds its place (see HELD_LOOK_MS); `git`, the
+ * beach's first desktop frame once it has waited long enough for git (see GIT_WAIT_MS). Each look
+ * lets go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
  * `isFresh` until this activation first draws: a reload drops every timer, so the first draw arms
  * again whatever the facts say is still to come.
  */
@@ -81,6 +83,7 @@ type Timers = {
   bead: Timer | null
   sky: Timer | null
   held: Timer | null
+  git: Timer | null
   isFresh: boolean
 }
 
@@ -120,7 +123,9 @@ export const register: Register = (on, options) => {
   // and its id): a look drawn where the other one stood is a module swapped under a band on screen,
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
   const drawnLooks = new Map<string, Look>()
-  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, held: null, isFresh: true }
+  // How wide the beach's context and where-lines have been at their widest on the desktop (see wordsPx).
+  let wordsPx = 0
+  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, held: null, git: null, isFresh: true }
   // The desktop bands stepped aside since the last ask (by id): one coming free stops the asking only
   // once none is left, so a band drawn free beside it (another desktop, a terminal) never strands it.
   const heldOn = new Set<string>()
@@ -171,12 +176,13 @@ export const register: Register = (on, options) => {
 
       // Each fact on its own: a lookup that fails leaves its own field as it was (or as the folder
       // names it), and every other fact still lands, so one slow or broken lookup never blanks line 3.
-      const [usage, model, repo, isCalm, isAppleTerminal, now] = await Promise.all([
+      const [usage, model, repo, isCalm, isAppleTerminal, isGhostty, now] = await Promise.all([
         orNothing($.session.usage()),
         modelNow($),
         orNothing($.session.repo()),
         prefersReducedMotion($),
         appleTerminal($),
+        ghostty($),
         $.clock.now(),
       ])
       // Idempotent: a reload that runs this again keeps a napping Clawd asleep and never waves twice.
@@ -193,6 +199,7 @@ export const register: Register = (on, options) => {
           unsavedMotion: isRemembered ? null : motion,
           isCalm,
           isAppleTerminal,
+          isGhostty,
           // Written with the project, so both looks know to hold the model until git answers.
           isGitRead: before.isGitRead,
         }
@@ -818,8 +825,21 @@ export const register: Register = (on, options) => {
     })
     // Under a splash the words are those its end hands the line on to (see deskAt), so the terminal's
     // splash, ending on its own frame clock, never shows a moment of what comes before them.
-    const props = tideProps(tideInfo(deskAt(known, now)), motion, landed || isStarting, warnAt, columns, now, shownForMs, e.surface === 'desktop', greetedMs)
+    const drawn = tideProps(tideInfo(deskAt(known, now)), motion, landed || isStarting, warnAt, columns, now, shownForMs, e.surface === 'desktop', greetedMs)
     if (e.surface === 'desktop') {
+      // A fresh session's beach waits a moment for git: its where-line sets the beach's width, and
+      // the branch joining it would narrow the beach under the words and start its frame over.
+      // git's answer draws the band (this draw read the facts); a git slower than that, the wait's end.
+      const waited = now - firstDrawnAt
+      if (!known.isGitRead && waited < GIT_WAIT_MS) {
+        timers.git ??= nudge($, GIT_WAIT_MS - waited + 10, () => {
+          timers.git = null
+        })
+
+        return next(e)
+      }
+      wordsPx = Math.max(wordsPx, linesPx(widthLines(drawn)))
+      const props = { ...drawn, wordsPx }
       const shown = scenes.settle(props, now, kept)
       if (shown.keep !== undefined) {
         keepScene($, shown.keep)
@@ -834,7 +854,7 @@ export const register: Register = (on, options) => {
     }
     const { Client } = $.ui.resolve(e)
 
-    return <Client key="band" module="./tide/band.tsx" props={{ ...props, isSwapped }} width={columns} height={3} />
+    return <Client key="band" module="./tide/band.tsx" props={{ ...drawn, isSwapped }} width={columns} height={3} />
   })
 }
 
@@ -1072,6 +1092,16 @@ async function prefersReducedMotion($: EngineInterface): Promise<boolean> {
 async function appleTerminal($: EngineInterface): Promise<boolean> {
   try {
     return (await $.env.get('TERM_PROGRAM')) === 'Apple_Terminal'
+  } catch {
+    return false
+  }
+}
+
+// Ghostty, as Claude Code tells it (by TERM): its spinner draws its ✽ as a ✻ there, and the beach's
+// cheer does the same.
+async function ghostty($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.env.get('TERM')) === 'xterm-ghostty'
   } catch {
     return false
   }

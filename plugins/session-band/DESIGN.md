@@ -174,7 +174,7 @@ facts through a view that hands it exactly what its code reads, and nothing more
 
 | Hook | What it does |
 |---|---|
-| `session.start` | Registers `/band`; reads the motion, usage, model, repo, reduced motion and `TERM_PROGRAM`, each on its own so one failed lookup never blanks the rest, and writes them before git answers; arms the nap; shows the upgrade toast; then writes git's branch and count, even if a step before it went wrong. Idempotent. |
+| `session.start` | Registers `/band`; reads the motion, usage, model, repo, reduced motion, `TERM_PROGRAM` and `TERM`, each on its own so one failed lookup never blanks the rest, and writes them before git answers; arms the nap; shows the upgrade toast; then writes git's branch and count, even if a step before it went wrong. Idempotent. |
 | `session.measure` | Context, cost and limits; the `warnAt` toast; the tide back up to a starfish washes it away. |
 | `session.compact` | A compaction of the conversation that went through (not a precompute, a subagent's, or one a hook skipped) leaves the beach a starfish at the high-water mark: the context as it stood before the compaction ran, read first, since a measure may land while it runs. |
 | `classic.PostModelSwitch` | The main loop's new model, on line 3 at once. |
@@ -183,14 +183,14 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over, and the next conversation builds its own sandcastle (`castleFrom`). |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
-| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. Arms the redraw at the sky's next step. |
+| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
 percent; the cost and the limit shown; when the session was last active; the tools running
 (`running`, in start order, at most 32) and the one the band names (`activity`, the latest still
 running); the todos (at most 256); the last turn and how it ended (`answer`, `stopped` for Esc or a
 refusal, `error`); the turn's tools and files (`turnTools`, `turnTodoTools`, `turnFiles`); the cheer
-and failure counts; `isCalm`, `isAppleTerminal`, `isTurnOpen`, `greetedAt`, `isWarned`,
+and failure counts; `isCalm`, `isAppleTerminal`, `isGhostty`, `isTurnOpen`, `greetedAt`, `isWarned`,
 `unsavedMotion`; and `beat`, bumped when a moment ends with nothing else to say so, which makes the
 desktop redraw. The hearth adds its failure (`slip`, `lastSlip`, `slipDue`), its flinch and its held
 line (`held`). The tide adds the turn's start (`turnAt`, `turnPercent`), whether the turn changed
@@ -376,11 +376,15 @@ heart or the cheer's ✻ shows.
 **The night sky asks nothing of the scene.** From 8pm to 6am by the person's own clock, faint stars
 (the theme's dim `·`) come out at their own places from the beach's right edge (`STAR_PLACES`):
 three in the sky row over the sea and the far shore, one low over the open water. They are drawn
-after everything else, each only where the sky is clear for two cells either side, so a star never
-crowds him, a mark, the wave or the shell, no mark ever moves for one, and he walks in front of
-them. One twinkles (`✳`) while a wave washes up the sand, a different one each wave: those frames
-change anyway, so the sky never spends a frame of the second's four, and a still beach's stars hold
-still. The desktop hangs a gold crescent moon and four small four-point stars over the sea, behind
+after everything else, each only where the sky is clear for two cells either side and, under one
+in the sky row, just below it too, but for the sea of the wave behind its foam: a dot over him
+curled up asleep reads as resting on him, and one over the wave's foam as its spray. So a star
+never crowds him, his z's, a mark, the wave or the shell, no mark ever moves for one, and he walks
+in front of them. One twinkles (a dim `✢`, a glyph Claude Code's spinner draws on every terminal)
+while a wave washes up the sand, picked afresh each wave: those frames change anyway, so the sky
+never spends a frame of the second's four, and a still beach's stars hold still. A wave that meets a
+splash twinkles none, since the splash holds the water's edge and the wave's start and end would
+change only the star. The desktop hangs a gold crescent moon and four small four-point stars over the sea, behind
 everything, which twinkle by shrinking to a glint and back at their own paces, never fading; still,
 they shine on. On a beach of 64 units or more the moon crosses the sky through the night, in front of
 the stars it passes (see "The wide desktop beach"). Its alt ends "The stars are out."
@@ -394,8 +398,9 @@ the stars it passes (see "The wide desktop beach"). Its alt ends "The stars are 
   leaves half a cell. With no room on his left, both go on his right a cell apart, else the ✻ alone.
   Apple's Clawd ends in quadrants, so his stand a cell out each side, or at his claws if no room.
   Lively, they twinkle as Claude Code's spinner does: every other half second of the finale the ✻
-  swells to a heavy ✽ as the ✶ draws in to a ✢, each in its own cell (`twinkled`), while his feet
-  dance to the same beat, one pair lifted and then the other (`danceFeet`), as the hearth's Clawd
+  swells to a heavy ✽ as the ✶ draws in to a ✢, each in its own cell (`twinkled`); in Ghostty,
+  where Claude Code's spinner draws its ✽ as a ✻ (`isGhostty`, by `TERM`), the ✻ holds. His feet
+  dance to the beat, one pair lifted and then the other (`danceFeet`), as the hearth's Clawd
   shuffles in his cheer. Still, the finale is one held frame.
 - **The cheer's step out** (`stepOut`). Cheering from home, he steps a cell out so the ✶ has sky
   all around. By the band's edge (no shell) every cheer does, still and in Apple's Terminal too, the
@@ -424,10 +429,10 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | Stopped, or an error | No spin. "Stopped after 12s" (dim), or "Stopped on an error after 12s". | No cheer; the same words. |
 | A tool failed | Eyes shut, arms up, the water rushing to his feet with spray; then, cold feet, he hops from one pair to the other for a second, looking round at the water as it slides back. Still, the hit is held. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s, and he hops on his cold feet as it does. Four drops burst from the crest, each its own height, size and reach, and arc out to sea at full color, never fading: each flies outward at an even pace in a group of its own while it rises and falls, so its path is a true arc, and lands past the calm line, where the sea is by then, shrinking into it, all by 2.2 s (`DROPS_END_S`). Each failure is a new frame (`data-wave`); one in the first 1.25 s of the same turn rides along. |
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
-| A compaction lets the tide out | The water rolls out a cell a tick and leaves a starfish (Claude Code's ✶, in his clay) on the sand where its edge stood; he looks over at it as it shows. It stays until the tide comes back up to it (`starfishAt`), hidden only while the water washes over it or he stands over it, and the grains beside it make room. | A clay starfish lies on the sand face at the old edge, in front of the sand and behind the sea and him; the alt adds "A starfish lies where the tide was." |
-| Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". A prompt wakes him: he stands with a big stretch, arms up and eyes still shut, lowers them, then opens his eyes (¾ s). | He walks home, curls up, then "z Z Z". One source for the whole nap. Woken, he stretches the same way as the turn's first loop begins. |
+| A compaction lets the tide out | The water rolls out a cell a tick and leaves a starfish (Claude Code's ✶, in his clay) on the sand where its edge stood; he looks over at it as it shows (once a moment and his settle after it are over). It stays until the tide comes back up to it (`starfishAt`), and lies on as the water rolls in a cell a tick until the water reaches it (`washing`), hidden only while the water washes over it or he stands over it. The grains beside it make room, and its cell of sand stays dry, as his does: his clay on the damp tan all but vanishes. | A clay starfish lies on the sand face at the old edge, in front of the sand and behind the sea and him; the alt adds "A starfish lies where the tide was." |
+| Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". A prompt wakes him: he stands with a big stretch, arms up and eyes still shut, lowers them, then opens his eyes (¾ s). | He walks home, curls up, then "z Z Z". One source for the whole nap, but for the wide beach's sky steps: a step on his walk home opens him where the walk has him, and one after it opens him curled up. Woken, he stretches the same way as the turn's first loop begins. |
 | Day (6am to 8pm, your clock) | The beach as it always is. | From 64 units, the sun crossing the sky, warmer and larger as it rises and sets, two clouds, and a sailboat out at sea; the clouds blush and the glints turn gold at either end of the day. |
-| Night (8pm to 6am, your clock) | Faint stars over the sea, one twinkling with each wave that washes up. | A gold crescent moon and four twinkling stars over the sea, and moonlight glinting on the water under it; the alt says the stars are out. From 64 units the moon crosses the sky, more stars come out over the sand, and the sailboat lights a lantern; from 80, now and then a shooting star. |
+| Night (8pm to 6am, your clock) | Faint stars over the sea, one twinkling with each wave that washes up. | A gold crescent moon and four twinkling stars over the sea, and moonlight glinting on the water under it; the alt says the stars are out. From 64 units the moon crosses the sky and the sailboat lights a lantern, and wider, more stars come out over the sand; from 72, now and then a shooting star. |
 | Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A pointer resting on the beach: a pixel heart beside him that walks with him and beats softly; over his head as he sleeps. |
 | Still | Nothing moves on its own: a cheer is one held pose, a nap is curled at once, a splash is its peak frame. By the band's edge a pet during the cheer takes him home on the pet's own pose change. | No keyframes; reduced motion puts every animation under `prefers-reduced-motion: no-preference`. The frame holds him where the last one had him (`stillDx`). The alts say "Clawd stands on the sand" idle and "A wave splashes over Clawd's feet" for the held splash. |
 
@@ -498,7 +503,8 @@ server's tool is quoted with its server whole, then named in words, never as an 
 ### Terminal and desktop
 
 On the terminal, `hooks/tide/band.tsx` is the beach's `Client` module: exactly three rows, none
-padded, built from block elements, ASCII `z`, Claude Code's sparkles (✻ ✽ ✶ ✢ ✳), · and the
+padded, built from block elements, ASCII `z`, Claude Code's sparkles (✻ ✽ ✶ ✢, never its ✳, which
+some fonts draw as an emoji, nor its ✽ in Ghostty), · and the
 ellipsis. Clawd uses the theme keys `clawd_body` and `clawd_background`; the beach colors are
 accents no theme key covers.
 
@@ -507,13 +513,21 @@ converted quadrant by quadrant from the terminal's sprites. The frame is 64 px t
 its 54 px scene 5 px from the top, in a whole-pixel view (`viewBox="0 -5 192 64"`) at `scale(3)`.
 Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 px, between 120 and
 192 px. On a wider band it widens into the room the words leave (`beachWidth`): 64 units until the
-words have 290 px beside it and line 3 whole (each of its numbers counted as two zeros or more, so
-a count going from 9 to 10 never moves the beach), then two units (6 px) a column, up to 224 (672
-px). Like the narrow rule, two units a column keeps the words' room (7.6 px a column) growing as the
-band widens, so a narrower band never says more than a wider one. Beside "aaronpak · Opus 5.5" a
-96-column band (the Mac app's 768 px column) has a beach of 122 units, beside a branch and a count
-about 78. Only line 3 moves it, since lines 1 and 2 change all the time; a move is a new frame, as
-a resize is. The words use the terminal's chains measured in pixels (`PIXELS`), with the room from
+words have 290 px beside it and lines 2 and 3 whole (each of their numbers counted as two zeros or
+more, so a count going from 9 to 10, or a cost from $9.99 to $10.00, never moves the beach), then
+two units (6 px) a column, up to 224 (672 px). Like the narrow rule, two units a column keeps the
+words' room (7.6 px a column) growing as the band widens, so a narrower band never says more than a
+wider one. Beside "aaronpak · Opus 5.5" and the usual context line ("42% context · $0.31 · 5h limit
+23%") a 96-column band (the Mac app's 768 px column) has a beach of 122 units; beside a branch and a
+count about 78; beside a limit's reset time 96; at high tide with every part of the context line
+68, so the line says all it did beside the 64-unit beach. Only lines 2 and 3 move it (a new branch,
+another model, the reset time or the nudge to /compact coming in), since line 1 changes all the
+time, and the beach keeps room for those lines as wide as they have been on this desktop (`wordsPx`,
+for the activation), so a part that comes and goes (a count of uncommitted files with each edit and
+commit) narrows it once, never back and forth. A move is a new frame, as a resize is. A fresh
+session's desktop beach waits up to half a second for git (`GIT_WAIT_MS`), drawing nothing, so git's
+usual answer is in its first frame and the branch joining line 3 never narrows it under the words
+(a git slower than that only joins the line). The words use the terminal's chains measured in pixels (`PIXELS`), with the room from
 `bodyColumns` less the diorama and three cells of slack (`deskRoom`).
 
 The `Svg` restarts every animation whenever its source changes, so the source is built only from
@@ -563,7 +577,7 @@ tide still reads as the sand he has left. Each thing comes in at the width that 
 
 | From | What comes in |
 |---|---|
-| 64 units | The sun by day, crossing the sky by the clock; two small clouds; a sailboat out at sea, which lights a lantern at night; the moon crossing the sky by night; a fish leaping where the open water is wide enough. Wider, stars come out over the sand too. |
+| 64 units | The sun by day, crossing the sky by the clock; two small clouds; a sailboat out at sea once there is room on it (from the first reading), which lights a lantern at night; the moon crossing the sky by night; a fish leaping where the open water is wide enough, gliding with the water as a tide comes in or goes out. Wider, stars come out over the sand too. |
 | 72 | His sandcastle, built from the conversation's answered turns; a pair of gulls now and then; a shooting star now and then by night. |
 | 112 | A beach umbrella with a towel in its shade. |
 | 176 | A third cloud. |
@@ -583,12 +597,18 @@ tide still reads as the sand he has left. Each thing comes in at the width that 
 - **His sandcastle** stands just past his place, so his strolls pass in front of it, in the beach's
   own sand with a darker shaded side and openings. It gains a piece at 1, 2, 3, 5, 8 and 13 answered
   turns of the conversation (`castleStage`): a bucket's mound, a tower, a wall and a second tower, a
-  door, windows, and a clay flag that flutters, with the blue bucket that built it beside it. The
+  door, windows, and a clay flag that flutters (on the first tower's right merlon, clear of the z's
+  that drift up as he naps), with the blue bucket that built it beside it. The
   cheer of the turn that adds a piece pops it up out of the sand as his arms go up (`built`).
   `/clear` starts the next conversation's castle from nothing (`castleFrom`). The tide washes round
   it when it comes that far.
 - **The scene memory keeps 16 widths** (`WIDTHS_KEPT`): above 64 units each column is a width of its
   own, and a memory pushed out before its desktop draws again would start afresh on every redraw.
+  Draws within `SAME_REDRAW_MS` of each other are one redraw, so bands on several desktops drawn by
+  the same change never find another width having had the screen across a quiet spell.
+- **The source stays well inside the engine's 131,072 characters.** Every animation steps, so each
+  of his poses keeps only the keyframe stops that change it; the widest beach's cheer after a long
+  walk home is under 80,000.
 - **The beach umbrella** stands midway between the farthest he strolls and the water's edge at 40%
   context (`umbrellaAt`): clay and cream panels rimmed in a deeper clay, a driftwood pole, and a
   striped blue towel in its shade. While the calm water reaches its shade it is packed away.
@@ -800,8 +820,12 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   watched in the app as its effort warning comes and goes.
 - **The sky is the machine's.** The night, the sun and the moon follow the clock and time zone of
   the machine the session runs on, which for a remote session may not be the person's own. On a light terminal the
-  stars are the theme's dim gray, faint by design; the desktop's gold moon is fainter on the light
-  page than on the dark one.
+  stars are the theme's dim gray, faint by design; the desktop's gold moon, its soft sun, its pale
+  clouds and its starlight are fainter on the light page than on the dark one (the sun about 1.4 to
+  1, a cloud's top about 1.1), and the driftwood mast and umbrella pole about 2.3 to 1 on the dark
+  page.
+- **How wide the desktop's lines have been is the activation's** (`wordsPx`). A reload forgets it,
+  so a part of line 2 or 3 that came and went before the reload narrows the beach once more.
 - **Theme colors are rounded by the host.** Clawd, the words and the hearth's meters use Claude
   Code's theme keys, which a 256-color terminal shows as the host rounds them, as it does its own
   Clawd. Under chalk's rounding Clawd's clay shows as pink `#d78787`, entry 174, which the shell's
@@ -882,9 +906,11 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   the band by itself), the starfish (what leaves one, where it lies, his look, the tide washing it
   away), the desktop's shadow and glints (in step with the sea from frame to frame), and the wide
   beach (its width beside the words at every band from 34 to 220 columns, the sun's and the moon's
-  crossing and the redraw at each step, a step held through a long tool or a moment still on,
-  the scenery by width, the clouds clear of his stroll, the castle's stages and its pop, the
-  umbrella packed away, the golden hour). Times that
+  crossing and the redraw at each step, a step held through a long tool or a moment still on, his
+  walk home for a nap carried across a step, the scenery by width, the
+  clouds clear of his stroll, his stroll by width, the castle's stages and its pop, the umbrella
+  packed away, the golden hour, the context line whole beside it, a part of a line that comes and
+  goes narrowing it once, the wait for git, and the source well inside the engine's limit). Times that
   matter to the night are local, so the tests hold in any time zone (`claude plugin test` keeps
   UTC, so most run at night); a test that holds a whole alt adds what its clock says of the stars
   (`starsSaid`).

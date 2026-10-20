@@ -50,6 +50,7 @@ export function tideInfo(known: Facts): Info {
     turnAt: known.turnAt,
     isCalm: known.isCalm,
     isAppleTerminal: known.isAppleTerminal,
+    isGhostty: known.isGhostty,
   }
 }
 

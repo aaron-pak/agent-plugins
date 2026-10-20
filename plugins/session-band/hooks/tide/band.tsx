@@ -87,6 +87,11 @@ type Live = {
   seenOops: number
   /** The starfish this band has seen the tide leave: he looks over at each new one as it shows. */
   seenTreasures: number
+  /**
+   * Where a starfish the tide has come back up to lay (its fill, as `treasure`): the facts let it go
+   * at once, but the water rolls in a cell a tick, so it lies on until the water drawn reaches it.
+   */
+  washing: number | null
   /** The facts' waves this band has splashed for: a failure that rides along with a wave starts none. */
   seenWaves: number
   /**
@@ -348,6 +353,7 @@ function start(props: BandProps, columns: number): Live {
     seenCheers: props.cheers,
     seenOops: props.oops,
     seenTreasures: props.treasures,
+    washing: null,
     seenWaves: props.waves,
     isWaveSeen,
     quietAt: NEVER,
@@ -510,6 +516,15 @@ function adopt(live: Live, props: BandProps, key: string): void {
   live.seenCheers = props.cheers
   live.seenOops = props.oops
   live.seenWaves = props.waves
+  if (props.isStill) {
+    // Still, he never looks over at a starfish: one there all along is no news once he is lively.
+    live.seenTreasures = props.treasures
+  }
+  // The tide back up to the starfish lets it go: it lies on until the water rolling in reaches it
+  // (see plan). A new one takes its place, and a /clear takes it at once, with the conversation (the
+  // reading goes with it, or comes back below the starfish).
+  const left = live.props.treasure ?? live.washing
+  live.washing = left !== null && props.treasure === null && props.percent !== null && props.percent >= left ? left : null
   live.props = props
   if (props.isStill || props.isAppleTerminal) {
     // Still, a cheer is its finale alone: one that goes on lively after this carries its arms on up.
@@ -899,6 +914,9 @@ function plan(live: Live, columns: number): void {
   // The water rolls toward where the context puts it, a cell a tick (a still beach has it there already).
   const tide = tideline(live.props, beach)
   live.shore += Math.sign(tide - live.shore)
+  if (live.washing !== null && live.shore <= tideline({ ...live.props, percent: live.washing }, beach)) {
+    live.washing = null
+  }
   const [low, high] = range(live, beach)
   const mood = moodOf(live)
   const { tick } = live
@@ -922,10 +940,11 @@ function plan(live: Live, columns: number): void {
   if (live.busyAt === tick - 1) {
     settle(live, mood)
   }
-  // The tide has gone out from a starfish it left: as it shows on the sand, he looks over at it.
+  // The tide has gone out from a starfish it left: as it shows on the sand, he looks over at it (a
+  // moment's settle first, if it showed during one).
   if (live.props.treasures > live.seenTreasures && starfishAt(live, beach) !== null) {
     live.seenTreasures = live.props.treasures
-    live.glanceAt = tick + 1
+    live.glanceAt = Math.max(tick + 1, live.busyAt + SETTLE)
   }
   // Out a cell for his cheer, he leaves it on a tick no wave washes up to his feet (nor will on the
   // next): with a foot lifted beside the water he would read as stepping out of the sea, so he waits
@@ -1252,8 +1271,9 @@ function finaleBeat(live: Live): number | null {
 
 /**
  * The cheer's sparkles, twinkling as Claude Code's spinner does: every other half second of the
- * finale they swap to their other form, the ✻ swelling to a heavy ✽ as the ✶ draws in to a ✢. Each
- * keeps its cell. Still, they hold their first form, one frame for the whole cheer.
+ * finale they swap to their other form, the ✻ swelling to a heavy ✽ as the ✶ draws in to a ✢ (in
+ * Ghostty, whose ✽ Claude Code's spinner draws as a ✻, the ✻ holds). Each keeps its cell. Still,
+ * they hold their first form, one frame for the whole cheer.
  */
 function twinkled(live: Live, place: Mark[] | undefined): Mark[] | undefined {
   const beat = finaleBeat(live)
@@ -1261,7 +1281,9 @@ function twinkled(live: Live, place: Mark[] | undefined): Mark[] | undefined {
     return place
   }
 
-  return place.map(mark => ({ ...mark, cell: { ...mark.cell, ch: TWINKLE[mark.cell.ch] ?? mark.cell.ch } }))
+  const forms = live.props.isGhostty ? GHOSTTY_TWINKLE : TWINKLE
+
+  return place.map(mark => ({ ...mark, cell: { ...mark.cell, ch: forms[mark.cell.ch] ?? mark.cell.ch } }))
 }
 
 /**
@@ -1274,8 +1296,12 @@ function danceFeet(live: Live): Feet {
   return beat === 1 ? 'left' : beat === 2 ? 'right' : 'both'
 }
 
-/** Each sparkle's other form, and how long a beat of the finale lasts (half a second). */
+/**
+ * Each sparkle's other form, and how long a beat of the finale lasts (half a second). Only the
+ * glyphs Claude Code's spinner draws on that terminal: it draws no ✽ in Ghostty.
+ */
 const TWINKLE: Record<string, string> = { '✻': '✽', '✶': '✢' }
+const GHOSTTY_TWINKLE: Record<string, string> = { '✶': '✢' }
 const BEAT_TICKS = 2
 
 /** Which cheer, beach and spot a choice of sparkles was made for. */
@@ -1490,7 +1516,7 @@ const STARFISH = '✶'
  * stands over it or a cell from it, as a grain is, so it never crowds his feet. Never on the shell.
  */
 function starfishAt(live: Live, beach: number): number | null {
-  const percent = live.props.treasure
+  const percent = live.props.treasure ?? live.washing
   if (percent === null) {
     return null
   }
@@ -1552,11 +1578,12 @@ function scene(live: Live, beach: number): Row[] {
   const isDamp = live.props.isStill ? isSplashShown(live) : splashed >= 2 && splashed < DAMP_TICKS
   const trail = isDamp ? live.splashFrom + 4 : beach
   const damp = Math.min(Math.min(edge, shore) - 2, trail)
-  // A starfish on the sand (see starfishAt): the grains beside it make room, as they do for his feet.
+  // A starfish on the sand (see starfishAt): the grains beside it make room, as they do for his feet,
+  // and the sand under it stays dry, as under his: his clay on the damp tan all but vanishes.
   const starfish = starfishAt(live, beach)
   for (let col = 0; col < beach; col++) {
     const isNear = (col >= live.x - 1 && col <= live.x + SPRITE) || (starfish !== null && Math.abs(col - starfish) <= 1)
-    ground.push(groundAt(col, edge, damp, isNear, col >= live.x && col < live.x + SPRITE))
+    ground.push(groundAt(col, edge, damp, isNear, (col >= live.x && col < live.x + SPRITE) || col === starfish))
   }
   if (hasShell(beach) && edge > SHELL_WIDTH) {
     for (const [r, c, cell] of SHELL_CELLS) {
@@ -1653,26 +1680,39 @@ const STAR_PLACES: Array<[number, number]> = [
   [0, 9],
   [0, 15],
 ]
-/** A star at rest, faint as distant stars are, and while it twinkles. */
+/**
+ * A star at rest, faint as distant stars are, and while it twinkles: a glyph Claude Code's spinner
+ * draws on every terminal (its ✳, an emoji in some fonts, only in Ghostty).
+ */
 const STAR = '·'
-const STAR_TWINKLE = '✳'
+const STAR_TWINKLE = '✢'
 
 /**
  * The stars at night: faint dots in the sky over the sea, each at its own place, so the tide never
- * moves them. Drawn last, and only where the sky is clear for two cells either side, so a star never
- * crowds him, a mark, the wave, the shell or another star, and he walks in front of them. One
- * twinkles while a wave washes up the sand, a different one each wave: the sea's frames change then
- * anyway, so the sky never asks a frame of its own, and a still beach's stars hold still.
+ * moves them. Drawn last, and only where the sky is clear for two cells either side and, under a
+ * star in the sky row, just below it too, but for the sea of the wave behind its foam (never him
+ * curled up asleep, his z's, or the wave's foam: a dot there reads as resting on him, or as the
+ * wave's spray), so a star never crowds him, a mark, the wave, the shell or another star, and he
+ * walks in front of them. One twinkles while a wave washes up the sand, picked afresh each wave: the
+ * sea's frames change then anyway, so the sky never asks a frame of its own, and a still beach's
+ * stars hold still. Never for a wave that meets a splash, whose water holds the edge, so the wave's
+ * own start and end change nothing else.
  */
 function stars(live: Live, beach: number, rows: Row[]): Mark[] {
   const isEmpty = (row: number, col: number) => {
     const cell = rows[row]?.[col]
     return col < 0 || col >= beach || (cell !== undefined && cell.ch === ' ' && cell.bg === undefined)
   }
+  // Below a star in the sky row, open sky or the wave's sea; below one low over the water, the ground.
+  const isOpenBelow = (row: number, col: number) => {
+    const cell = rows[row + 1]?.[col]
+    return row + 1 >= rows.length - 1 || isEmpty(row + 1, col) || (cell?.kind === 'wave' && cell.color === SEA)
+  }
   const clear = STAR_PLACES.map(([row, from]) => [row, beach - from] as const).filter(
-    ([row, col]) => col >= 0 && [-2, -1, 0, 1, 2].every(d => isEmpty(row, col + d)),
+    ([row, col]) => col >= 0 && [-2, -1, 0, 1, 2].every(d => isEmpty(row, col + d)) && [-1, 0, 1].every(d => isOpenBelow(row, col + d)),
   )
-  const twinkle = lap(live) > 0 ? dice(live.lapAt * 8 + 7, clear.length) : -1
+  const isSplashLap = live.splashAt !== NEVER && live.splashAt <= live.tick && live.splashAt + SPLASH_TICKS > live.lapAt
+  const twinkle = lap(live) > 0 && !isSplashLap ? dice(live.lapAt * 8 + 7, clear.length) : -1
 
   return clear.map(([row, col], i) => ({ row, col, cell: { ch: i === twinkle ? STAR_TWINKLE : STAR, dim: true } }))
 }

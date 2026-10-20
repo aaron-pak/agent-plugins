@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { ConfigRow, ConfigSetInput, On, RenderElement, RenderPropsOf, SessionMeasureInput, SessionUsage, TurnCompleteInput } from 'claude-code'
 
-import { EMPTY, GAP_MS, HOLD_MS, NO_DESK, NOTHING_HELD, RUNNING_MAX, SPLASH_MS, TALLY_MOST_MS, TALLY_WAIT_MS, TODOS_MAX, describe, durationForms, heldId, isInterrupted, limitLabel, limitShown, nextTodos, pendingWakes, phraseForms, prettyModel, runningAfter, stepDesk, stepHeld, todosAfterTurn, usingForms, whole } from '../hooks/facts'
+import { EMPTY, GAP_MS, GIT_WAIT_MS, HOLD_MS, NO_DESK, NOTHING_HELD, RUNNING_MAX, SPLASH_MS, TALLY_MOST_MS, TALLY_WAIT_MS, TODOS_MAX, describe, durationForms, heldId, isInterrupted, limitLabel, limitShown, nextTodos, pendingWakes, phraseForms, prettyModel, runningAfter, stepDesk, stepHeld, todosAfterTurn, usingForms, whole } from '../hooks/facts'
 import { bandProps as hearthProps } from '../hooks/hearth/props'
 import { hearthInfo, slipAt } from '../hooks/hearth/view'
 import { REPLY_MOST, lookNow, migrateMotion, offReply, parseBand, replyFor, toastFor, troubleReply, upgradeToast } from '../hooks/look'
@@ -2553,6 +2553,8 @@ for (const which of ['tide', 'hearth'] as const) {
       }
       const { clock } = world(on, { git })
       const facts = factsOf(on)
+      // What the engine draws while the beach's desktop band waits for git: nothing.
+      on('ui.render', () => ({ type: 'Box', children: [] }))
       const starting = async () => {
         const started = $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
         await clock.advance(10)
@@ -2563,6 +2565,12 @@ for (const which of ['tide', 'hearth'] as const) {
       for (const columns of WHERE_WIDTHS) {
         const props = { ...BAND, bodyColumns: columns }
         for (const surface of SURFACES) bands.push({ columns, surface, props, band: await mount($, surface, props) })
+      }
+      // The beach's desktop band waits a moment for git first (its words' lines set the beach's
+      // width): nothing yet, then, with git still out once the wait is over, its first frame.
+      if (which === 'tide') {
+        for (const { columns, surface, band } of bands) if (surface === 'desktop') expect([columns, (await band.look()).rows]).toEqual([columns, []])
+        await clock.advance(GIT_WAIT_MS + 20)
       }
       // The where line (the beach's line 3, the hearth's line 1) from the project on, and what stands
       // at its right end apart from it (the hearth's model, pinned to the panel's edge).
@@ -2621,6 +2629,62 @@ for (const which of ['tide', 'hearth'] as const) {
     })
   }
 }
+
+// git's usual answer lands within the beach's wait: its desktop band's first frame already has the
+// branch, the count and the model, so the beach is drawn once at its width, and its frame (the hello
+// and all) never starts over as line 3 fills in.
+test('tide: a fresh session\'s desktop beach waits a moment for git, then draws once, at the width its whole where-line leaves', { options: { look: 'tide' } }, async ($, on) => {
+  let release: () => void = () => undefined
+  const git: { held: Promise<void> | null; branch: string } = {
+    held: new Promise<void>(resolve => {
+      release = resolve
+    }),
+    branch: 'claude/first-mod-polish',
+  }
+  const { clock } = world(on, { git })
+  on('ui.render', () => ({ type: 'Box', children: [] }))
+  const started = $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+  await clock.advance(10)
+  const { ui, look } = await mount($, 'desktop', { ...BAND, bodyColumns: 100 })
+  expect((await look()).rows).toEqual([])
+  await clock.advance(100)
+  release()
+  git.held = null
+  await started
+  await clock.advance(10)
+  const first = await look()
+  expect(first.text).toContain('agent-plugins · claude/first-mod-polish · 2 uncommitted · Opus 5.5')
+  const sources = new Set([first.source])
+  for (let i = 0; i < 12; i++) {
+    await clock.advance(250)
+    sources.add((await look()).source)
+  }
+  expect(sources.size).toBe(1)
+  await ui.unmount()
+})
+
+// The beach keeps room for its lines as wide as they have been: a count of uncommitted files that
+// comes with an edit and goes with a commit narrows it once, never back and forth with each.
+test('tide: on the desktop a count of uncommitted files coming and going narrows the beach once, never back and forth', { options: { look: 'tide' } }, async ($, on) => {
+  const git: { held: Promise<void> | null; status?: string; branch: string } = { held: null, status: '', branch: 'feature/session-band' }
+  const { clock } = world(on, { git })
+  await start($)
+  const props = { ...BAND, bodyColumns: 96 }
+  const { ui, look } = await mount($, 'desktop', props)
+  const width = async () => Number(/viewBox="0 -5 (\d+) 64"/u.exec((await look()).source)?.[1])
+  const widths = [await width()]
+  for (const status of [' M a.ts\n', '', ' M a.ts\n', '']) {
+    git.status = status
+    await turn($)
+    await clock.advance(20_000)
+    await ui.redraw(props)
+    widths.push(await width())
+  }
+  expect((await look()).text).not.toContain('uncommitted')
+  expect(widths[1]).toBeLessThan(widths[0] ?? 0)
+  expect(widths.slice(1)).toEqual([widths[1], widths[1], widths[1], widths[1]])
+  await ui.unmount()
+})
 
 // The upgrade note reads the pick to find the look on screen. A pick that cannot be read leaves
 // /config's look, and never stops the start before git's answer lands, so the branch, the count and
@@ -4954,6 +5018,23 @@ test('desktop scenes: a width drawn again after another had the screen a while s
   for (const at of [10, 250, 1_500, 4_000, 9_000]) {
     const again = [two.settle(props(100, T0 + at), T0 + at, null), two.settle(props(40, T0 + at), T0 + at, null)]
     expect([at, again.map(shown => shown.keep)]).toEqual([at, [undefined, undefined]])
+    expect([at, again.map(shown => shown.scene)]).toEqual([at, first.map(shown => shown.scene)])
+  }
+})
+
+// A band dragged through many widths, or bands in several windows, draw at many widths together:
+// each keeps its own scene, so none starts afresh on every redraw, and the widest never writes its
+// copy each time.
+test('desktop scenes: twelve widths drawn together each keep their own scene, redraw after redraw', () => {
+  const known: Info = { ...EMPTY, percent: 42, turnPercent: 42, turnAt: T0, lastActiveAt: T0, turnWorked: true }
+  const props = (columns: number, now: number) => tideProps(tideInfo(known), 'lively', true, 80, columns, now, null, true)
+  const scenes = desktopScenes()
+  const widths = [80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 124]
+  const first = widths.map(columns => scenes.settle(props(columns, T0), T0, null))
+  expect(new Set(first.map(shown => shown.scene.width)).size).toBe(widths.length)
+  for (const at of [10, 250, 1_500, 4_000]) {
+    const again = widths.map(columns => scenes.settle(props(columns, T0 + at), T0 + at, null))
+    expect([at, again.map(shown => shown.keep)]).toEqual([at, widths.map(() => undefined)])
     expect([at, again.map(shown => shown.scene)]).toEqual([at, first.map(shown => shown.scene)])
   }
 })
