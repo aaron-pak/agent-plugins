@@ -15,6 +15,12 @@ export const NAP_AFTER_MS = 3 * 60_000
 export const NAP_LATE_MS = 1000
 /** Clawd waves hello when the band first appears in a session, and only then (not each time a dialog hides and shows it again). */
 export const GREET_MS = 5000
+/**
+ * How long a fresh session's desktop beach waits for git before its first frame: its words' lines
+ * set the beach's width, and git's answer (the branch, the count, the model) joining line 3 would
+ * narrow the beach under the words and start the frame over. git's answer draws it at once.
+ */
+export const GIT_WAIT_MS = 500
 export const FILE_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
 /** Tools that look at things: the tide's Clawd watches the words while they run. */
 export const LOOK_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'LS', 'NotebookRead', 'ListMcpResourcesTool', 'ReadMcpResourceTool'])
@@ -113,6 +119,7 @@ export const EMPTY: Info = {
   oops: 0,
   isCalm: false,
   isAppleTerminal: false,
+  isGhostty: false,
   isGitRead: false,
   beat: 0,
   turnPercent: null,

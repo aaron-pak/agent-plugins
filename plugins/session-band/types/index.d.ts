@@ -111,6 +111,8 @@ export type Info = {
   isCalm: boolean
   /** Apple's Terminal, where Claude Code draws a simpler Clawd. */
   isAppleTerminal: boolean
+  /** Ghostty, where Claude Code's spinner draws its ✽ as a ✻. */
+  isGhostty: boolean
   /**
    * git has answered this session (or given up). Until it has, both looks hold back the model, so the
    * branch joins the where line without moving or taking anything from it: on the beach the model

@@ -34,7 +34,9 @@ const NARROW = 40
 const WIDEST = 224
 /**
  * The least room the words keep beside a widened beach, in pixels: a turn's tally whole ("✻ Done in
- * 41s · 7 tools · 2 files changed"), and the context line with every number at its widest.
+ * 41s · 7 tools · 2 files changed"), and the context line's usual form ("42% context · $0.31 · 5h
+ * limit 23%") with every number at its widest. (Its longer forms, and the where-line, keep their
+ * own room: see beachWidth.)
  */
 const WORDS_LEAST_PX = 290
 const H = 18
@@ -165,24 +167,49 @@ function dioramaWidth(columns: number): number {
 }
 
 /**
- * How wide the beach is beside a band of `columns` whose where-line is `place` (its widest form), in
- * units. Up to 48 columns it is dioramaWidth's, and 64 from there until the words have their room
- * beside it: WORDS_LEAST_PX at least, and their where-line whole, each of its numbers counted as two
- * zeros or more, so a count going from 9 to 10 (or 13 to 14) never moves the beach. From that band
- * on it widens two units (6 px) a column, up to WIDEST, so the words' room (7.6 px a column) never
- * shrinks as the band widens and a narrower band never says more than a wider one. Only that line's
- * parts move it (a new branch, another model), and a move is a new frame as a resize is.
+ * How wide the beach is beside a band of `columns` whose context and where-lines (lines 2 and 3)
+ * are `lines`, each in its widest form, in units. Up to 48 columns it is dioramaWidth's, and 64 from
+ * there until the words have their room beside it: WORDS_LEAST_PX at least, and both lines whole
+ * (see linesPx). From that band on it widens two units (6 px) a column, up to WIDEST, so the words'
+ * room (7.6 px a column) never shrinks as the band widens and a narrower band never says more than
+ * a wider one. Only those lines' parts move it (a new branch, another model, the context line's
+ * reset time or its nudge to /compact coming in), never line 1, which changes all the time, and a
+ * move is a new frame as a resize is. `least`: room kept for lines as wide as they have been (see
+ * beachOf), so a part that comes and goes narrows it once, never back and forth.
  */
-export function beachWidth(columns: number, place: Words): number {
+export function beachWidth(columns: number, lines: Words[], least = 0): number {
   const narrow = dioramaWidth(columns)
   if (!Number.isFinite(columns) || columns <= 0) {
     return narrow
   }
-  const where = place.reduce((sum, piece) => sum + textPx(piece.text.replace(/\d+/gu, digits => '0'.repeat(Math.max(2, digits.length))), piece.bold === true || piece.fitsAsBold === true), 0)
+  const widest = Math.max(WORDS_LEAST_PX, least, linesPx(lines))
   // The first band whose words have their room beside the 64-unit beach (see deskRoom).
-  const from = Math.ceil((Math.max(WORDS_LEAST_PX, where) + 3 * CELL_PX + 1 + WIDE * U) / CELL_PX)
+  const from = Math.ceil((widest + 3 * CELL_PX + 1 + WIDE * U) / CELL_PX)
 
   return Math.max(narrow, Math.min(WIDEST, WIDE + 2 * (Math.floor(columns) - from)))
+}
+
+/**
+ * How wide the widest of `lines` is, in pixels, each of its numbers counted as two zeros or more, so
+ * a count going from 9 to 10 (or a cost from $9.99 to $10.00) never moves the beach.
+ */
+export function linesPx(lines: Words[]): number {
+  const whole = (line: Words) => line.reduce((sum, piece) => sum + textPx(piece.text.replace(/\d+/gu, digits => '0'.repeat(Math.max(2, digits.length))), piece.bold === true || piece.fitsAsBold === true), 0)
+
+  return Math.max(0, ...lines.map(whole))
+}
+
+/** The lines that set the beach's width: the context and where-lines, each in its widest form. */
+export function widthLines(props: BandProps): Words[] {
+  return [props.words.tide[0] ?? [], props.words.place[0] ?? []]
+}
+
+/**
+ * The beach beside these words (see beachWidth): room for their context and where-lines, and for
+ * those lines as wide as they have been on this desktop (`wordsPx`).
+ */
+export function beachOf(props: BandProps): number {
+  return beachWidth(props.columns, widthLines(props), props.wordsPx ?? 0)
 }
 
 /**
@@ -291,7 +318,7 @@ export function sceneOf(props: BandProps): Scene {
 
   const treasure = props.treasure === null ? null : Math.round(props.treasure / TIDE_STEP) * TIDE_STEP
 
-  const width = beachWidth(props.columns, props.words.place[0] ?? [])
+  const width = beachOf(props)
   const castle = castleStage(props.castle, width)
   const built = moment === 'cheer' && !props.isStill && castle > 0 && CASTLE_TURNS.includes(props.castle)
 
@@ -378,7 +405,13 @@ export function carriedPhase(last: Scene, ms: number, next: Scene): number | und
 export function positionAt(scene: Scene, ms: number): number {
   const { mood, still } = scene
   if (mood === 'nap') {
-    return 0
+    // Curled up by the shell, home; still on his walk home to it, where the walk has him.
+    if (isCurledAt(scene, ms)) {
+      return 0
+    }
+    const { beats } = napLead(scene.from ?? 0)
+
+    return beats.reduce((x, beat) => (beat.at <= ms / 1000 ? beat.x : x), beats[0]?.x ?? 0)
   }
   const { start } = layout(scene)
   if (still) {
@@ -961,8 +994,17 @@ function round(seconds: number): number {
   return Math.round(seconds * 100) / 100
 }
 
+// Every animation here steps (step-end), so a value holds until the next stop: a stop that changes
+// nothing is left out, or a long walk's poses, each with a stop for every beat, would fill the source
+// past what the engine draws.
 function keyframes(name: string, period: number, beats: Beat[], value: (beat: Beat) => string): string {
-  const stops = beats.map(beat => `${pct(beat.at / period)}{${value(beat)}}`)
+  const stops: string[] = []
+  let was: string | null = null
+  for (const beat of beats) {
+    const now = value(beat)
+    if (now !== was) stops.push(`${pct(beat.at / period)}{${now}}`)
+    was = now
+  }
   const last = beats[beats.length - 1]
   if (last !== undefined) stops.push(`100%{${value(last)}}`)
 
@@ -1074,10 +1116,10 @@ function diorama(scene: Scene): string {
   parts.push(shade.under)
   parts.push(castle(scene, clock, base, motion))
   parts.push(shade.over)
-  parts.push(starfish(scene))
   parts.push(shell())
   parts.push(fish(scene, layout(scene).shore, clock, base, motion))
-  const { water, spray } = sea(scene, base, motion)
+  // The starfish lies over the damp sand by the water (his clay under the damp would wash out), under the water.
+  const { water, spray } = sea(scene, base, motion, starfish(scene))
   parts.push(water)
   parts.push(boat(scene, clock, base, motion))
 
@@ -1447,7 +1489,8 @@ function castle(scene: Scene, clock: number, base: string[], motion: string[]): 
     `<path d="M${round(bx + 0.15)} ${GROUND - 2.1}A1 1.1 0 0 1 ${round(bx + 2.05)} ${GROUND - 2.1}" fill="none" stroke="${SEA_DEEP}" stroke-width=".22"/>` +
     `<path d="M${bx} ${GROUND - 2.1}H${round(bx + 2.2)}L${round(bx + 1.85)} ${round(GROUND + 0.45)}H${round(bx + 0.35)}Z" fill="${SEA}"/>` +
     `<rect x="${round(bx - 0.1)}" y="${GROUND - 2.3}" width="2.4" height=".5" rx=".2" fill="${FOAM}"/>`
-  const pole = x + 2.4
+  // On the first tower's right merlon, clear of the z's that drift up as he naps by the shell.
+  const pole = x + 4.05
   // Each piece and the stage that adds it, back to front: the wall and the second tower stand behind
   // the first tower, and the mound gives way to it.
   const pieces: Array<[number, string]> = [
@@ -1520,7 +1563,8 @@ function umbrella(scene: Scene): { under: string; over: string } {
 /**
  * Now and then a little fish leaps out of the open sea and dives back in: once every 42 seconds on
  * the sea's clock, an arc of a second, out where the water is wide enough on a beach of 64 units or
- * more. It swims behind the water, so the sea hides it until it leaps. Never in a still frame.
+ * more. It swims behind the water, and glides with it, so the sea hides it until it leaps. Never in
+ * a still frame.
  */
 function fish(scene: Scene, shore: number, clock: number, base: string[], motion: string[]): string {
   const { width } = scene
@@ -1543,8 +1587,12 @@ function fish(scene: Scene, shore: number, clock: number, base: string[], motion
   const body = `M${round(x - 0.9)} ${y}Q${x} ${round(y - 0.75)} ${round(x + 0.9)} ${y}Q${x} ${round(y + 0.75)} ${round(x - 0.9)} ${y}Z`
   const tail = `M${round(x - 0.7)} ${y}L${round(x - 1.5)} ${round(y - 0.55)}V${round(y + 0.55)}Z`
 
-  return `<g class="fishx"><g class="fishy"><path d="${body}${tail}" fill="${SEA_DEEP}"/></g></g>`
+  // It glides with the water (see sea), so a tide coming in never leaves it on the sand a moment.
+  return `<g class="glide"><g class="fishx"><g class="fishy"><path d="${body}${tail}" fill="${SEA_DEEP}"/></g></g></g>`
 }
+
+/** The least open sea the sailboat floats on, in units: its hull past the shore's shoulder, inside the picture. */
+const BOAT_SEA = 11
 
 /**
  * A little sailboat far out on the open sea, bobbing on the swell on the sea's clock: a clay hull, a
@@ -1554,10 +1602,13 @@ function fish(scene: Scene, shore: number, clock: number, base: string[], motion
  */
 function boat(scene: Scene, clock: number, base: string[], motion: string[]): string {
   const { width, night } = scene
-  if (width < WIDE) {
+  const { shore } = layout(scene)
+  // Past the shore's shoulder and inside the picture, its lantern clear of the stars: no room on the
+  // narrowest sea (no reading yet), so it sails in with the first.
+  if (width < WIDE || width - shore < BOAT_SEA) {
     return ''
   }
-  const x = round(Math.max(width - 8, layout(scene).shore + 6))
+  const x = round(Math.max(width - 8, shore + 6))
   const y = GROUND - 0.9
   const parts = [
     `<path d="M${x} ${round(y - 0.3)}V${round(y - 5.8)}" stroke="${MAST}" stroke-width=".25"/>`,
@@ -1592,7 +1643,7 @@ function shell(): string {
 // Everything that moves picks up where the last frame had it (see Sea): the crests roll on, a lap
 // out on the sand finishes, and the front glides from where it stood to the calm line. The spray
 // is drawn apart, after Clawd, so it flies in front of the picture and never behind his head.
-function sea(scene: Scene, base: string[], motion: string[]): { water: string; spray: string } {
+function sea(scene: Scene, base: string[], motion: string[], onSand = ''): { water: string; spray: string } {
   const { mood, width } = scene
   const { shore, start } = layout(scene)
   const carried = scene.sea ?? CALM_SEA
@@ -1638,6 +1689,7 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     // It runs on under the water's sloping front, so no edge of it ever shows.
     `<linearGradient id="damp" x1="0" x2="1"><stop offset="0" stop-color="${WET}" stop-opacity="0"/><stop offset=".6" stop-color="${WET}"/><stop offset="1" stop-color="${WET}"/></linearGradient>`,
     `<g clip-path="url(#sand)"><g class="glide"><rect x="${shore - 9}" y="${GROUND - 0.2}" width="15" height="${H - GROUND + 0.2}" fill="url(#damp)"/></g></g>`,
+    onSand,
     `<g class="glide"><g${run > 0 ? ' class="surge"' : ''}><g class="lap">`,
     `<path d="${body}" fill="${SEA}"/>`,
     `<rect x="${shore}" y="${GROUND + 2}" width="${far - shore}" height="${H - GROUND - 2}" fill="${SEA_DEEP}" clip-path="url(#water)"/>`,
@@ -1844,8 +1896,8 @@ function heart(x: number, y: number): string {
 }
 
 // Curled up by the shell, nestled in the sand, little z's drifting up from him one after another.
-// The source is the same for the whole nap (nothing in it counts time), so a redraw while he
-// sleeps (a measure, a toast) hands the frame the same source and nothing restarts.
+// Nothing in the source counts time, so a redraw while he sleeps (a measure, a toast) hands the
+// frame the same source and nothing restarts; on a wide beach only the sky's steps bring new ones.
 //
 // He dozes off where the last loop had him (`from` pixels out on the sand): he looks home, scuttles
 // back to the shell, stands there a moment with his eyes shut, then curls up. So the frame that

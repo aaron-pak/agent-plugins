@@ -2,7 +2,7 @@
 // last handed out.
 
 import { NAP_AFTER_MS, SPLASH_MS, isNightAt, skyStepAt } from '../facts'
-import { beachWidth, carriedPhase, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
+import { beachOf, carriedPhase, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
 import type { Scene } from './desk'
 import type { Motion } from '../../types'
 import type { BandProps, Info } from './types'
@@ -61,6 +61,7 @@ export function bandProps(
     sinceTurnMs: known.turnAt === null ? null : now - known.turnAt,
     shownForMs,
     isAppleTerminal: known.isAppleTerminal,
+    isGhostty: known.isGhostty,
     isNight: isNightAt(now),
     sky: skyStepAt(now),
     treasure: pct(known.treasurePercent),
@@ -119,10 +120,17 @@ export function sceneMemory(): {
       }
     }
     strideSince = null
+    // A step of the sky, or a starfish washed up or away, never plays a moment still on over again (a
+    // cheer, a splash, the stretch up from a nap, which lasts as long as he reads): it waits for the
+    // moment's own end, whose frame brings it.
+    if (shownScene !== null && shownScene.key !== key && scene.moment !== null && scene.moment === shownScene.scene.moment && isBackdropStep(shownScene.scene, scene)) {
+      return { scene: shownScene.scene, wakeIn: null, isNew: false }
+    }
     // A step of the sky alone never reloads a frame too old for his walk to carry on from (a long
-    // tool running): his loop would start over. The sky catches up with the frame's next change. A
-    // nap sleeps on through it (see `curled`), so the sky crosses on over him.
-    if (shownScene !== null && shownScene.key !== key && scene.mood !== 'nap' && !isRecent(shownScene, now) && isSkyStep(shownScene.scene, scene)) {
+    // tool running): his loop would start over. The sky catches up with the frame's next change, and
+    // nightfall and daybreak come at once. A nap sleeps on through it (see `curled`), so the sky
+    // crosses on over him.
+    if (shownScene !== null && loop !== undefined && shownScene.key !== key && scene.mood !== 'nap' && !isRecent(shownScene, now) && loop.night === scene.night && isSkyStep(loop, scene)) {
       return { scene: shownScene.scene, wakeIn: null, isNew: false }
     }
     if (shownScene === null || shownScene.key !== key || isWaveOver) {
@@ -174,10 +182,16 @@ export function sceneMemory(): {
 
 /**
  * How long another beach width must have been drawing, since this one last drew, before this one's
- * memory is stale: its desktop went to another width a while, then came back. (Two desktops at once
- * draw in the same redraws, so neither ever finds the other drawing a second on its own.)
+ * memory is stale: its desktop went to another width a while, then came back. (Desktops at once
+ * draw in the same redraws, so none ever finds another drawing a second on its own.)
  */
 const STALE_MS = 1_000
+/**
+ * Draws this close together are one redraw: bands on several desktops drawn by the same change. A
+ * band drawn in the redraw after its last one never counts the others' draws in that last one, so a
+ * quiet spell between two redraws never reads as another width having had the screen.
+ */
+const SAME_REDRAW_MS = 200
 /**
  * The beach widths remembered at most: a desktop dragged through many widths keeps only its latest
  * few. Above 64 units a beach is two units wider a column, so desktops side by side each draw their
@@ -206,7 +220,7 @@ export function desktopScenes(): {
   // Once the other look has drawn, the kept copy is no longer on screen to carry on from.
   let isKeptStale = false
   const settle = (props: BandProps, now: number, kept: unknown) => {
-    const width = beachWidth(props.columns, props.words.place[0] ?? [])
+    const width = beachOf(props)
     const others = [...beaches.entries()].filter(([at]) => at !== width)
     const othersLast = Math.max(Number.NEGATIVE_INFINITY, ...others.map(([, other]) => other.drawnAt))
     let beach = beaches.get(width)
@@ -217,7 +231,7 @@ export function desktopScenes(): {
     }
     beaches.delete(width)
     beaches.set(width, { ...beach, drawnAt: now, othersFrom: null })
-    for (const [, other] of others) other.othersFrom ??= now
+    for (const [, other] of others) if (now - other.drawnAt > SAME_REDRAW_MS) other.othersFrom ??= now
     for (const old of [...beaches.keys()].slice(0, -WIDTHS_KEPT)) beaches.delete(old)
     const shown = beach.memory.settle(props, now)
     if (shown.isNew) {
@@ -281,9 +295,15 @@ function isSkyStep(shown: Scene, scene: Scene): boolean {
   return sceneKey({ ...scene, sky: shown.sky, night: shown.night }) === sceneKey(shown)
 }
 
-// The same working loop, only its tide moved on a stride.
+// The same scene with only what lies behind him changed: the sky, or a starfish come or gone.
+function isBackdropStep(shown: Scene, scene: Scene): boolean {
+  return sceneKey({ ...scene, sky: shown.sky, night: shown.night, treasure: shown.treasure }) === sceneKey(shown)
+}
+
+// The same working loop, only its tide moved on a stride (and its sun, which a frame held through a
+// step may be behind on).
 function isStride(shown: Scene, scene: Scene): boolean {
   const working = (s: Scene) => (s.mood === 'read' || s.mood === 'work') && s.moment === null
 
-  return working(shown) && working(scene) && sceneKey({ ...shown, tide: 0 }) === sceneKey({ ...scene, tide: 0 })
+  return working(shown) && working(scene) && sceneKey({ ...shown, tide: 0, sky: scene.sky }) === sceneKey({ ...scene, tide: 0 })
 }

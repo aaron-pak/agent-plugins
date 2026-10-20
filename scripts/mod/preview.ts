@@ -33,7 +33,8 @@ paint only once they look right.
   --scenarios a,b        the moments to play (default: ${SCENARIOS.join(",")})
   --widths 64,100,140    band widths in columns; --animate-at 100 is the one animated
   --frames 24            how many frames the animated width films, 125 ms apart
-  --at <time>            when the session plays, as Date.parse reads it, in UTC (the runner's zone)
+  --at <time>            when the session plays, as Date.parse reads it; a date and time with no
+                         zone is UTC (the runner's zone)
   --folder <path>        play the session in this folder, outside any repository (default: in a
                          repository, on a branch with uncommitted changes)
   --surfaces terminal,desktop
@@ -48,6 +49,16 @@ paint only once they look right.
 const list = (flags: Map<string, string[]>, name: string, fallback: string[]) =>
   flags.get(name)?.at(-1)?.split(",").filter(Boolean) ?? fallback;
 const one = (flags: Map<string, string[]>, name: string) => flags.get(name)?.at(-1);
+// A flag's number, above 0: a step of 0 would never end, and a frame count that is not a number films nothing.
+const positive = (flags: Map<string, string[]>, name: string, fallback: number) => {
+  const given = one(flags, name);
+  const value = given === undefined ? fallback : Number(given);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`--${name} ${given} is not a number above 0`);
+  return value;
+};
+// When the session plays: a date and time with no zone is UTC, the runner's, never the host's.
+const timeOf = (given: string) =>
+  Date.parse(/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?$/u.test(given) ? `${given}Z` : given);
 
 async function collect(
   dir: string,
@@ -323,7 +334,7 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
   if (unknown.length > 0) throw new Error(`no scenario ${unknown.join(", ")}; there are ${SCENARIOS.join(", ")}`);
   const widths = list(flags, "widths", ["64", "100", "140"]).map(Number);
   const animateAt = Number(one(flags, "animate-at") ?? (widths.includes(100) ? 100 : widths[0]));
-  const at = one(flags, "at") === undefined ? null : Date.parse(one(flags, "at")!);
+  const at = one(flags, "at") === undefined ? null : timeOf(one(flags, "at")!);
   if (Number.isNaN(at)) throw new Error(`--at ${one(flags, "at")} is not a time; try 2026-07-15T14:00:00Z`);
 
   let shots: Shot[];
@@ -340,7 +351,7 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
       styles: styles.length > 0 ? styles : [null],
       widths,
       animateAt,
-      frames: Number(one(flags, "frames") ?? 24),
+      frames: positive(flags, "frames", 24),
       at,
       folder: one(flags, "folder") ?? null,
       surfaces: list(flags, "surfaces", ["terminal", "desktop"]),
@@ -376,7 +387,7 @@ export async function previewMod(dir: string, flags: Map<string, string[]>): Pro
 
   if (flags.has("png") || flags.has("gifs")) await paint(shots, out, flags.has("gifs"), animateAt);
   if (flags.has("strips")) {
-    await strips(shots, out, animateAt, Number(one(flags, "step") ?? 0.25), Number(one(flags, "span") ?? 6));
+    await strips(shots, out, animateAt, positive(flags, "step", 0.25), positive(flags, "span", 6));
   }
   console.log(`Took ${seconds(started)}.`);
   return errors.length === 0 ? 0 : 1;

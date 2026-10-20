@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On, RenderElement, RenderPropsOf, SessionMeasureInput, TurnCompleteInput } from 'claude-code'
 
-import { HEART_ALT, SPIN, TERMINAL_HEART, cells, textPx } from '../hooks/clawd'
+import { HEART_ALT, SPIN, TERMINAL_HEART, cells, dice, textPx } from '../hooks/clawd'
 import { SAND, WET, layoutOf, resumeSplash } from '../hooks/tide/band'
 import { STRIDE_WAIT_MS } from '../hooks/tide/props'
 import { isNightAt, skyStepAt, skySteps, skyTurnsIn } from '../hooks/facts'
@@ -2583,6 +2583,18 @@ test('desktop: he dozes off where he stood and walks home to the shell; a pet\'s
   await ui.unmount()
 })
 
+// A new frame while he walks home for his nap (a step of the sky, half a minute's walk on the widest
+// beach) opens him where the walk has him, never back by the shell; curled up, he is home.
+test('desktop: a frame opened during his walk home for a nap starts him where that walk has him', () => {
+  const nap: Scene = { mood: 'nap', tide: 30, still: false, moment: null, from: 45, width: 224, wave: 0, night: false, treasure: null, castle: 0, built: false, sky: 10, sea: null }
+  // A look home, then a step every 0.56 s.
+  const walked = [0, 400, 6_000, 12_000].map(ms => positionAt(nap, ms))
+  expect(walked[0]).toBe(45)
+  expect(walked.every((x, i) => i === 0 || x <= (walked[i - 1] ?? 0))).toBe(true)
+  expect([(walked[2] ?? 0) > 30, (walked[3] ?? 0) > 20]).toEqual([true, true])
+  expect([positionAt(nap, 60_000), positionAt({ ...nap, curled: true }, 0), positionAt({ ...nap, still: true }, 6_000)]).toEqual([0, 0, 0])
+})
+
 test('desktop: a long nap sleeps on through the sky\'s steps: each new frame opens with him curled up and his z\'s where they were', async ($, on) => {
   const { clock } = world(on, { now: localAt(15, 13) })
   await start($)
@@ -3038,6 +3050,25 @@ test('desktop: still, a cheer is one frame: arms up and the sparkles held; where
   expect(lively).toContain('.pose{opacity:0}.p-up{opacity:1}')
   expect(lively).toMatch(/@media \(prefers-reduced-motion:no-preference\)\{.*\.p-up\{opacity:0\}\.p-stand\{opacity:1\}/u)
   expect(lively).toContain('spin0')
+  await ui.unmount()
+})
+
+// In Ghostty, Claude Code's spinner draws its ✽ as a ✻: the cheer's ✻ holds there while the ✶ twinkles.
+test('terminal, in Ghostty: the finale\'s ✻ never swells to a ✽, as Claude Code\'s spinner\'s never does there', async ($, on) => {
+  const { clock } = world(on, { env: { TERM: 'xterm-ghostty' } })
+  await start($)
+  const { ui, look, wait } = await band($, 'terminal')
+  await $.prompt.submit({ text: 'tidy up', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  const finale: string[] = []
+  for (let i = 0; i < SPIN.length + 10; i++) {
+    const top = cellsOf((await look()).rows[0])
+    const marks = top.flatMap(({ ch }) => (isSparkle(ch) ? [ch] : []))
+    if (marks.length > 0) finale.push(marks.join(''))
+    await wait(250)
+    await clock.advance(250)
+  }
+  expect(finale).toEqual(['✶✻', '✶✻', '✢✻', '✢✻', '✶✻', '✶✻', '✢✻'])
   await ui.unmount()
 })
 
@@ -4129,7 +4160,7 @@ function loops(source: string): Map<string, { period: number; into: number }> {
   return new Map([...found].map(([, name, period, into]) => [name ?? '', { period: Number(period), into: Number(into) }]))
 }
 
-for (const columns of [100, 44]) {
+for (const columns of [100, 60, 44]) {
   test(`desktop: at ${columns} columns no new frame snaps the sea back: the crests roll on and the water's front stays where it was`, { timeoutMs: 30_000 }, async ($, on) => {
     const { clock } = world(on)
     const keptScene = sceneWrites(on)
@@ -4247,9 +4278,10 @@ for (const columns of [100, 44]) {
     expect(carried).toBeGreaterThan(scenes.length)
     // Something did move across those frames: the surge, the tide coming in and going out.
     expect(scenes.some(one => (one.scene.sea?.glide ?? 0) !== 0)).toBe(true)
-    // The tide coming in to high while he strolled out on the sand: the water waited for him. (On the
-    // wide beach a 100-column band has, the stride finds him back home.)
-    if (columns === 44) expect(waited.length).toBeGreaterThan(0)
+    // The tide coming in to high while he strolled out on the sand: the water waited for him, on the
+    // narrow beach and the 64-unit one. (On the wide beach a 100-column band has, the stride finds him
+    // back home.)
+    if (columns < 100) expect(waited.length).toBeGreaterThan(0)
     // The stride's frame (straight from the splash's, which went on into the work), then the
     // cheer's a moment into its glide (which the cheer carries on).
     const [beforeStride, stride, cheer] = scenes.slice(4, 7)
@@ -4445,7 +4477,8 @@ function starsOf(view: View): Array<{ row: number; col: number; ch: string; isDi
     const found: Array<{ row: number; col: number; ch: string; isDim: boolean }> = []
     for (const run of runs(row)) {
       for (const ch of run.text) {
-        if (ch === '·' || ch === '✳') found.push({ row: r, col, ch, isDim: run.dimColor === true })
+        // (A cheer's ✢ is bright: a star's is faint.)
+        if (ch === '·' || ((ch === '✢' || ch === '✳') && run.dimColor === true)) found.push({ row: r, col, ch, isDim: run.dimColor === true })
         col += cells(ch)
       }
     }
@@ -4480,6 +4513,67 @@ for (const motion of ['lively', 'still'] as const) {
   })
 }
 
+// A dot over him (curled up asleep, his head below the sky row) reads as resting on him, and one over
+// the wave's crest as its spray: a star keeps the cells just below it open too.
+for (const percent of [42, 86]) {
+  test(`terminal: at ${percent}%, at night no star sits over him, awake or asleep, nor over his z's, the wave or the shell, at any width`, { timeoutMs: 240_000 }, async ($, on) => {
+    const { clock } = world(on, { now: localAt(15, 22) })
+    await start($, percent)
+    await turn($, clock)
+    const crowded: string[] = []
+    for (const mood of ['awake', 'asleep'] as const) {
+      if (mood === 'asleep') await clock.advance(200_000)
+      for (let columns = 34; columns <= 160; columns += 2) {
+        const { ui, look, wait } = await band($, 'terminal', { ...BAND, bodyColumns: columns })
+        await wait(500)
+        const view = await look()
+        for (const star of starsOf(view)) {
+          const below = cellsOf(view.rows[star.row + 1]).slice(Math.max(0, star.col - 1), star.col + 2)
+          // Below a star in the sky row, open sky or the wave's sea behind its foam; below one low over
+          // the water, the sand or the sea, never him.
+          const isSea = (cell: { ch: string; color: unknown; bg: unknown }) => cell.color === '#4C7FAF' && cell.bg === undefined && '█▄▖'.includes(cell.ch)
+          const isOpen = star.row === 0 ? below.every(cell => (cell.ch === ' ' && cell.bg === undefined) || isSea(cell)) : below.every(cell => cell.color !== 'clawd_body')
+          if (!isOpen) crowded.push(`${mood} ${columns}: ${star.row}:${star.col}\n${view.scene.join('\n')}`)
+        }
+        await ui.unmount()
+      }
+    }
+    expect(crowded.slice(0, 3)).toEqual([])
+  })
+}
+
+// A splash holds the water's edge, so a lap starting or ending under it changes nothing else: no star
+// twinkles then, wherever in the splash the lap falls.
+const FIRST_LAP = 40 + dice(2, 32)
+for (const back of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+  test(`terminal: a splash ${back} ticks before the first lap never twinkles a star on a frame of its own`, { timeoutMs: 60_000 }, async ($, on) => {
+    const { clock } = world(on, { now: localAt(15, 22) })
+    await start($)
+    await turn($, clock)
+    const { ui, look, wait } = await band($, 'terminal')
+    await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
+    for (let i = 0; i < FIRST_LAP - back; i++) {
+      await wait(250)
+      await clock.advance(250)
+    }
+    await $.tool.call({ tool: 'Bash', command: 'npm test fail', description: 'Run the tests' })
+    const sky = (view: View) => starsOf(view).map(star => `${star.row}:${star.col}:${star.ch}`).join(' ')
+    // Everything but the stars (and the ✳ that once twinkled them).
+    const rest = (view: View) => JSON.stringify(view.tree).replace(/[·✢✳]/gu, ' ')
+    let last = await look()
+    const alone: string[] = []
+    for (let i = 0; i < 20; i++) {
+      await wait(250)
+      await clock.advance(250)
+      const now = await look()
+      if (sky(now) !== sky(last) && rest(now) === rest(last)) alone.push(`${i}: ${sky(last)} -> ${sky(now)}`)
+      last = now
+    }
+    expect(alone).toEqual([])
+    await ui.unmount()
+  })
+}
+
 test('terminal: a star twinkles only on the frames where a wave washes up the sand, so the sky never asks a frame of its own', { timeoutMs: 120_000 }, async ($, on) => {
   const { clock } = world(on, { now: localAt(15, 22) })
   await start($)
@@ -4492,7 +4586,7 @@ test('terminal: a star twinkles only on the frames where a wave washes up the sa
     await clock.advance(250)
     const now = await look()
     const sky = (view: View) => starsOf(view).map(star => `${star.row}:${star.col}:${star.ch}`).join(' ')
-    twinkles += sky(now).includes('✳') && !sky(last).includes('✳') ? 1 : 0
+    twinkles += sky(now).includes('✢') && !sky(last).includes('✢') ? 1 : 0
     if (sky(now) !== sky(last)) {
       // The ground row (the water's edge) or Clawd moved too: the star changed on a frame that changed anyway.
       const moved = now.scene[2] !== last.scene[2] || JSON.stringify(clawdAt(now)) !== JSON.stringify(clawdAt(last))
@@ -4634,27 +4728,78 @@ for (const surface of SURFACES) {
 
 test('desktop: a wider band\'s beach widens into the room its words leave, two units a column, so the words\' room never shrinks', () => {
   const place = (...texts: string[]): Words => texts.map((text, i) => (i === 0 ? { text } : { text, tone: 'dim' as const }))
+  const usual = place('42% context', ' · $0.31', ' · 5h limit 23%')
   const short = place('aaronpak', ' · Opus 5.5')
   const long = place('agent-plugins', ' · claude/first-mod · 3 uncommitted', ' · Opus 5.5')
   // The narrow rule up to 48 columns, then 64 units until the words have their room.
-  expect([36, 44, 48, 60, 66].map(columns => beachWidth(columns, short))).toEqual([40, 56, 64, 64, 64])
+  expect([36, 44, 48, 60, 66].map(columns => beachWidth(columns, [usual, short]))).toEqual([40, 56, 64, 64, 64])
   // The Mac app's 768 px column (96 columns): 122 units beside a folder and the model, 78 beside a
   // branch and a count. At most 224.
-  expect([beachWidth(96, short), beachWidth(96, long), beachWidth(200, short)]).toEqual([122, 78, 224])
-  // A count going from 9 to 10 never moves it.
+  expect([beachWidth(96, [usual, short]), beachWidth(96, [usual, long]), beachWidth(200, [usual, short])]).toEqual([122, 78, 224])
+  // The context line whole too: with the limit's reset time, and at high tide with every part.
+  const resets = place('42% context', ' · $1.94', ' · 5h limit 61%', ' · resets 2:27am')
+  const full = place('86% context', ' · try /compact', ' · 5h limit 81%', ' · resets 12:27am', ' · $11.94')
+  expect([beachWidth(96, [resets, short]), beachWidth(96, [full, short])]).toEqual([96, 68])
+  // A count going from 9 to 10, or a cost from $9.99 to $10.00, never moves it.
   const count = (n: number) => place('agent-plugins', ` · claude/first-mod · ${n} uncommitted`, ' · Opus 5.5')
-  expect(beachWidth(120, count(10))).toBe(beachWidth(120, count(9)))
+  expect(beachWidth(120, [usual, count(10)])).toBe(beachWidth(120, [usual, count(9)]))
+  const cost = (usd: string) => place('86% context', ' · try /compact', ` · ${usd}`)
+  expect(beachWidth(120, [cost('$10.00'), short])).toBe(beachWidth(120, [cost('$9.99'), short]))
   // The words' room only grows as the band widens, and beside a widened beach it keeps 290 px and
-  // the where-line whole.
-  for (const line of [short, long]) {
-    const where = line.reduce((sum, piece) => sum + textPx(piece.text, false), 0)
+  // both lines whole.
+  for (const lines of [[usual, short], [usual, long], [resets, short], [full, long]]) {
+    const widest = Math.max(...lines.map(line => line.reduce((sum, piece) => sum + textPx(piece.text, false), 0)))
     let room = Number.NEGATIVE_INFINITY
     for (let columns = 34; columns <= 220; columns++) {
-      const width = beachWidth(columns, line)
+      const width = beachWidth(columns, lines)
       const now = columns * 7.6 - width * 3 - 3 * 7.6 - 1
-      expect([columns, now >= room, width <= 64 || now >= Math.max(290, where)]).toEqual([columns, true, true])
+      expect([columns, now >= room, width <= 64 || now >= Math.max(290, widest)]).toEqual([columns, true, true])
       room = now
     }
+  }
+})
+
+// The engine draws no Svg source over 131,072 characters (it draws its own band instead). The widest
+// beach's cheer at the end of a long walk home (a high tide, here at a low warnAt, put him at the
+// water) holds the most: each pose of his walk keeps only the stops that change it, with room to spare.
+for (const warnAt of [80, 30]) {
+  test(`desktop: at warnAt ${warnAt}, the widest beach's cheer after a long walk home stays well inside the engine's Svg limit`, { options: { warnAt }, timeoutMs: 60_000 }, async ($, on) => {
+    const { clock } = world(on, { now: localAt(15, 22) })
+    await start($, 31)
+    const props = { ...BAND, bodyColumns: 300 }
+    const { ui, look } = await band($, 'desktop', props)
+    await clock.advance(5_000)
+    await ui.redraw(props)
+    await $.prompt.submit({ text: 'look around', wait: false, origin: { kind: 'composer' } })
+    const working = { ...props, isWorking: true }
+    await ui.redraw(working)
+    for (let i = 0; i < 9; i++) {
+      await $.tool.call({ tool: 'Read', file_path: `/work/b${i}.ts` })
+      await clock.advance(10_000)
+      await ui.redraw(working)
+    }
+    await $.turn.complete({ answer: 'Done.', durationMs: 91_000, isAborted: false, turnId: 't1', reason: 'answer' })
+    await clock.advance(10)
+    await ui.redraw(props)
+    const cheer = (await look()).svg
+    expect(cheer?.alt).toContain('spins with joy')
+    expect((cheer?.source ?? '').length).toBeLessThan(80_000)
+    await ui.unmount()
+  })
+}
+
+// The context line keeps its room beside the beach: at the Mac app's width, high tide with a limit
+// near its end says all of it (the nudge, the limit, its reset and the cost), as beside the 64-unit beach.
+test('desktop: at 96 and 100 columns the context line shows whole beside the beach, its reset time and cost too', async ($, on) => {
+  const { clock } = world(on)
+  await start($, 86, 1.94)
+  await $.session.measure(measured(86, 1.94, 81))
+  await turn($, clock)
+  for (const columns of [96, 100, 120]) {
+    const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: columns })
+    const line = (await look()).words.find(row => row.includes('context')) ?? ''
+    expect([columns, line]).toEqual([columns, expect.stringMatching(/^86% context · try \/compact · 5h limit 81% · resets \d+:\d\d[ap]m · \$1\.94$/u)])
+    await ui.unmount()
   }
 })
 
@@ -4717,12 +4862,154 @@ test('desktop: a step of the sky during a long tool waits for the frame\'s next 
   await ui.unmount()
 })
 
+// A moment still on (the stretch up from a nap, which lasts as long as he reads; a cheer; a splash)
+// plays once: a step of the sky, or a starfish washed up, waits for the moment's own end.
+test('desktop: a step of the sky while he stretches up from a nap waits for the stretch to end, so it never plays again; the sun moves on as he gets to work', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13, 34, 30) })
+  await start($)
+  await turn($, clock)
+  await clock.advance(5 * 60_000)
+  await $.prompt.submit({ text: 'wake up', wait: false, origin: { kind: 'composer' } })
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  const woke = (await look()).svg?.source ?? ''
+  expect(woke).toContain('@keyframes m-stretch')
+  // 13:40 comes as he reads.
+  await clock.advance(5_000)
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  await clock.advance(7_000)
+  expect((await look()).svg?.source).toBe(woke)
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  expect([working === woke, working.includes('m-stretch'), (sunOf(working)?.x ?? 0) > (sunOf(woke)?.x ?? 0)]).toEqual([false, false, true])
+  await ui.unmount()
+})
+
+test('desktop: a compaction as he stretches up from a nap leaves its starfish once the stretch is over, never playing it again', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13, 1) })
+  await start($, 90)
+  await turn($, clock)
+  await clock.advance(5 * 60_000)
+  await $.prompt.submit({ text: 'wake up', wait: false, origin: { kind: 'composer' } })
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  const woke = (await look()).svg?.source ?? ''
+  expect(woke).toContain('@keyframes m-stretch')
+  await clock.advance(8_000)
+  await $.session.compact({ trigger: 'auto', messages: [SUMMARY, SUMMARY] })
+  await $.session.measure(measured(20, 0.31))
+  await clock.advance(200)
+  expect((await look()).svg?.source).toBe(woke)
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  expect([working.includes('m-stretch'), working.includes('class="starfish"')]).toEqual([false, true])
+  await ui.unmount()
+})
+
+test('desktop: a step of the sky in the middle of a cheer never starts the cheer over: the sun moves on with the frame after it', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13, 39) })
+  await start($)
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(57_500)
+  await $.turn.complete({ answer: 'Done.', durationMs: 58_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  await ui.redraw(BAND)
+  const cheer = (await look()).svg
+  expect(cheer?.alt).toContain('spins with joy')
+  const frames: Array<{ source: string; alt: string }> = []
+  for (let i = 0; i < 12; i++) {
+    await clock.advance(500)
+    const view = (await look()).svg
+    if ((frames.at(-1)?.source ?? cheer?.source) !== view?.source) frames.push({ source: view?.source ?? '', alt: view?.alt ?? '' })
+  }
+  // One new frame, his sit after the cheer, under the sun's next step.
+  expect(frames.map(frame => frame.alt.includes('spins with joy'))).toEqual([false])
+  expect((sunOf(frames[0]?.source ?? '')?.x ?? 0) > (sunOf(cheer?.source ?? '')?.x ?? 0)).toBe(true)
+  await ui.unmount()
+})
+
+test('desktop: a splash\'s frame kept on into a long command waits out a step of the sky as any working frame does, so his walk never starts over', { timeoutMs: 60_000 }, async ($, on) => {
+  const { clock, during } = world(on, { now: localAt(15, 13, 33) })
+  await start($)
+  await turn($, clock)
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(2_000)
+  await $.tool.call({ tool: 'Bash', command: 'npm run fail', description: 'Run the tests' })
+  const splash = (await look()).svg?.source ?? ''
+  expect(splash).toContain('data-wave')
+  // Eight minutes of a command, past the sky's step at 13:40.
+  const frames = new Set<string>()
+  during.tool = async () => {
+    for (let i = 0; i < 32; i++) {
+      await clock.advance(15_000)
+      frames.add((await look()).svg?.source ?? '')
+    }
+  }
+  await $.tool.call({ tool: 'Bash', command: 'sleep 480', description: 'Wait a while' })
+  during.tool = null
+  expect([...frames].map(frame => frame === splash)).toEqual([true])
+  await ui.unmount()
+})
+
+test('desktop: nightfall comes at once to a frame a long wait holds, though a step of the sky alone waits for its next change', async ($, on) => {
+  const { clock, release } = world(on, { now: localAt(15, 19, 30) })
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'plan it', wait: false, origin: { kind: 'composer' } })
+  await ui.redraw({ ...BAND, isWorking: true })
+  const running = $.tool.call({ tool: 'Read', file_path: '/work/held.ts' })
+  await clock.advance(1_000)
+  const working = (await look()).svg
+  // 19:40 comes and goes: the frame his walk is on stays up.
+  for (let i = 0; i < 12; i++) await clock.advance(60_000)
+  expect((await look()).svg?.source).toBe(working?.source)
+  // 8pm: the stars are out over the desktop's beach as over the terminal's.
+  for (let i = 0; i < 20; i++) await clock.advance(60_000)
+  const night = (await look()).svg
+  expect([working?.alt.includes('The stars are out.'), night?.alt.includes('The stars are out.'), night?.source.includes('class="moon"')]).toEqual([false, true, true])
+  release()
+  await running
+  await ui.unmount()
+})
+
+test('desktop: a stride of the tide after a step of the sky a long tool held still waits its moment, in case the turn is landing', async ($, on) => {
+  const { clock, release } = world(on, { now: localAt(15, 13, 5) })
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'run the long tests', wait: false, origin: { kind: 'composer' } })
+  await ui.redraw({ ...BAND, isWorking: true })
+  const running = $.tool.call({ tool: 'Read', file_path: '/work/held.ts' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  for (let i = 0; i < 18; i++) await clock.advance(60_000)
+  expect((await look()).svg?.source).toBe(working)
+  await $.session.measure(measured(60, 0.4))
+  await clock.advance(100)
+  expect((await look()).svg?.source).toBe(working)
+  await clock.advance(STRIDE_WAIT_MS)
+  const stride = (await look()).svg?.source ?? ''
+  expect([stride === working, (sunOf(stride)?.x ?? 0) > (sunOf(working)?.x ?? 0)]).toEqual([false, true])
+  release()
+  await running
+  await ui.unmount()
+})
+
 test('desktop: the narrow beach\'s sky never moves, so its step never reloads the frame; its moon hangs over the sea all night', async ($, on) => {
   const { clock } = world(on, { now: localAt(15, 22) })
   await start($)
   await turn($, clock)
   const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: 44 })
   const first = (await look()).svg?.source ?? ''
+  // Asleep across a step (22:20): the very same source, so the frame never reloads.
+  await clock.advance(4 * 60_000)
+  await ui.redraw({ ...BAND, bodyColumns: 44 })
+  const napping = (await look()).svg?.source ?? ''
+  await clock.set(localAt(15, 22, 21))
+  await ui.redraw({ ...BAND, bodyColumns: 44 })
+  expect([napping.includes('curl'), (await look()).svg?.source === napping]).toEqual([true, true])
   await clock.set(localAt(16, 3))
   await ui.redraw({ ...BAND, bodyColumns: 44 })
   const later = (await look()).svg?.source ?? ''
@@ -4761,8 +5048,10 @@ test('desktop: the wide beach\'s scenery comes in by width: a sailboat, clouds, 
   // The scenery stands behind him: drawn before his walk, the sky before the sand.
   for (const name of ['sky', 'castle', 'boat']) expect([name, wide.indexOf(`class="${name}"`) < wide.indexOf('class="walk clawd"')]).toEqual([name, true])
   expect(wide.indexOf('class="sky"')).toBeLessThan(wide.indexOf('clipPath id="sand"'))
-  // The fish swims behind the water, which hides it until it leaps.
+  // The fish swims behind the water, which hides it until it leaps, and glides with it as a tide comes
+  // in or goes out, so it never lies on the sand a moment.
   expect(wide.indexOf('class="fishx"')).toBeLessThan(wide.indexOf('<clipPath id="water">'))
+  expect(wide).toContain('<g class="glide"><g class="fishx">')
   // By night: a lantern at the boat's masthead and now and then a shooting star; no gulls.
   await clock.set(localAt(15, 23))
   const night = await at(100)
@@ -4772,6 +5061,34 @@ test('desktop: the wide beach\'s scenery comes in by width: a sailboat, clouds, 
   await run($, 'band', 'still')
   const still = await at(100)
   expect([still.includes('@keyframes'), has(still).clouds, has(still).boat, has(still).castle, has(still).gulls, has(still).fish]).toEqual([false, 2, true, true, false, false])
+})
+
+// Before the first reading the sea is at its narrowest, with no room on it for the sailboat (its hull
+// would run off the picture, its lantern into a star): it sails in with the first reading.
+test('desktop: the sailboat sails in with the first reading, the sea before it too narrow for it', async ($, on) => {
+  world(on, { now: localAt(15, 23) })
+  await $.session.start({ cwd: '/work/agent-plugins', surface: 'terminal', isInteractive: true })
+  const { ui, look } = await band($, 'desktop')
+  expect((await look()).svg?.source).not.toContain('class="boat"')
+  await $.session.measure(measured(8, 0.1))
+  expect((await look()).svg?.source).toContain('class="lantern"')
+  await ui.unmount()
+})
+
+// The wider the beach, the further he strolls out on it: 10 units on the 64-unit beach, a unit more for
+// every 4 a wider one adds.
+test('desktop: on a wider beach he strolls further out on the sand', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13) })
+  await start($)
+  await turn($, clock)
+  const farthest: number[] = []
+  for (const columns of [60, 100, 160]) {
+    const { ui, look } = await band($, 'desktop', { ...BAND, bodyColumns: columns })
+    const walk = /@keyframes walk\{([^@]*?)\}\}/u.exec((await look()).svg?.source ?? '')?.[1] ?? ''
+    farthest.push(Math.max(...[...walk.matchAll(/translateX\((-?[\d.]+)px\)/gu)].map(m => Number(m[1]))))
+    await ui.unmount()
+  }
+  expect(farthest).toEqual([10, 21, 50])
 })
 
 test('desktop: the clouds keep their places in the sky past where he strolls, swaying a little, so none ever crosses his head', async ($, on) => {
@@ -4821,6 +5138,12 @@ test('desktop: his sandcastle grows a piece at a time with the conversation\'s a
   expect(flagged).toContain('<g class="flag">')
   // The settled frame after the cheer has the piece simply standing.
   expect(flagged).not.toContain('class="built"')
+  // Asleep, the z's drifting up from him by the shell stay clear of the flag's pole and its pennant.
+  await clock.advance(4 * 60_000)
+  const napping = await source()
+  const z = /<path class="z z2" d="M([\d.]+) [\d.]+h([\d.]+)/u.exec(napping)
+  const pole = Number(/<g class="flag"><path d="M([\d.]+) /u.exec(napping)?.[1])
+  expect(Number(z?.[1]) + Number(z?.[2]) + 0.6).toBeLessThan(pole)
   // /clear: the next conversation starts its own.
   await $.session.end({ reason: 'clear', sessionId: 's1', resume: { id: 's1' } })
   await clock.advance(1_000)
@@ -4937,6 +5260,85 @@ test('terminal: a compaction lets the tide out and leaves a starfish on the sand
   await ui.unmount()
 })
 
+// His clay on the damp tan all but vanishes, so the starfish keeps its cell of sand dry, as he does,
+// wherever the tide leaves it: in the damp strip by the water too.
+for (const [columns, before, after] of [[80, 85, 30], [80, 86, 12], [64, 90, 25], [100, 86, 40], [140, 86, 30], [40, 90, 20], [50, 90, 20]] as const) {
+  test(`terminal: at ${columns} columns, from ${before}% to ${after}%, the starfish lies on dry sand from the moment it shows`, { timeoutMs: 60_000 }, async ($, on) => {
+    const { clock } = world(on)
+    await start($, before, 1.9)
+    await turn($, clock)
+    const { ui, look, wait } = await band($, 'terminal', { ...BAND, bodyColumns: columns })
+    await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+    await $.session.measure(measured(after, 1.95))
+    const seen: unknown[] = []
+    for (let i = 0; i < 24; i++) {
+      await wait(250)
+      await clock.advance(250)
+      const view = await look()
+      const at = starfishOf(view)
+      if (at >= 0) seen.push(cellsOf(view.rows[2])[at]?.bg)
+    }
+    expect(seen.length).toBeGreaterThan(0)
+    expect([...new Set(seen)]).toEqual([SAND])
+    await ui.unmount()
+  })
+}
+
+// The tide coming back rolls in a cell a tick: the starfish lies on until the water reaches it, never
+// leaving bare sand ahead of the water (however far the context jumps).
+for (const [columns, back] of [[100, 90], [140, 92], [100, 87]] as const) {
+  test(`terminal: at ${columns} columns, the tide coming back to ${back}% washes the starfish away only as the water reaches it`, { timeoutMs: 60_000 }, async ($, on) => {
+    const { clock } = world(on)
+    await start($, 86, 1.9)
+    await turn($, clock)
+    const { ui, look, wait } = await band($, 'terminal', { ...BAND, bodyColumns: columns })
+    await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+    await $.session.measure(measured(12, 1.95))
+    for (let i = 0; i < 24; i++) {
+      await wait(250)
+      await clock.advance(250)
+    }
+    const at = starfishOf(await look())
+    expect(at).toBeGreaterThan(0)
+    await $.session.measure(measured(back, 2))
+    const bare: string[] = []
+    for (let i = 0; i < 24; i++) {
+      const view = await look()
+      const cell = cellsOf(view.rows[2])[at]
+      // Gone, its cell is the water's (the sea, or a wave washing up), never dry sand, unless he stands over it.
+      const him = clawdAt(view)
+      const isUnderHim = at >= Math.min(...him) - 1 && at <= Math.max(...him) + 1
+      if (starfishOf(view) < 0 && cell?.bg === SAND && !isUnderHim) bare.push(`tick ${i}: ${view.scene[2]}`)
+      await wait(250)
+      await clock.advance(250)
+    }
+    expect(bare).toEqual([])
+    expect(starfishOf(await look())).toBe(-1)
+    await ui.unmount()
+  })
+}
+
+// He looks over at a starfish as it shows, once whatever he was doing is done (a moment, here a pet,
+// then his settle).
+test('terminal: a starfish that shows during a pet gets his look once the pet and his settle are over', { timeoutMs: 60_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($, 86, 1.9)
+  await turn($, clock)
+  const { ui, look, wait } = await band($, 'terminal')
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+  await $.session.measure(measured(12, 1.95))
+  await ui.pointer({ type: 'down', x: 8, y: 1, button: 'left', in: 'band' })
+  let looked = -1
+  for (let i = 0; i < 60 && looked < 0; i++) {
+    await wait(250)
+    await clock.advance(250)
+    if (((await look()).scene[0] ?? '').includes(HEAD_RIGHT)) looked = i
+  }
+  expect(looked).toBeGreaterThan(0)
+  await ui.unmount()
+})
+
+
 test('only a compaction of the conversation that went through leaves a starfish, where the water stood before it ran: not a precompute, a subagent\'s, or one a hook skipped; /clear takes it with the conversation', async ($, on) => {
   const { clock, during } = world(on)
   await start($, 86, 1.9)
@@ -4985,12 +5387,18 @@ test('desktop: a compaction leaves a starfish on the sand at the tide\'s old edg
   // It lies in the sand, before the sea and him: the water washes over it, and he walks in front of it.
   const source = left?.source ?? ''
   expect(source.indexOf('class="starfish"')).toBeLessThan(source.indexOf('clip-path="url(#water)"'))
+  // Over the damp sand by the water, never under it, where his clay would wash out.
+  expect(source.indexOf('fill="url(#damp)"')).toBeLessThan(source.indexOf('class="starfish"'))
   expect(source.indexOf('class="starfish"')).toBeLessThan(source.indexOf('class="walk clawd"'))
   await $.session.measure(measured(90, 2))
   await clock.advance(1_000)
   const back = (await look()).svg
   expect(back?.source).not.toContain('class="starfish"')
   expect(back?.alt).not.toContain('starfish')
+  // Washed away for good: the tide going out again (a model with a wider window) never brings it back.
+  await $.session.measure(measured(40, 2.1))
+  await clock.advance(1_000)
+  expect((await look()).svg?.source).not.toContain('class="starfish"')
   await ui.unmount()
 })
 
