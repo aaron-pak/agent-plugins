@@ -12,6 +12,7 @@ const CONFIG: {
   scenarios: string[]
   widths: number[]
   animateAt: number
+  frames: number
   surfaces: ('terminal' | 'desktop')[]
 } = __CONFIG__
 const PLUGIN = CONFIG.plugin
@@ -90,8 +91,20 @@ function world(on: On): World {
   }
 }
 
+// The style the test plays, switched to as the session starts, so the moments that follow are its own
+// (a band switched to after a moment began may rightly never play it).
+let styleNow: string | null = null
+
 async function begin($: Engine, percent = 42, usd = 0.31, five = 23): Promise<void> {
   await $.session.start({ cwd: '/Users/aaron/projects/agent-plugins', surface: 'terminal', isInteractive: true })
+  if (styleNow !== null) {
+    await $.command.run({
+      command: CONFIG.command,
+      args: styleNow,
+      origin: { kind: 'composer' },
+      presentation: { isFullscreen: false, columns: 100 },
+    })
+  }
   await $.session.measure(measured(percent, usd, five))
 }
 
@@ -157,7 +170,7 @@ type Scenario = {
 }
 
 const STILL = [0]
-const ANIM = Array.from({ length: 24 }, (_, i) => (i === 0 ? 0 : 125))
+const ANIM = Array.from({ length: CONFIG.frames }, (_, i) => (i === 0 ? 0 : 125))
 
 const SCENARIOS: Scenario[] = [
   { name: 'fresh', isWorking: false, frames: ANIM, setup: async $ => begin($, 3, 0.02, 4) },
@@ -247,21 +260,17 @@ const SCENARIOS: Scenario[] = [
   { name: 'pet', isWorking: false, frames: ANIM, pet: true, setup: async $ => begin($) },
 ]
 
+// A session of its own for each style and surface, so each plays the moment from its start: every
+// width at the moment the scenario reaches, the animated one last, its frames from there on.
 for (const scenario of SCENARIOS.filter(s => CONFIG.scenarios.includes(s.name))) {
-  test(`preview ${scenario.name}`, { timeoutMs: 600_000 }, async ($, on) => {
-    const w = world(on)
-    await scenario.setup($, w)
-    for (const style of STYLES) {
-      if (style !== null) {
-        await $.command.run({
-          command: CONFIG.command,
-          args: style,
-          origin: { kind: 'composer' },
-          presentation: { isFullscreen: false, columns: 100 },
-        })
-      }
-      for (const surface of SURFACES) {
-        for (const columns of WIDTHS) {
+  for (const style of STYLES) {
+    for (const surface of SURFACES) {
+      test(`preview ${scenario.name}${style === null ? '' : ` ${style}`} ${surface}`, { timeoutMs: 600_000 }, async ($, on) => {
+        const w = world(on)
+        styleNow = style
+        await scenario.setup($, w)
+        const widths = [...WIDTHS.filter(c => c !== CONFIG.animateAt), ...WIDTHS.filter(c => c === CONFIG.animateAt)]
+        for (const columns of widths) {
           // Animations only at one width, to keep the dump small.
           const frames = columns === CONFIG.animateAt ? scenario.frames : STILL
           const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: band(columns, scenario.isWorking) })
@@ -289,8 +298,8 @@ for (const scenario of SCENARIOS.filter(s => CONFIG.scenarios.includes(s.name)))
           }
           await ui.unmount()
         }
-      }
+        w.release()
+      })
     }
-    w.release()
-  })
+  }
 }
