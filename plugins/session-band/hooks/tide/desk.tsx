@@ -68,6 +68,8 @@ const SHELL = '#E9A3A4'
 const SHELL_RIDGE = '#C9818A'
 const HEART = HEART_PINK
 const DOZE = DOZE_SLATE
+// His shadow: the sand, a shade darker (it only ever lies on the sand).
+const SHADOW = 'rgba(122,88,44,.26)'
 // A paler sea for the splash's drops, so they stay airy on the dark page too.
 const DROP = '#8FB6D6'
 
@@ -123,7 +125,7 @@ export type Sea = { clock: number; lap: LapPlan; glide: number }
 type Lap = { period: number; reach: number }
 type LapPlan = { finish: (Lap & { offset: number }) | null; start: number }
 const CALM_SEA: Sea = { clock: 0, lap: { finish: null, start: 0 }, glide: 0 }
-/** The crests' periods (seconds), and a time both come round in, which the sea's clock wraps at (the stars' periods divide it too). */
+/** The crests' periods (seconds), and a time both come round in, which the sea's clock wraps at (the glints' and the stars' periods divide it too). */
 const ROLL_S = 9
 const ROLL2_S = 14
 const CLOCK_WRAP = 126
@@ -1074,12 +1076,12 @@ function diorama(scene: Scene): string {
     // He hops for joy as his arms go up (twice, as the hearth's Clawd does): his own little jump, so
     // the sparkles stay where they popped up.
     if (isCheer) motion.push(hop(INTRO.cheer))
-    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd"><g class="hop">${poses}</g></g>${spark}</g>`)
+    parts.push(`<g transform="translate(${start} ${TOP})"><g class="walk clawd">${shadow()}<g class="hop">${poses}</g></g>${spark}</g>`)
   }
 
   parts.push(spray)
 
-  base.push('.clawd{shape-rendering:crispEdges}')
+  base.push('.clawd{shape-rendering:crispEdges}.shadow{transform-box:fill-box;transform-origin:center}')
 
   const css = still ? base.join('') : `${base.join('')}@media (prefers-reduced-motion:no-preference){${motion.join('')}}`
 
@@ -1152,6 +1154,8 @@ function starfish(scene: Scene): string {
 // They keep time by the sea's clock, so a new frame never snaps one back mid-twinkle.
 const MOON = '#E2B65A'
 const STARLIGHT = '#E9C77E'
+// The sun's glints on the water by day.
+const SUNLIGHT = '#FFFFFF'
 
 function nightSky(width: number, clock: number, base: string[], motion: string[]): string {
   // A crescent: a disc less a disc, opening toward the sea, tipped a little.
@@ -1246,7 +1250,7 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     `<path d="${body}" fill="${SEA}"/>`,
     `<rect x="${shore}" y="${GROUND + 2}" width="${far - shore}" height="${H - GROUND - 2}" fill="${SEA_DEEP}" clip-path="url(#water)"/>`,
     `<g clip-path="url(#water)"><path class="roll2" d="${crest(GROUND + 1.6, shore - 6)}" fill="none" stroke="${SEA}" stroke-width=".5" opacity=".9"/>`,
-    `<path class="roll" d="${crest(top + 0.15, shore - 6)}" fill="none" stroke="${FOAM}" stroke-width=".55"/></g>`,
+    `<path class="roll" d="${crest(top + 0.15, shore - 6)}" fill="none" stroke="${FOAM}" stroke-width=".55"/>${glints(scene, shore, carried.clock, base, motion)}</g>`,
     `<path d="M${shore + 0.2} ${GROUND + 0.3}C${shore + 0.9} ${top + 0.1} ${shore + 1.6} ${top} ${shore + 3} ${top}" fill="none" stroke="${FOAM}" stroke-width=".6" stroke-linecap="round"/>`,
     `</g></g></g>`,
   ].join('')
@@ -1300,6 +1304,45 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
   return { water, spray: drops.join('') }
 }
 
+/**
+ * Light on the water: by day, little white glints of sun scattered over the sea; by night, gold glints
+ * of moonlight in a path under the moon. Each pops up for a moment now and then, at its own pace, and
+ * is gone again: a glint is a moment of light, so the still frame (and a page that asks for less
+ * motion) has none. Only out on the water, clear of its front. They keep time by the sea's clock, as
+ * the crests do, so a new frame never cuts one short or pops one up afresh.
+ */
+function glints(scene: Scene, shore: number, clock: number, base: string[], motion: string[]): string {
+  const { width, night } = scene
+  if (scene.still) {
+    return ''
+  }
+  // [from the right edge, depth below the sand line, size, period and where in it the sea's clock
+  // starts, in seconds]. Each period divides the clock's wrap, as the stars' do.
+  const places: Array<[number, number, number, number, number]> = night
+    ? [
+        [6.6, 1.1, 0.36, 4.5, 0.6],
+        [5.2, 1.9, 0.3, 5.25, 2.9],
+        [7.4, 2.6, 0.26, 6.3, 4.4],
+      ]
+    : [
+        [3.2, 1.1, 0.34, 5.25, 1.2],
+        [8.6, 1.9, 0.3, 6.3, 3.8],
+        [13.4, 1.3, 0.32, 7.875, 5.6],
+      ]
+  base.push('.glint{transform-box:fill-box;transform-origin:center;transform:scale(0)}')
+  motion.push('@keyframes glint{0%,64%,100%{transform:scale(0)}74%{transform:scale(1)}84%{transform:scale(.45)}92%{transform:scale(.85)}}')
+
+  return places
+    .flatMap(([from, depth, size, period, phase], i) => {
+      if (width - from <= shore + 1.5) {
+        return []
+      }
+      motion.push(`.glint${i}{animation:glint ${period}s ease-in-out -${roundMs((clock + phase) % period)}s infinite}`)
+      return [star(round(width - from), round(GROUND + depth), size, i, `glint glint${i}`, night ? STARLIGHT : SUNLIGHT)]
+    })
+    .join('')
+}
+
 // How long each moment plays before the loop takes over, in seconds.
 const INTRO: Record<Exclude<Moment, null>, number> = { cheer: 4.2, splash: 2.6, wake: 1.1, hello: 2 }
 
@@ -1345,12 +1388,25 @@ const ARMS_UP_S = SPIN.length * 0.2
 function hop(length: number): string {
   const at = (seconds: number) => pct((ARMS_UP_S + seconds) / length)
   const y = (units: number, ease: string) => `{transform:translateY(${units}px);animation-timing-function:${ease}}`
+  // His shadow stays on the sand, a little smaller while he is up.
+  const wide = (scale: number, ease: string) => `{transform:scaleX(${scale});animation-timing-function:${ease}}`
 
   return (
     `.hop{animation:hop ${length}s linear 1 both}` +
     `@keyframes hop{0%,${at(0)}${y(0, 'ease-out')}${at(0.12)}${y(-1, 'ease-in')}${at(0.26)}${y(0, 'linear')}${at(0.4)}${y(0, 'ease-out')}` +
-    `${at(0.5)}${y(-0.67, 'ease-in')}${at(0.62)},100%${y(0, 'linear')}}`
+    `${at(0.5)}${y(-0.67, 'ease-in')}${at(0.62)},100%${y(0, 'linear')}}` +
+    `.shadow{animation:shadow ${length}s linear 1 both}` +
+    `@keyframes shadow{0%,${at(0)}${wide(1, 'ease-out')}${at(0.12)}${wide(0.8, 'ease-in')}${at(0.26)}${wide(1, 'linear')}${at(0.4)}${wide(1, 'ease-out')}` +
+    `${at(0.5)}${wide(0.86, 'ease-in')}${at(0.62)},100%${wide(1, 'linear')}}`
   )
+}
+
+/**
+ * His shadow on the sand, under his feet: a soft, flat oval in a darker sand, which walks with him
+ * and stays on the ground when he hops. Drawn smooth, under his crisp pixels.
+ */
+function shadow(): string {
+  return `<ellipse class="shadow" cx="9" cy="10.35" rx="6.6" ry=".62" fill="${SHADOW}" shape-rendering="geometricPrecision"/>`
 }
 
 // Three little clay sparkles while his arms are up after the spin. Each pops up from a point,
@@ -1438,7 +1494,7 @@ function nap(isMoving: boolean, from: number, isCurled: boolean, zsInto: number,
       motion.push(keyframes(`n-${name}`, intro, beats, beat => `opacity:${beat.pose === name ? 1 : 0}`))
     }
     const poses = names.map(name => `<g class="n-${name}">${frame(name)}</g>`).join('')
-    settling = `<g class="clawd sleepy"><g class="homeward">${poses}</g></g>`
+    settling = `<g class="clawd sleepy"><g class="homeward">${shadow()}${poses}</g></g>`
   }
 
   return `<g transform="translate(${HOME} ${TOP})">${settling}<g class="clawd curl">${pixels(curled())}</g></g>${zs}`

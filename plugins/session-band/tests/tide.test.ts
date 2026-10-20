@@ -3057,13 +3057,19 @@ test('desktop: his cheer hops twice for joy as his arms go up and each sparkle g
   await $.turn.complete({ answer: 'Done.', durationMs: 9_000, isAborted: false, turnId: 't1', reason: 'answer' })
   const lively = (await look()).svg?.source ?? ''
   const motion = lively.slice(lively.indexOf('@media (prefers-reduced-motion:no-preference)'))
-  // His poses hop in a group of their own inside his walk, so the walk and the sparkles stay put.
-  expect(lively).toContain('<g class="walk clawd"><g class="hop">')
+  // His poses hop in a group of their own inside his walk, so the walk, his shadow and the sparkles stay put.
+  expect(lively).toMatch(/<g class="walk clawd"><ellipse class="shadow" [^>]*\/><g class="hop">/u)
   const hop = /@keyframes hop\{([^@]*?)\}\}/u.exec(motion)?.[1] ?? ''
   const heights = [...hop.matchAll(/translateY\((-?[\d.]+)px\)/gu)].map(found => Number(found[1]))
   // Up a unit, down, up a touch less, down: at rest on his whole pixels before and after.
   expect(heights).toEqual([0, -1, 0, 0, -0.67, 0])
   expect(motion).toMatch(/\.hop\{animation:hop 4\.2s linear 1 both\}/u)
+  // His shadow stays on the sand, narrower while he is up, in step with the hop.
+  const shadow = /@keyframes shadow\{([^@]*?)\}\}/u.exec(motion)?.[1] ?? ''
+  expect([...shadow.matchAll(/scaleX\(([\d.]+)\)/gu)].map(found => Number(found[1]))).toEqual([1, 0.8, 1, 1, 0.86, 1])
+  // (The same beats: its keyframes' times are the hop's.)
+  expect(shadow.replace(/\{[^}]*\}?/gu, '')).toBe(hop.replace(/\{[^}]*\}?/gu, ''))
+  expect(motion).toMatch(/\.shadow\{animation:shadow 4\.2s linear 1 both\}/u)
   // Each of the three sparkles swells and turns once while held, then shrinks away as before.
   for (const i of [0, 1, 2]) {
     expect(motion).toMatch(new RegExp(`@keyframes star${i}\\{[^@]*scale\\(1\\.25\\) rotate\\(15deg\\)[^@]*100%\\{transform:scale\\(0\\)\\}\\}`, 'u'))
@@ -4081,9 +4087,9 @@ function sceneWrites(on: On): (clock: ReturnType<typeof mock.clock>) => Promise<
   }
 }
 
-/** Each star's place in its twinkle as a frame opens: its period, and the seconds into it. */
+/** Each glint's and star's place in its loop as a frame opens: its period, and the seconds into it. */
 function loops(source: string): Map<string, { period: number; into: number }> {
-  const found = source.matchAll(/\.(twinkle\d)\{animation:twinkle ([\d.]+)s ease-in-out -([\d.]+)s infinite\}/gu)
+  const found = source.matchAll(/\.((?:glint|twinkle)\d)\{animation:(?:glint|twinkle) ([\d.]+)s ease-in-out -([\d.]+)s infinite\}/gu)
 
   return new Map([...found].map(([, name, period, into]) => [name ?? '', { period: Number(period), into: Number(into) }]))
 }
@@ -4192,8 +4198,8 @@ for (const columns of [100, 44]) {
       // And the frame's own CSS carries it: the crests' delays, from the sea's clock.
       const clockAt = now.scene.sea?.clock ?? 0
       expect([now.what, now.source]).toEqual([now.what, expect.stringContaining(`roll 9s linear -${Math.round((clockAt % 9) * 1000) / 1000}s infinite`)])
-      // The stars keep that time too (the tests' clock reads night), so a new frame never snaps one
-      // back mid-twinkle.
+      // The glints on the water and the stars over it keep that time too, so a new frame never cuts
+      // one short or pops one up afresh.
       const before = loops(was.source)
       for (const [name, { period, into }] of loops(now.source)) {
         const last = before.get(name)
@@ -4485,6 +4491,71 @@ test('desktop: at night a crescent moon and twinkling stars hang over the sea, a
   const day = (await look()).svg
   expect(day?.source).not.toContain('class="sky"')
   expect(day?.alt).not.toContain('stars')
+  await ui.unmount()
+})
+
+test('desktop: a soft shadow lies under him on the sand: it walks with him, stays down when he hops, and goes home with him for his nap', async ($, on) => {
+  const { clock } = world(on)
+  await start($)
+  await turn($, clock)
+  await clock.advance(10_000)
+  const { ui, look } = await band($, 'desktop')
+  const idle = (await look()).svg?.source ?? ''
+  // One shadow, first in his walk (so it walks with him, under his feet), outside his hop, and drawn
+  // smooth under his crisp pixels.
+  expect([...idle.matchAll(/class="shadow"/gu)].length).toBe(1)
+  expect(idle).toMatch(/<g class="walk clawd"><ellipse class="shadow" [^>]*shape-rendering="geometricPrecision"\/><g class="hop">/u)
+  // The sand a shade darker, and see-through: never a gray smudge on either page.
+  const [red, green, blue, alpha] = (/class="shadow"[^>]*fill="rgba\(([^)]*)\)"/u.exec(idle)?.[1] ?? '').split(',').map(Number)
+  expect([(red ?? 0) > (green ?? 0), (green ?? 0) > (blue ?? 0), (alpha ?? 0) > 0.1 && (alpha ?? 1) < 0.4]).toEqual([true, true, true])
+  // It moves only with his hop.
+  expect(idle).not.toContain('.shadow{animation')
+  // Dozing off, he takes it home with him; curled up, half in the sand, he covers it.
+  await clock.advance(151_000)
+  const nap = (await look()).svg?.source ?? ''
+  expect(nap).toMatch(/<g class="homeward"><ellipse class="shadow" /u)
+  expect(nap.slice(nap.indexOf('class="clawd curl"'))).not.toContain('class="shadow"')
+  await ui.unmount()
+})
+
+test('desktop: glints of light come and go out on the water, the sun\'s white by day and the moon\'s gold under it by night; never in a still frame', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 14) })
+  await start($)
+  await turn($, clock)
+  const { ui, look } = await band($, 'desktop')
+  const glints = (source: string) => [...source.matchAll(/<path class="glint glint\d" d="M([\d.]+) [^"]*" fill="([^"]+)"\/>/gu)].map(([, x, fill]) => ({ x: Number(x), fill }))
+  const front = (source: string) => Number(/<clipPath id="water"><path d="M([\d.]+) /u.exec(source)?.[1])
+  const day = (await look()).svg?.source ?? ''
+  expect(glints(day).map(glint => glint.fill)).toEqual(['#FFFFFF', '#FFFFFF', '#FFFFFF'])
+  // In the water's own clip, after its crests: they ride its lap and its surge, and never show on the sand.
+  expect(day).toMatch(/<g clip-path="url\(#water\)"><path class="roll2"[^>]*\/><path class="roll"[^>]*\/>(<path class="glint glint\d"[^>]*\/>){3}<\/g>/u)
+  // Each pops up from a point and shrinks away, never fading, and only where motion plays: a page
+  // that asks for less motion keeps them out of sight.
+  const motion = day.slice(day.indexOf('@media (prefers-reduced-motion:no-preference)'))
+  expect(/@keyframes glint\{[^@]*?\}\}/u.exec(motion)?.[0]).not.toContain('opacity')
+  expect(day.slice(0, day.indexOf('@media'))).toContain('.glint{transform-box:fill-box;transform-origin:center;transform:scale(0)}')
+  // At low tide, only those out on the water show, clear of its front.
+  await $.session.measure(measured(8, 0.31))
+  await turn($, clock)
+  const low = (await look()).svg?.source ?? ''
+  expect([glints(low).length > 0, glints(low).length < 3]).toEqual([true, true])
+  glints(low).forEach(glint => expect(glint.x).toBeGreaterThan(front(low) + 1.5))
+  // Their periods, and the stars', divide the sea clock's wrap, so they go on in step across it.
+  await $.session.measure(measured(42, 0.31))
+  await clock.set(localAt(15, 22))
+  const night = (await look()).svg?.source ?? ''
+  expect([loops(day).size, loops(night).size]).toEqual([3, 7])
+  for (const source of [day, night]) {
+    for (const { period } of loops(source).values()) expect(Math.abs(126 / period - Math.round(126 / period))).toBeLessThan(1e-9)
+  }
+  // By night, a path of moonlight on the water under the moon.
+  const moon = Number(/<g class="sky"><path d="M([\d.]+) /u.exec(night)?.[1])
+  const moonlit = glints(night)
+  expect(moonlit.map(glint => glint.fill)).toEqual(['#E9C77E', '#E9C77E', '#E9C77E'])
+  moonlit.forEach(glint => expect(Math.abs(glint.x - moon)).toBeLessThan(2))
+  // Still, none.
+  await run($, 'band', 'still')
+  expect((await look()).svg?.source).not.toContain('glint')
   await ui.unmount()
 })
 

@@ -401,7 +401,7 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
 | A compaction lets the tide out | The water rolls out a cell a tick and leaves a starfish (Claude Code's ✶, in his clay) on the sand where its edge stood; he looks over at it as it shows. It stays until the tide comes back up to it (`starfishAt`), hidden only while the water washes over it or he stands over it, and the grains beside it make room. | A clay starfish lies on the sand face at the old edge, in front of the sand and behind the sea and him; the alt adds "A starfish lies where the tide was." |
 | Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". A prompt wakes him: he stands with a big stretch, arms up and eyes still shut, lowers them, then opens his eyes (¾ s). | He walks home, curls up, then "z Z Z". One source for the whole nap. Woken, he stretches the same way as the turn's first loop begins. |
-| Night (8pm to 6am, your clock) | Faint stars over the sea, one twinkling with each wave that washes up. | A gold crescent moon and four twinkling stars over the sea; the alt says the stars are out. |
+| Night (8pm to 6am, your clock) | Faint stars over the sea, one twinkling with each wave that washes up. | A gold crescent moon and four twinkling stars over the sea, and moonlight glinting on the water under it; the alt says the stars are out. |
 | Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A pointer resting on the beach: a pixel heart beside him that walks with him and beats softly; over his head as he sleeps. |
 | Still | Nothing moves on its own: a cheer is one held pose, a nap is curled at once, a splash is its peak frame. By the band's edge a pet during the cheer takes him home on the pet's own pose change. | No keyframes; reduced motion puts every animation under `prefers-reduced-motion: no-preference`. The frame holds him where the last one had him (`stillDx`). The alts say "Clawd stands on the sand" idle and "A wave splashes over Clawd's feet" for the held splash. |
 
@@ -499,8 +499,17 @@ sand" when still), then the tide in words, never a number.
   at his loop's start, as the walk home would, so the curl never moves his still home.
 - **The sea carries on.** Each Scene carries its sea outside the source's key, which `seaAfter`
   writes as negative animation delays; a rising tide waits for his walk back (`glideWait`). The
-  night's twinkling stars keep the same clock, each period dividing its 126 s wrap (`CLOCK_WRAP`), so
-  a new frame never snaps one back mid-twinkle.
+  glints on the water and the night's twinkling stars keep the same clock, each period dividing its
+  126 s wrap (`CLOCK_WRAP`), so a new frame never cuts one short or pops one up afresh.
+- **His shadow** lies on the sand under his feet: a soft oval of the sand a shade darker,
+  see-through, first in his walk so it walks with him, and drawn smooth under his crisp pixels. It
+  stays on the ground when he hops, narrowing while he is up, and goes home with him for a nap;
+  curled up, half in the sand, he covers it.
+- **Light on the water.** By day three white glints of sun, by night three gold ones in a path under
+  the moon, each popping up from a point now and then at its own pace and shrinking away, never
+  fading. They sit in the water's own clip, so they ride its lap and its surge and never show on the
+  sand, and only out on the water, clear of its front. A still frame draws none, and a page that
+  asks for less motion keeps them out of sight.
 - **A splash's frame goes on into the work**, so a turn that lands after a failure loads one frame.
 - **The kept scene** goes to `$.state` from a `$.clock.after(0)` (a render cannot write), so a fresh
   activation keeps the frame on screen; the hearth clears it (`scene.forget()`). Several desktops
@@ -784,10 +793,11 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   the sparkles at every width from 34 to 60 at six tides, the finale's twinkle and dance, the one
   heart, the step home, a turn landing mid-splash, his feet never on damp sand, the night sky (its
   stars clear of everything, twinkling only on frames that change anyway, and nightfall redrawing
-  the band by itself), and the starfish (what leaves one, where it lies, his look, the tide washing
-  it away). Times that matter to the night are local, so the tests hold in any time zone (`claude
-  plugin test` keeps UTC, so most run at night); a test that holds a whole alt adds what its clock
-  says of the stars (`starsSaid`).
+  the band by itself), the starfish (what leaves one, where it lies, his look, the tide washing it
+  away), and the desktop's shadow and glints (in step with the sea from frame to frame). Times that
+  matter to the night are local, so the tests hold in any time zone (`claude plugin test` keeps
+  UTC, so most run at night); a test that holds a whole alt adds what its clock says of the stars
+  (`starsSaid`).
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
   line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
   moment, the bead, calm, petting and the `hh-` classes.
