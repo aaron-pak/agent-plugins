@@ -62,6 +62,8 @@ export function bandProps(
     shownForMs,
     isAppleTerminal: known.isAppleTerminal,
     isNight: isNightAt(now),
+    treasure: pct(known.treasurePercent),
+    treasures: known.treasures,
     isGreeting: greetedMs !== null && known.lastTurn === null && !isWorking,
     greetedMs: greetedMs !== null && known.lastTurn === null && !isWorking ? greetedMs : null,
     words: wordsFor(known, isWorking, isHigh, now, isDesktop),
@@ -233,6 +235,7 @@ function isShownScene(kept: unknown): kept is ShownScene {
     typeof scene.still === 'boolean' &&
     typeof scene.wave === 'number' &&
     typeof scene.night === 'boolean' &&
+    (scene.treasure === null || typeof scene.treasure === 'number') &&
     'from' in scene &&
     'sea' in scene &&
     // Only a scene this build would draw the same: its key is what this build makes of it.

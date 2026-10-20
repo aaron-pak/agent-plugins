@@ -85,6 +85,8 @@ type Live = {
   helloAt: number
   seenCheers: number
   seenOops: number
+  /** The starfish this band has seen the tide leave: he looks over at each new one as it shows. */
+  seenTreasures: number
   /** The facts' waves this band has splashed for: a failure that rides along with a wave starts none. */
   seenWaves: number
   /**
@@ -345,6 +347,7 @@ function start(props: BandProps, columns: number): Live {
     helloAt: props.isGreeting && !props.isAppleTerminal ? helloFrom(props.greetedMs) : NEVER,
     seenCheers: props.cheers,
     seenOops: props.oops,
+    seenTreasures: props.treasures,
     seenWaves: props.waves,
     isWaveSeen,
     quietAt: NEVER,
@@ -919,6 +922,11 @@ function plan(live: Live, columns: number): void {
   if (live.busyAt === tick - 1) {
     settle(live, mood)
   }
+  // The tide has gone out from a starfish it left: as it shows on the sand, he looks over at it.
+  if (live.props.treasures > live.seenTreasures && starfishAt(live, beach) !== null) {
+    live.seenTreasures = live.props.treasures
+    live.glanceAt = tick + 1
+  }
   // Out a cell for his cheer, he leaves it on a tick no wave washes up to his feet (nor will on the
   // next): with a foot lifted beside the water he would read as stepping out of the sea, so he waits
   // for it to draw back.
@@ -1472,6 +1480,27 @@ function groundAt(col: number, edge: number, damp: number, isUnder: boolean, isB
   return { ch: ripple === 6 ? '▟' : ripple === 7 ? '▙' : '▄', color: SEA_DEEP, bg: SEA }
 }
 
+/** The starfish a compaction leaves: Claude Code's own sparkle, in his clay, lying on the sand. */
+const STARFISH = '✶'
+
+/**
+ * Where the starfish lies, when it shows: at the high-water mark, where the tide stood before a
+ * compaction let it out (the water's edge at that fill), on the sand it left. The water covers it
+ * while it washes up that far (a wave, a splash, the tide coming back), and it is hidden while he
+ * stands over it or a cell from it, as a grain is, so it never crowds his feet. Never on the shell.
+ */
+function starfishAt(live: Live, beach: number): number | null {
+  const percent = live.props.treasure
+  if (percent === null) {
+    return null
+  }
+  const col = tideline({ ...live.props, percent }, beach)
+  const edge = edgeOf(live, shoreline(live, beach))
+  const isNear = col >= live.x - 1 && col <= live.x + SPRITE
+
+  return col < edge && !isNear && col > (hasShell(beach) ? SHELL_WIDTH : 0) ? col : null
+}
+
 // The wave at the shore, curling toward the sand: a foam lip pitching forward over its foot (the
 // sky shows under it, open toward the beach, so nothing is enclosed), the foam running back over
 // its shoulder, then a body of sea that slopes gently down behind. Six cells when there is room,
@@ -1523,8 +1552,11 @@ function scene(live: Live, beach: number): Row[] {
   const isDamp = live.props.isStill ? isSplashShown(live) : splashed >= 2 && splashed < DAMP_TICKS
   const trail = isDamp ? live.splashFrom + 4 : beach
   const damp = Math.min(Math.min(edge, shore) - 2, trail)
+  // A starfish on the sand (see starfishAt): the grains beside it make room, as they do for his feet.
+  const starfish = starfishAt(live, beach)
   for (let col = 0; col < beach; col++) {
-    ground.push(groundAt(col, edge, damp, col >= live.x - 1 && col <= live.x + SPRITE, col >= live.x && col < live.x + SPRITE))
+    const isNear = (col >= live.x - 1 && col <= live.x + SPRITE) || (starfish !== null && Math.abs(col - starfish) <= 1)
+    ground.push(groundAt(col, edge, damp, isNear, col >= live.x && col < live.x + SPRITE))
   }
   if (hasShell(beach) && edge > SHELL_WIDTH) {
     for (const [r, c, cell] of SHELL_CELLS) {
@@ -1532,6 +1564,9 @@ function scene(live: Live, beach: number): Row[] {
       // In the ground row it sits in the sand, which shows round it.
       if (target !== undefined && c < beach) target[c] = r === 2 ? { ...cell, bg: target[c]?.bg ?? SAND } : cell
     }
+  }
+  if (starfish !== null) {
+    ground[starfish] = { ch: STARFISH, color: 'claude', bg: ground[starfish]?.bg ?? SAND }
   }
   const isSky = (row: number, col: number) => {
     const under = rows[row]?.[col]

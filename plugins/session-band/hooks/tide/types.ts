@@ -56,6 +56,9 @@ export type Info = {
   /** When the beach's wave for this turn's failures began, and how many waves the session has seen. */
   splashAt: number | null
   waves: number
+  /** The high-water mark a compaction left a starfish at, and how many have been left (see the shared facts). */
+  treasurePercent: number | null
+  treasures: number
   /** The last tool to finish failed, and none has started since: the line keeps what failed, quietly. */
   isSlipped: boolean
   /** When this (or the last) turn's prompt was sent. */
@@ -140,6 +143,12 @@ export type BandProps = {
   isAppleTerminal: boolean
   /** Night by the person's own clock (see isNightAt): the stars are out over the beach. */
   isNight: boolean
+  /**
+   * A starfish on the sand where a compaction let the tide out: the context fill the water stood at
+   * just before (null: none), and how many the session has seen, so a new one is noticed.
+   */
+  treasure: number | null
+  treasures: number
   /** The band's first few seconds in a fresh session, before any turn: Clawd waves hello. Once a session. */
   isGreeting: boolean
   /**

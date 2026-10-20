@@ -43,6 +43,8 @@ export function tideInfo(known: Facts): Info {
     oopsPercent: known.oopsPercent,
     splashAt: known.oopsAt === null ? null : (known.splashAt ?? known.oopsAt),
     waves: known.waves,
+    treasurePercent: known.treasurePercent,
+    treasures: known.treasures,
     isSlipped: known.slip !== null,
     turnAt: known.turnAt,
     isCalm: known.isCalm,

@@ -60,16 +60,22 @@ const CREST = '▀▛█▄▄▖'
 // An eye pixel on the desktop head's top row (y 0), where a dark page would swallow it.
 const EYE_ON_TOP = /<rect x="\d+" y="0" width="\d+" height="2" fill="#1B1A19"\/>/
 
+// What a compaction leaves of the conversation: a summary (it always leaves at least one message).
+const SUMMARY = { role: 'user' as const, text: 'Summary of the conversation so far.', toolUses: [] }
+
+// Something to do while each tool runs (time passing, say) or while a compaction runs, and a reason
+// a hook skips a compaction.
+type During = { tool: (() => Promise<void>) | null; compact: (() => Promise<unknown>) | null; skipCompact: string | null }
+
 // The engine beneath the plugin: a session in agent-plugins on branch main with two changed files.
 // A test that answers tools itself passes { tools: false }: a hooks module registers tool.call once.
 function world(
   on: On,
   { tools = true, branch = 'main', env, now = T0 }: { tools?: boolean; branch?: string; env?: Record<string, string>; now?: number } = {},
-): { toasts: string[]; clock: ReturnType<typeof mock.clock>; release: () => void; during: { tool: (() => Promise<void>) | null } } {
+): { toasts: string[]; clock: ReturnType<typeof mock.clock>; release: () => void; during: During } {
   const toasts: string[] = []
   const held: Array<() => void> = []
-  // Something to do while each tool runs (time passing, say).
-  const during: { tool: (() => Promise<void>) | null } = { tool: null }
+  const during: During = { tool: null, compact: null, skipCompact: null }
   mock.store(on)
   if (env !== undefined) mock.env(on, env)
   const clock = mock.clock(on, { now })
@@ -92,6 +98,12 @@ function world(
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
+  on('session.compact', async () => {
+    await during.compact?.()
+
+    return during.skipCompact === null ? { messages: [SUMMARY] } : { skip: during.skipCompact }
+  })
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
 
@@ -4204,7 +4216,7 @@ for (const columns of [100, 44]) {
 }
 
 test('desktop: a frame that takes the sea over keeps the wave lip and the crests exactly where the last frame had them, whatever the millisecond: the same lap going on (the cheer handing over to his sit), or a nap\'s slower lap waiting for the last to run out', async () => {
-  const cheer: Scene = { mood: 'idle', tide: 30, still: false, moment: 'cheer', from: null, width: 64, wave: 0, night: false, sea: null }
+  const cheer: Scene = { mood: 'idle', tide: 30, still: false, moment: 'cheer', from: null, width: 64, wave: 0, night: false, treasure: null, sea: null }
   const handovers: Array<[Scene, Scene]> = [
     [cheer, { ...cheer, moment: null, from: 0 }],
     [{ ...cheer, moment: null }, { ...cheer, moment: null, mood: 'nap', from: 0 }],
@@ -4497,6 +4509,112 @@ for (const surface of SURFACES) {
     await ui.unmount()
   })
 }
+
+// The starfish in a terminal band: its column in the ground row, or -1.
+function starfishOf(view: View): number {
+  return cellsOf(view.rows[2]).findIndex(cell => cell.ch === '✶')
+}
+
+test('terminal: a compaction lets the tide out and leaves a starfish on the sand where the water stood; he looks over as it shows, and the tide coming back washes it away', { timeoutMs: 60_000 }, async ($, on) => {
+  const { clock } = world(on)
+  await start($, 86, 1.9)
+  await turn($, clock)
+  const { ui, look, wait } = await band($, 'terminal')
+  const high = seaStart(await look())
+  expect(starfishOf(await look())).toBe(-1)
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+  await $.session.measure(measured(12, 1.95))
+  // The water rolls out a cell a tick; the starfish shows on the sand it leaves, where it stood.
+  let shown = -1
+  let looked = false
+  for (let i = 0; i < 16; i++) {
+    await wait(250)
+    await clock.advance(250)
+    const view = await look()
+    if (shown < 0 && starfishOf(view) >= 0) shown = i
+    if (shown >= 0 && (view.scene[0] ?? '').includes(HEAD_RIGHT)) looked = true
+  }
+  const view = await look()
+  const at = starfishOf(view)
+  // Where the water's edge stood at 86% on the 32-cell beach: 32 - 8 cells of open sea - 86% of 9.
+  expect([at, high - 1]).toEqual([16, 16])
+  // Claude's sparkle in his clay, lying on the sand, which shows round it.
+  expect(cellsOf(view.rows[2])[at]).toEqual({ ch: '✶', color: 'claude', bg: SAND })
+  expect([shown >= 0, looked]).toEqual([true, true])
+  // No grain crowds it.
+  expect(cellsOf(view.rows[2]).slice(at - 1, at + 2).filter(cell => cell.ch === '▖')).toEqual([])
+  // The context climbs back to where it was: the tide washes over it, and it is gone for good.
+  await $.session.measure(measured(86, 2))
+  for (let i = 0; i < 16; i++) {
+    await wait(250)
+    await clock.advance(250)
+  }
+  expect(starfishOf(await look())).toBe(-1)
+  await $.session.measure(measured(40, 2.1))
+  for (let i = 0; i < 16; i++) {
+    await wait(250)
+    await clock.advance(250)
+  }
+  expect(starfishOf(await look())).toBe(-1)
+  await ui.unmount()
+})
+
+test('only a compaction of the conversation that went through leaves a starfish, where the water stood before it ran: not a precompute, a subagent\'s, or one a hook skipped; /clear takes it with the conversation', async ($, on) => {
+  const { clock, during } = world(on)
+  await start($, 86, 1.9)
+  await turn($, clock)
+  const { ui, look, wait } = await band($, 'terminal')
+  const settle = async (percent: number) => {
+    await $.session.measure(measured(percent, 1.95))
+    for (let i = 0; i < 16; i++) {
+      await wait(250)
+      await clock.advance(250)
+    }
+  }
+  await $.session.compact({ trigger: 'precompute', messages: [SUMMARY, SUMMARY] })
+  await $.session.compact({ trigger: 'auto', agentId: 'agent-1', messages: [SUMMARY, SUMMARY] })
+  during.skipCompact = 'not now'
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+  during.skipCompact = null
+  await settle(12)
+  expect(starfishOf(await look())).toBe(-1)
+  // The engine's own, at its threshold: it leaves one where the water stood before it ran, even when
+  // a measure lands while it runs.
+  await settle(86)
+  during.compact = () => $.session.measure(measured(12, 1.95))
+  await $.session.compact({ trigger: 'auto', messages: [SUMMARY, SUMMARY] })
+  during.compact = null
+  await settle(12)
+  expect(starfishOf(await look())).toBe(16)
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: { id: 's1' } })
+  await settle(12)
+  expect(starfishOf(await look())).toBe(-1)
+  await ui.unmount()
+})
+
+test('desktop: a compaction leaves a starfish on the sand at the tide\'s old edge, the alt says so, and the tide coming back washes it away', async ($, on) => {
+  const { clock } = world(on)
+  await start($, 86, 1.9)
+  await turn($, clock)
+  const { ui, look } = await band($, 'desktop')
+  expect((await look()).svg?.source).not.toContain('class="starfish"')
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY, SUMMARY] })
+  await $.session.measure(measured(12, 1.95))
+  await clock.advance(1_000)
+  const left = (await look()).svg
+  expect(left?.source).toContain('class="starfish"')
+  expect(left?.alt).toContain('The tide is out. A starfish lies where the tide was.')
+  // It lies in the sand, before the sea and him: the water washes over it, and he walks in front of it.
+  const source = left?.source ?? ''
+  expect(source.indexOf('class="starfish"')).toBeLessThan(source.indexOf('clip-path="url(#water)"'))
+  expect(source.indexOf('class="starfish"')).toBeLessThan(source.indexOf('class="walk clawd"'))
+  await $.session.measure(measured(90, 2))
+  await clock.advance(1_000)
+  const back = (await look()).svg
+  expect(back?.source).not.toContain('class="starfish"')
+  expect(back?.alt).not.toContain('starfish')
+  await ui.unmount()
+})
 
 test('desktop: a measure just before the turn ends draws one new frame, the cheer, and never a stride first', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock } = world(on)

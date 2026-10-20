@@ -217,8 +217,10 @@ export const register: Register = (on, options) => {
       }
       // One toast per crossing: it comes again only once the context has dropped back under.
       isToast = percent >= warnAt && !before.isWarned
+      // The tide back up to where a compaction left the starfish washes it away.
+      const isWashed = before.treasurePercent !== null && percent >= before.treasurePercent
 
-      return { ...figures(e), isWarned: percent >= warnAt }
+      return { ...figures(e), isWarned: percent >= warnAt, ...(isWashed ? { treasurePercent: null } : {}) }
     })
     if (isToast && percent !== undefined) {
       $.ui.toast(toastFor(await lookOf($, activation, configured), percent), { timeoutMs: 8000 })
@@ -226,6 +228,21 @@ export const register: Register = (on, options) => {
 
     return next(e)
   })
+
+  // A compaction lets the tide out (a measure says how far), and leaves a starfish on the sand at the
+  // high-water mark: the context as it stood before the compaction ran, read first, since a measure
+  // may land while it runs. The main conversation's only, and only one that went through (not a
+  // precompute, nor one a hook skipped).
+  on('session.compact', async ($, e, next) => {
+    const isMain = e.agentId === undefined && e.trigger !== 'precompute'
+    const high = isMain ? whole((await orNothing(read($, info))) ?? EMPTY).percent : null
+    const result = await next(e)
+    if (high !== null && result.messages !== undefined) {
+      await patch($, before => ({ treasurePercent: high, treasures: before.treasures + 1 }))
+    }
+
+    return result
+  }).catch((_$, e, next) => next(e))
 
   // A /model, the picker or a fallback names the new model on line 3 at once. Only the main loop's
   // switch counts (a subagent's runs its own model), and the git hold still keeps it off the line
@@ -474,6 +491,7 @@ export const register: Register = (on, options) => {
         oopsNoun: null,
         oopsPercent: null,
         splashAt: null,
+        treasurePercent: null,
         turnWorked: false,
         workedAt: null,
         woke: false,

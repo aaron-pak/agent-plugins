@@ -130,6 +130,8 @@ export const EMPTY: Info = {
   oopsPercent: null,
   splashAt: null,
   waves: 0,
+  treasurePercent: null,
+  treasures: 0,
   turnAt: null,
   greetedAt: null,
   isWarned: false,

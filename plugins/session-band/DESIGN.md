@@ -25,6 +25,8 @@ rule on purpose, change its test and this page with it.
 - **Reduced motion wins.** With Claude Code's reduced-motion setting on, both looks stay still.
 - **`warnAt`** (default 80): the context percent where the band nudges toward `/compact` (high tide
   on the beach, a clay percent and a sweating Clawd by the hearth, and a toast at each crossing).
+  On the beach, a compaction that lets the tide out leaves a starfish on the sand where the water
+  stood, until the context climbs back up to it.
 
 ## Looks and motion
 
@@ -171,7 +173,8 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | Hook | What it does |
 |---|---|
 | `session.start` | Registers `/band`; reads the motion, usage, model, repo, reduced motion and `TERM_PROGRAM`, each on its own so one failed lookup never blanks the rest, and writes them before git answers; arms the nap; shows the upgrade toast; then writes git's branch and count, even if a step before it went wrong. Idempotent. |
-| `session.measure` | Context, cost and limits; the `warnAt` toast. |
+| `session.measure` | Context, cost and limits; the `warnAt` toast; the tide back up to a starfish washes it away. |
+| `session.compact` | A compaction of the conversation that went through (not a precompute, a subagent's, or one a hook skipped) leaves the beach a starfish at the high-water mark: the context as it stood before the compaction ran, read first, since a measure may land while it runs. |
 | `classic.PostModelSwitch` | The main loop's new model, on line 3 at once. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
 | `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
@@ -191,8 +194,10 @@ desktop redraw. The hearth adds its failure (`slip`, `lastSlip`, `slipDue`), its
 line (`held`). The tide adds the turn's start (`turnAt`, `turnPercent`), whether the turn changed
 something (`turnWorked`, `workedAt`), `woke`, its shown tool (`desk`), the cheer's time and tide,
 and the failure's words and tide (`oopsWhat`, `oopsName`, `oopsNoun`, `oopsPercent`, `splashAt`,
-`waves`). Both held lines, `held` and `desk`, also carry the todos they show beside their step
-(`todos`, `todosAt`).
+`waves`), and the starfish a compaction left (`treasurePercent`, the high-water mark, null once the
+tide has come back up to it or after a `/clear`; `treasures`, how many the session has seen). Both
+held lines, `held` and `desk`, also carry the todos they show beside their step (`todos`,
+`todosAt`).
 
 Rules the facts keep:
 
@@ -301,10 +306,11 @@ activation's first draw arms again what the facts say is still to come (`pending
 - **Nightfall and daybreak.** The beach's sky follows the person's own clock (`isNightAt`: 8pm to
   6am), which nothing in the session announces, so every draw arms one redraw for the next turn of
   it (`nightTurnsIn`, a second late), kept until it fires; a reload arms it again on its first draw.
-- **Robustness.** `session.start`, `prompt.submit`, `turn.complete` and `config.set` end in
-  `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that went wrong off the
-  running list: a state write that throws leaves the event untouched, and a tool never runs twice.
-  `ui.render` reads each record through `orNothing`, so an unreadable store still draws Clawd.
+- **Robustness.** `session.start`, `prompt.submit`, `turn.complete`, `session.compact` and
+  `config.set` end in `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that
+  went wrong off the running list: a state write that throws leaves the event untouched, and a tool
+  never runs twice. `ui.render` reads each record through `orNothing`, so an unreadable store still
+  draws Clawd.
 
 ## The tide (default)
 
@@ -393,6 +399,7 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | Stopped, or an error | No spin. "Stopped after 12s" (dim), or "Stopped on an error after 12s". | No cheer; the same words. |
 | A tool failed | Eyes shut, arms up, the water rushing to his feet with spray; then, cold feet, he hops from one pair to the other for a second, looking round at the water as it slides back. Still, the hit is held. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s, and he hops on his cold feet as it does. Four drops burst from the crest, each its own height, size and reach, and arc out to sea at full color, never fading: each flies outward at an even pace in a group of its own while it rises and falls, so its path is a true arc, and lands past the calm line, where the sea is by then, shrinking into it, all by 2.2 s (`DROPS_END_S`). Each failure is a new frame (`data-wave`); one in the first 1.25 s of the same turn rides along. |
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
+| A compaction lets the tide out | The water rolls out a cell a tick and leaves a starfish (Claude Code's ✶, in his clay) on the sand where its edge stood; he looks over at it as it shows. It stays until the tide comes back up to it (`starfishAt`), hidden only while the water washes over it or he stands over it, and the grains beside it make room. | A clay starfish lies on the sand face at the old edge, in front of the sand and behind the sea and him; the alt adds "A starfish lies where the tide was." |
 | Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". A prompt wakes him: he stands with a big stretch, arms up and eyes still shut, lowers them, then opens his eyes (¾ s). | He walks home, curls up, then "z Z Z". One source for the whole nap. Woken, he stretches the same way as the turn's first loop begins. |
 | Night (8pm to 6am, your clock) | Faint stars over the sea, one twinkling with each wave that washes up. | A gold crescent moon and four twinkling stars over the sea; the alt says the stars are out. |
 | Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A pointer resting on the beach: a pixel heart beside him that walks with him and beats softly; over his head as he sleeps. |
@@ -775,11 +782,12 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
   the Svg's CSS (and the hover heart's walk against his); films of a pet at every 250 ms of a cheer,
   the sparkles at every width from 34 to 60 at six tides, the finale's twinkle and dance, the one
-  heart, the step home, a turn landing mid-splash, his feet never on damp sand, and the night sky
-  (its stars clear of everything, twinkling only on frames that change anyway, and nightfall
-  redrawing the band by itself). Times that matter to the night are local, so the tests hold in any
-  time zone (`claude plugin test` keeps UTC, so most run at night); a test that holds a whole alt
-  adds what its clock says of the stars (`starsSaid`).
+  heart, the step home, a turn landing mid-splash, his feet never on damp sand, the night sky (its
+  stars clear of everything, twinkling only on frames that change anyway, and nightfall redrawing
+  the band by itself), and the starfish (what leaves one, where it lies, his look, the tide washing
+  it away). Times that matter to the night are local, so the tests hold in any time zone (`claude
+  plugin test` keeps UTC, so most run at night); a test that holds a whole alt adds what its clock
+  says of the stars (`starsSaid`).
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
   line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
   moment, the bead, calm, petting and the `hh-` classes.

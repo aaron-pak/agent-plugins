@@ -101,6 +101,8 @@ export type Scene = {
   wave: number
   /** Night by the person's own clock: a moon and stars over the sea. */
   night: boolean
+  /** Where a compaction left a starfish: the tide it stood at before, in 5% steps (null: none). */
+  treasure: number | null
   sea: Sea | null
   phase?: number
   curled?: boolean
@@ -249,7 +251,9 @@ export function sceneOf(props: BandProps): Scene {
   const mood = moment === 'cheer' && (now === 'read' || now === 'work') ? (props.isHigh ? 'high' : 'idle') : now
   const wave = moment === 'splash' && !props.isStill ? props.waves : 0
 
-  return { mood, tide: tideOf(props, moment), still: props.isStill, moment, from: null, width: dioramaWidth(props.columns), wave, night: props.isNight, sea: null }
+  const treasure = props.treasure === null ? null : Math.round(props.treasure / TIDE_STEP) * TIDE_STEP
+
+  return { mood, tide: tideOf(props, moment), still: props.isStill, moment, from: null, width: dioramaWidth(props.columns), wave, night: props.isNight, treasure, sea: null }
 }
 
 /**
@@ -729,7 +733,9 @@ function altFor(scene: Scene, isRead: boolean): string {
             ? `${HAPPENING.splash}, then he ${doing.replace(/^Clawd /, '')}`
             : HAPPENING[moment]
 
-  return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}${scene.night ? ' The stars are out.' : ''}`
+  const starfish = starfishAt(scene) === null ? '' : ' A starfish lies where the tide was.'
+
+  return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}${starfish}${scene.night ? ' The stars are out.' : ''}`
 }
 
 function tideWords(tide: number): string {
@@ -1013,6 +1019,7 @@ function diorama(scene: Scene): string {
   const parts: string[] = []
   if (scene.night) parts.push(nightSky(scene.width, (scene.sea ?? CALM_SEA).clock, base, motion))
   parts.push(sand(scene.width))
+  parts.push(starfish(scene))
   parts.push(shell())
   const { water, spray } = sea(scene, base, motion)
   parts.push(water)
@@ -1106,6 +1113,37 @@ function sand(width: number): string {
     `<path d="${top}" fill="none" stroke="${SAND_EDGE}" stroke-width=".35"/>`,
     ...[[9, 16.2], [21, 15.4], [30, 16.6], [41, 15.8]].map(([at, y]) => `<rect x="${x(at ?? 0)}" y="${y}" width=".6" height=".6" fill="${SAND_EDGE}"/>`),
   ].join('')
+}
+
+/**
+ * Where the starfish a compaction left lies, in units from the diorama's left: at the tide's edge as
+ * it stood before (the scene's `treasure`), when that is on the sand the water has left, a unit or
+ * more from it. Null with none, or none to see.
+ */
+function starfishAt(scene: Scene): number | null {
+  if (scene.treasure === null) {
+    return null
+  }
+  const at = scene.width - water(scene.treasure, scene.width) + 0.8
+
+  return at < layout(scene).shore - 1.5 && at > HOME + 1 ? at : null
+}
+
+// The starfish: Claude's own clay, five round arms on the sand face, a little tipped. It lies in the
+// sand, before the sea and him, so the tide washes over it and he walks in front of it.
+function starfish(scene: Scene): string {
+  const x = starfishAt(scene)
+  if (x === null) {
+    return ''
+  }
+  const y = GROUND + 1.7
+  const points = Array.from({ length: 10 }, (_, i) => {
+    const r = i % 2 === 0 ? 1.45 : 0.62
+    const a = (Math.PI / 5) * i - Math.PI / 2
+    return `${round(x + r * Math.cos(a))} ${round(y + r * Math.sin(a))}`
+  })
+
+  return `<path class="starfish" d="M${points.join('L')}Z" fill="${CLAY}" stroke="${CLAY}" stroke-width=".35" stroke-linejoin="round" transform="rotate(14 ${round(x)} ${round(y)})"/>`
 }
 
 // Night's moon and stars: a warm gold that reads on both pages, low in the sky over the sea, behind
