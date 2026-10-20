@@ -121,6 +121,9 @@ export const register: Register = (on, options) => {
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
   const drawnLooks = new Map<string, Look>()
   const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, sky: null, held: null, isFresh: true }
+  // The desktop bands stepped aside since the last ask (by id): one coming free stops the asking only
+  // once none is left, so a band drawn free beside it (another desktop, a terminal) never strands it.
+  const heldOn = new Set<string>()
   const landing: Landing = { sawWork: false, quietSince: null }
   const scenes = desktopScenes()
   // git's answers at a turn's end, each stamped: one that comes back after a newer one has landed
@@ -629,8 +632,11 @@ export const register: Register = (on, options) => {
       // is free. The terminal draws the band again itself as its survey goes.
       await orNothing(read($, info))
       if (e.surface === 'desktop') {
+        heldOn.add(e.requestId)
         timers.held ??= after($, HELD_LOOK_MS, () => {
           timers.held = null
+          // Each band still held says so again as it draws.
+          heldOn.clear()
           try {
             $.ui.invalidate('ui.render')
           } catch {
@@ -641,8 +647,11 @@ export const register: Register = (on, options) => {
 
       return next(e)
     }
-    timers.held?.cancel()
-    timers.held = null
+    // This band's place is free: it asks no more, unless another desktop's band is still held.
+    if (heldOn.delete(e.requestId) && heldOn.size === 0) {
+      timers.held?.cancel()
+      timers.held = null
+    }
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
     const [now, stored, motion, pick, kept] = await Promise.all([

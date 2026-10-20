@@ -119,10 +119,17 @@ export function sceneMemory(): {
       }
     }
     strideSince = null
+    // A step of the sky, or a starfish washed up or away, never plays a moment still on over again (a
+    // cheer, a splash, the stretch up from a nap, which lasts as long as he reads): it waits for the
+    // moment's own end, whose frame brings it.
+    if (shownScene !== null && shownScene.key !== key && scene.moment !== null && scene.moment === shownScene.scene.moment && isBackdropStep(shownScene.scene, scene)) {
+      return { scene: shownScene.scene, wakeIn: null, isNew: false }
+    }
     // A step of the sky alone never reloads a frame too old for his walk to carry on from (a long
-    // tool running): his loop would start over. The sky catches up with the frame's next change. A
-    // nap sleeps on through it (see `curled`), so the sky crosses on over him.
-    if (shownScene !== null && shownScene.key !== key && scene.mood !== 'nap' && !isRecent(shownScene, now) && isSkyStep(shownScene.scene, scene)) {
+    // tool running): his loop would start over. The sky catches up with the frame's next change, and
+    // nightfall and daybreak come at once. A nap sleeps on through it (see `curled`), so the sky
+    // crosses on over him.
+    if (shownScene !== null && loop !== undefined && shownScene.key !== key && scene.mood !== 'nap' && !isRecent(shownScene, now) && loop.night === scene.night && isSkyStep(loop, scene)) {
       return { scene: shownScene.scene, wakeIn: null, isNew: false }
     }
     if (shownScene === null || shownScene.key !== key || isWaveOver) {
@@ -281,9 +288,15 @@ function isSkyStep(shown: Scene, scene: Scene): boolean {
   return sceneKey({ ...scene, sky: shown.sky, night: shown.night }) === sceneKey(shown)
 }
 
-// The same working loop, only its tide moved on a stride.
+// The same scene with only what lies behind him changed: the sky, or a starfish come or gone.
+function isBackdropStep(shown: Scene, scene: Scene): boolean {
+  return sceneKey({ ...scene, sky: shown.sky, night: shown.night, treasure: shown.treasure }) === sceneKey(shown)
+}
+
+// The same working loop, only its tide moved on a stride (and its sun, which a frame held through a
+// step may be behind on).
 function isStride(shown: Scene, scene: Scene): boolean {
   const working = (s: Scene) => (s.mood === 'read' || s.mood === 'work') && s.moment === null
 
-  return working(shown) && working(scene) && sceneKey({ ...shown, tide: 0 }) === sceneKey({ ...scene, tide: 0 })
+  return working(shown) && working(scene) && sceneKey({ ...shown, tide: 0, sky: scene.sky }) === sceneKey({ ...scene, tide: 0 })
 }

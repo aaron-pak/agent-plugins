@@ -4717,6 +4717,141 @@ test('desktop: a step of the sky during a long tool waits for the frame\'s next 
   await ui.unmount()
 })
 
+// A moment still on (the stretch up from a nap, which lasts as long as he reads; a cheer; a splash)
+// plays once: a step of the sky, or a starfish washed up, waits for the moment's own end.
+test('desktop: a step of the sky while he stretches up from a nap waits for the stretch to end, so it never plays again; the sun moves on as he gets to work', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13, 34, 30) })
+  await start($)
+  await turn($, clock)
+  await clock.advance(5 * 60_000)
+  await $.prompt.submit({ text: 'wake up', wait: false, origin: { kind: 'composer' } })
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  const woke = (await look()).svg?.source ?? ''
+  expect(woke).toContain('@keyframes m-stretch')
+  // 13:40 comes as he reads.
+  await clock.advance(5_000)
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  await clock.advance(7_000)
+  expect((await look()).svg?.source).toBe(woke)
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  expect([working === woke, working.includes('m-stretch'), (sunOf(working)?.x ?? 0) > (sunOf(woke)?.x ?? 0)]).toEqual([false, false, true])
+  await ui.unmount()
+})
+
+test('desktop: a compaction as he stretches up from a nap leaves its starfish once the stretch is over, never playing it again', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13, 1) })
+  await start($, 90)
+  await turn($, clock)
+  await clock.advance(5 * 60_000)
+  await $.prompt.submit({ text: 'wake up', wait: false, origin: { kind: 'composer' } })
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  const woke = (await look()).svg?.source ?? ''
+  expect(woke).toContain('@keyframes m-stretch')
+  await clock.advance(8_000)
+  await $.session.compact({ trigger: 'auto', messages: [SUMMARY, SUMMARY] })
+  await $.session.measure(measured(20, 0.31))
+  await clock.advance(200)
+  expect((await look()).svg?.source).toBe(woke)
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  expect([working.includes('m-stretch'), working.includes('class="starfish"')]).toEqual([false, true])
+  await ui.unmount()
+})
+
+test('desktop: a step of the sky in the middle of a cheer never starts the cheer over: the sun moves on with the frame after it', async ($, on) => {
+  const { clock } = world(on, { now: localAt(15, 13, 39) })
+  await start($)
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(57_500)
+  await $.turn.complete({ answer: 'Done.', durationMs: 58_000, isAborted: false, turnId: 't1', reason: 'answer' })
+  await ui.redraw(BAND)
+  const cheer = (await look()).svg
+  expect(cheer?.alt).toContain('spins with joy')
+  const frames: Array<{ source: string; alt: string }> = []
+  for (let i = 0; i < 12; i++) {
+    await clock.advance(500)
+    const view = (await look()).svg
+    if ((frames.at(-1)?.source ?? cheer?.source) !== view?.source) frames.push({ source: view?.source ?? '', alt: view?.alt ?? '' })
+  }
+  // One new frame, his sit after the cheer, under the sun's next step.
+  expect(frames.map(frame => frame.alt.includes('spins with joy'))).toEqual([false])
+  expect((sunOf(frames[0]?.source ?? '')?.x ?? 0) > (sunOf(cheer?.source ?? '')?.x ?? 0)).toBe(true)
+  await ui.unmount()
+})
+
+test('desktop: a splash\'s frame kept on into a long command waits out a step of the sky as any working frame does, so his walk never starts over', { timeoutMs: 60_000 }, async ($, on) => {
+  const { clock, during } = world(on, { now: localAt(15, 13, 33) })
+  await start($)
+  await turn($, clock)
+  await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } })
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' })
+  await clock.advance(2_000)
+  await $.tool.call({ tool: 'Bash', command: 'npm run fail', description: 'Run the tests' })
+  const splash = (await look()).svg?.source ?? ''
+  expect(splash).toContain('data-wave')
+  // Eight minutes of a command, past the sky's step at 13:40.
+  const frames = new Set<string>()
+  during.tool = async () => {
+    for (let i = 0; i < 32; i++) {
+      await clock.advance(15_000)
+      frames.add((await look()).svg?.source ?? '')
+    }
+  }
+  await $.tool.call({ tool: 'Bash', command: 'sleep 480', description: 'Wait a while' })
+  during.tool = null
+  expect([...frames].map(frame => frame === splash)).toEqual([true])
+  await ui.unmount()
+})
+
+test('desktop: nightfall comes at once to a frame a long wait holds, though a step of the sky alone waits for its next change', async ($, on) => {
+  const { clock, release } = world(on, { now: localAt(15, 19, 30) })
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'plan it', wait: false, origin: { kind: 'composer' } })
+  await ui.redraw({ ...BAND, isWorking: true })
+  const running = $.tool.call({ tool: 'Read', file_path: '/work/held.ts' })
+  await clock.advance(1_000)
+  const working = (await look()).svg
+  // 19:40 comes and goes: the frame his walk is on stays up.
+  for (let i = 0; i < 12; i++) await clock.advance(60_000)
+  expect((await look()).svg?.source).toBe(working?.source)
+  // 8pm: the stars are out over the desktop's beach as over the terminal's.
+  for (let i = 0; i < 20; i++) await clock.advance(60_000)
+  const night = (await look()).svg
+  expect([working?.alt.includes('The stars are out.'), night?.alt.includes('The stars are out.'), night?.source.includes('class="moon"')]).toEqual([false, true, true])
+  release()
+  await running
+  await ui.unmount()
+})
+
+test('desktop: a stride of the tide after a step of the sky a long tool held still waits its moment, in case the turn is landing', async ($, on) => {
+  const { clock, release } = world(on, { now: localAt(15, 13, 5) })
+  await start($)
+  const { ui, look } = await band($, 'desktop')
+  await $.prompt.submit({ text: 'run the long tests', wait: false, origin: { kind: 'composer' } })
+  await ui.redraw({ ...BAND, isWorking: true })
+  const running = $.tool.call({ tool: 'Read', file_path: '/work/held.ts' })
+  await clock.advance(1_000)
+  const working = (await look()).svg?.source ?? ''
+  for (let i = 0; i < 18; i++) await clock.advance(60_000)
+  expect((await look()).svg?.source).toBe(working)
+  await $.session.measure(measured(60, 0.4))
+  await clock.advance(100)
+  expect((await look()).svg?.source).toBe(working)
+  await clock.advance(STRIDE_WAIT_MS)
+  const stride = (await look()).svg?.source ?? ''
+  expect([stride === working, (sunOf(stride)?.x ?? 0) > (sunOf(working)?.x ?? 0)]).toEqual([false, true])
+  release()
+  await running
+  await ui.unmount()
+})
+
 test('desktop: the narrow beach\'s sky never moves, so its step never reloads the frame; its moon hangs over the sea all night', async ($, on) => {
   const { clock } = world(on, { now: localAt(15, 22) })
   await start($)

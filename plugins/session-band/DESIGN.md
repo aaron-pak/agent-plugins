@@ -314,15 +314,22 @@ activation's first draw arms again what the facts say is still to come (`pending
   fires; a reload arms it again on its first draw. A step is a new desktop frame, which carries on
   as any new frame does; a nap sleeps on through it curled up, however long ago its last frame came
   up, rather than standing to lie down again. While he is awake, a step alone never reloads a frame
-  too old for his walk to carry on from (a tool running for more than four minutes, see
-  `SCENE_MEMORY_MS`): the sky catches up with the frame's next change.
+  too old for his walk to carry on from (a tool running for more than four minutes, or a splash's
+  frame kept on into it, see `SCENE_MEMORY_MS`): the sky catches up with the frame's next change.
+  Nightfall and daybreak never wait, so the desktop's stars come out with the terminal's. A stride
+  of the tide after a held step still waits its moment (`STRIDE_WAIT_MS`).
+- **A moment plays once.** A step of the sky, or a starfish washed up or away, never reloads the
+  frame of a moment still on (a cheer, a splash, the stretch up from a nap, which lasts as long as
+  he reads), since a new frame would play it again from its first beat: it waits for the moment's
+  own end, whose frame brings it.
 - **The band's place, held.** While something else holds it (`hasSurvey`), the band steps aside:
   Claude Code's survey does, and on the desktop the app's own notice above the prompt (its effort
   warning) looks to do the same. The band still reads the facts as it steps aside, since a draw that
   read nothing is never drawn again by a write. The desktop app asks for the band again only when
   the engine says it changed (`ui_invalidate`), so the desktop band asks to be drawn again every two
   seconds (`HELD_LOOK_MS`) until its place is free; the terminal draws the band again itself as its
-  survey goes.
+  survey goes. Each held desktop band says so as it draws, by its id, and the asking stops only once
+  none is left: a band drawn free beside it (another desktop's, a terminal's) never strands it.
 - **Robustness.** `session.start`, `prompt.submit`, `turn.complete`, `session.compact` and
   `config.set` end in `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that
   went wrong off the running list: a state write that throws leaves the event untouched, and a tool
@@ -863,7 +870,8 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   point of a splash or a still cheer, the first frame while git is slow at every width (and git's
   answer after a start that failed partway, or one a turn's answer overtook), `/band off` by what is
   on, every terminal color against its 256-color rounding, with every other color a theme key, and
-  the band stepping aside while something holds its place and coming back once it is free.
+  the band stepping aside while something holds its place and coming back once it is free (beside
+  another band drawn free too).
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
@@ -874,8 +882,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   the band by itself), the starfish (what leaves one, where it lies, his look, the tide washing it
   away), the desktop's shadow and glints (in step with the sea from frame to frame), and the wide
   beach (its width beside the words at every band from 34 to 220 columns, the sun's and the moon's
-  crossing and the redraw at each step, the scenery by width, the clouds clear of his stroll, the
-  castle's stages and its pop, the umbrella packed away, the golden hour). Times that
+  crossing and the redraw at each step, a step held through a long tool or a moment still on,
+  the scenery by width, the clouds clear of his stroll, the castle's stages and its pop, the
+  umbrella packed away, the golden hour). Times that
   matter to the night are local, so the tests hold in any time zone (`claude plugin test` keeps
   UTC, so most run at night); a test that holds a whole alt adds what its clock says of the stars
   (`starsSaid`).

@@ -5377,3 +5377,51 @@ for (const look of ['tide', 'hearth'] as const) {
     }
   })
 }
+
+// One band coming free never strands another still held: a desktop's band stepped aside beside a
+// band drawn free (a terminal's, under Remote Control, or another desktop's), whichever draws first
+// and however often the free one draws, asks to be drawn again until its own place is free, and then
+// asks no more.
+for (const beside of SURFACES) {
+  for (const isHeldFirst of [true, false]) {
+    test(`a desktop band held beside a ${beside} band drawn free (the ${isHeldFirst ? 'held' : 'free'} one mounted first) asks to be drawn again until its own place is free`, async ($, on) => {
+      const { clock } = world(on)
+      let asks = 0
+      on('ui.invalidate', ($, e, next) => {
+        asks += 1
+        return next(e)
+      })
+      on('ui.render', () => ({ type: 'Text', children: ['Claude thinks longer with Max effort'] }))
+      await start($)
+      const mount = (requestId: string) =>
+        $.ui.mount({
+          plugin: 'session-band',
+          component: 'AbovePrompt',
+          requestId,
+          ...(requestId === 'held' ? { surface: 'desktop', props: { ...BAND, hasSurvey: true } } : { surface: beside, props: { ...BAND, bodyColumns: 120 } }),
+        })
+      const first = await mount(isHeldFirst ? 'held' : 'free')
+      const second = await mount(isHeldFirst ? 'free' : 'held')
+      const [held, free] = isHeldFirst ? [first, second] : [second, first]
+      const quiet = asks
+      await clock.advance(6_100)
+      expect(asks - quiet).toBe(3)
+      // The free band drawn again between asks (a resize, the work starting) changes nothing.
+      const more = asks
+      for (let i = 0; i < 3; i++) {
+        await clock.advance(1_000)
+        await free.redraw({ ...BAND, bodyColumns: 121 + i })
+        await clock.advance(1_000)
+      }
+      await clock.advance(100)
+      expect(asks - more).toBe(3)
+      // Its own place free, it asks no more.
+      await held.redraw(BAND)
+      const drawn = asks
+      await clock.advance(6_100)
+      expect(asks).toBe(drawn)
+      await held.unmount()
+      await free.unmount()
+    })
+  }
+}
