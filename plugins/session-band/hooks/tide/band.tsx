@@ -1601,8 +1601,45 @@ function scene(live: Live, beach: number): Row[] {
     const held = live.cheerMarks?.key === key ? cheer[live.cheerMarks.index] : undefined
     draw(twinkled(live, held !== undefined && held.every(isClear) ? held : cheer[choose(cheer)]))
   }
+  if (live.props.isNight) {
+    draw(stars(live, beach, rows))
+  }
 
   return rows
+}
+
+/**
+ * Night's stars, where they sit from the beach's right edge: [row, cells in from the edge]. Over the
+ * sea and the far shore, one low over the open water, clear of where he roams on a wide beach.
+ */
+const STAR_PLACES: Array<[number, number]> = [
+  [0, 2],
+  [1, 4],
+  [0, 9],
+  [0, 15],
+]
+/** A star at rest, faint as distant stars are, and while it twinkles. */
+const STAR = '·'
+const STAR_TWINKLE = '✳'
+
+/**
+ * The stars at night: faint dots in the sky over the sea, each at its own place, so the tide never
+ * moves them. Drawn last, and only where the sky is clear for two cells either side, so a star never
+ * crowds him, a mark, the wave, the shell or another star, and he walks in front of them. One
+ * twinkles while a wave washes up the sand, a different one each wave: the sea's frames change then
+ * anyway, so the sky never asks a frame of its own, and a still beach's stars hold still.
+ */
+function stars(live: Live, beach: number, rows: Row[]): Mark[] {
+  const isEmpty = (row: number, col: number) => {
+    const cell = rows[row]?.[col]
+    return col < 0 || col >= beach || (cell !== undefined && cell.ch === ' ' && cell.bg === undefined)
+  }
+  const clear = STAR_PLACES.map(([row, from]) => [row, beach - from] as const).filter(
+    ([row, col]) => col >= 0 && [-2, -1, 0, 1, 2].every(d => isEmpty(row, col + d)),
+  )
+  const twinkle = lap(live) > 0 ? dice(live.lapAt * 8 + 7, clear.length) : -1
+
+  return clear.map(([row, col], i) => ({ row, col, cell: { ch: i === twinkle ? STAR_TWINKLE : STAR, dim: true } }))
 }
 
 // ── Words ──────────────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ import {
   isPhrase,
   nameIn,
   nextTodos,
+  nightTurnsIn,
   nounOf,
   pendingWakes,
   prettyModel,
@@ -64,12 +65,22 @@ const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLAS
  * The module's timers: `desk`, the desktop's next look at what it holds; `nap`, the redraw that shows
  * him asleep; `landing`, the one that ends a landing that never came; `starting`, the one that ends a
  * start the host never confirmed; `stride`, the beach's desktop waiting out a stride of the tide (see
- * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes. Each
- * look lets go of the other's wait as it draws, so a switch never leaves one waiting on the other's.
- * `isFresh` until this activation first draws: a reload drops every timer, so the first draw arms
- * again whatever the facts say is still to come.
+ * STRIDE_WAIT_MS); `bead`, the hearth's desktop waiting before its bead of sweat comes or goes;
+ * `night`, the beach's redraw as night falls or day breaks. Each look lets go of the other's wait as
+ * it draws, so a switch never leaves one waiting on the other's. `isFresh` until this activation
+ * first draws: a reload drops every timer, so the first draw arms again whatever the facts say is
+ * still to come.
  */
-type Timers = { desk: Timer | null; nap: Timer | null; landing: Timer | null; starting: Timer | null; stride: Timer | null; bead: Timer | null; isFresh: boolean }
+type Timers = {
+  desk: Timer | null
+  nap: Timer | null
+  landing: Timer | null
+  starting: Timer | null
+  stride: Timer | null
+  bead: Timer | null
+  night: Timer | null
+  isFresh: boolean
+}
 
 /**
  * How soon before an Esc'd turn's end a failed call counts as the Esc's own (the call it cut), not a
@@ -99,7 +110,7 @@ export const register: Register = (on, options) => {
   // and its id): a look drawn where the other one stood is a module swapped under a band on screen,
   // which keeps pace with the old look's last second. A band mounted afresh has no such second.
   const drawnLooks = new Map<string, Look>()
-  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, isFresh: true }
+  const timers: Timers = { desk: null, nap: null, landing: null, starting: null, stride: null, bead: null, night: null, isFresh: true }
   const landing: Landing = { sawWork: false, quietSince: null }
   const scenes = desktopScenes()
   // git's answers at a turn's end, each stamped: one that comes back after a newer one has landed
@@ -665,6 +676,8 @@ export const register: Register = (on, options) => {
       }
       timers.stride?.cancel()
       timers.stride = null
+      timers.night?.cancel()
+      timers.night = null
       // Both surfaces show the line the facts' hold settled on (stepHeld), so they name the same tools,
       // however quick: the terminal's band only takes it up on a tick of its own clock.
       const props = {
@@ -736,6 +749,11 @@ export const register: Register = (on, options) => {
     nap = null
     timers.bead?.cancel()
     timers.bead = null
+    // The stars come out over the beach as night falls by the person's own clock, and go as day
+    // breaks: one redraw then, armed from whichever draw comes first (a second late, so the hour has turned).
+    timers.night ??= nudge($, nightTurnsIn(now) + 1_000, () => {
+      timers.night = null
+    })
     // Under a splash the words are those its end hands the line on to (see deskAt), so the terminal's
     // splash, ending on its own frame clock, never shows a moment of what comes before them.
     const props = tideProps(tideInfo(deskAt(known, now)), motion, landed || isStarting, warnAt, columns, now, shownForMs, e.surface === 'desktop', greetedMs)

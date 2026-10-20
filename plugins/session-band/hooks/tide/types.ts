@@ -138,6 +138,8 @@ export type BandProps = {
   isSwapped?: boolean
   /** Apple's Terminal: Claude Code's simpler Clawd, with no spin. */
   isAppleTerminal: boolean
+  /** Night by the person's own clock (see isNightAt): the stars are out over the beach. */
+  isNight: boolean
   /** The band's first few seconds in a fresh session, before any turn: Clawd waves hello. Once a session. */
   isGreeting: boolean
   /**

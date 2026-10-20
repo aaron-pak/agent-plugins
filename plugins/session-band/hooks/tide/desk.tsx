@@ -99,6 +99,8 @@ export type Scene = {
   from: number | null
   width: number
   wave: number
+  /** Night by the person's own clock: a moon and stars over the sea. */
+  night: boolean
   sea: Sea | null
   phase?: number
   curled?: boolean
@@ -119,7 +121,7 @@ export type Sea = { clock: number; lap: LapPlan; glide: number }
 type Lap = { period: number; reach: number }
 type LapPlan = { finish: (Lap & { offset: number }) | null; start: number }
 const CALM_SEA: Sea = { clock: 0, lap: { finish: null, start: 0 }, glide: 0 }
-/** The crests' periods (seconds), and a time both come round in, which the sea's clock wraps at. */
+/** The crests' periods (seconds), and a time both come round in, which the sea's clock wraps at (the stars' periods divide it too). */
 const ROLL_S = 9
 const ROLL2_S = 14
 const CLOCK_WRAP = 126
@@ -247,7 +249,7 @@ export function sceneOf(props: BandProps): Scene {
   const mood = moment === 'cheer' && (now === 'read' || now === 'work') ? (props.isHigh ? 'high' : 'idle') : now
   const wave = moment === 'splash' && !props.isStill ? props.waves : 0
 
-  return { mood, tide: tideOf(props, moment), still: props.isStill, moment, from: null, width: dioramaWidth(props.columns), wave, sea: null }
+  return { mood, tide: tideOf(props, moment), still: props.isStill, moment, from: null, width: dioramaWidth(props.columns), wave, night: props.isNight, sea: null }
 }
 
 /**
@@ -727,7 +729,7 @@ function altFor(scene: Scene, isRead: boolean): string {
             ? `${HAPPENING.splash}, then he ${doing.replace(/^Clawd /, '')}`
             : HAPPENING[moment]
 
-  return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}`
+  return `${what}. ${isRead ? tideWords(scene.tide) : 'No context reading yet.'}${scene.night ? ' The stars are out.' : ''}`
 }
 
 function tideWords(tide: number): string {
@@ -1009,6 +1011,7 @@ function diorama(scene: Scene): string {
   const moment = scene.moment
 
   const parts: string[] = []
+  if (scene.night) parts.push(nightSky(scene.width, (scene.sea ?? CALM_SEA).clock, base, motion))
   parts.push(sand(scene.width))
   parts.push(shell())
   const { water, spray } = sea(scene, base, motion)
@@ -1103,6 +1106,40 @@ function sand(width: number): string {
     `<path d="${top}" fill="none" stroke="${SAND_EDGE}" stroke-width=".35"/>`,
     ...[[9, 16.2], [21, 15.4], [30, 16.6], [41, 15.8]].map(([at, y]) => `<rect x="${x(at ?? 0)}" y="${y}" width=".6" height=".6" fill="${SAND_EDGE}"/>`),
   ].join('')
+}
+
+// Night's moon and stars: a warm gold that reads on both pages, low in the sky over the sea, behind
+// everything (he walks in front of them). The stars twinkle each at its own pace, shrinking to a
+// glint and back, never fading (a half-faded star is a smudge on the dark page); still, they shine.
+// They keep time by the sea's clock, so a new frame never snaps one back mid-twinkle.
+const MOON = '#E2B65A'
+const STARLIGHT = '#E9C77E'
+
+function nightSky(width: number, clock: number, base: string[], motion: string[]): string {
+  // A crescent: a disc less a disc, opening toward the sea, tipped a little.
+  const [mx, my, r] = [width - 6, 2.2, 1.9]
+  const moon =
+    `<path d="M${mx} ${round(my - r)}A${r} ${r} 0 1 0 ${mx} ${round(my + r)}A${round(r * 1.25)} ${round(r * 1.25)} 0 0 1 ${mx} ${round(my - r)}Z" ` +
+    `fill="${MOON}" transform="rotate(-22 ${mx} ${my})"/>`
+  // [from the right edge, height, size, its twinkle's period and where in it the sea's clock starts,
+  // in seconds]. Each period divides the clock's wrap (CLOCK_WRAP), so it goes on in step across it.
+  const places: Array<[number, number, number, number, number]> = [
+    [11.5, 1.2, 0.62, 4.5, 1.3],
+    [16.5, 5.4, 0.48, 6, 3.9],
+    [3.4, 7.2, 0.44, 3.6, 0.4],
+    [21.5, 2.6, 0.4, 6.3, 2.2],
+  ]
+  base.push('.twinkle{transform-box:fill-box;transform-origin:center}')
+  motion.push('@keyframes twinkle{0%,100%{transform:scale(1)}45%{transform:scale(.3)}60%{transform:scale(1.15)}}')
+  const stars = places.flatMap(([from, y, size, period, phase], i) => {
+    if (width - from <= 2) {
+      return []
+    }
+    motion.push(`.twinkle${i}{animation:twinkle ${period}s ease-in-out -${roundMs((clock + phase) % period)}s infinite}`)
+    return [star(round(width - from), y, size, i, `twinkle twinkle${i}`, STARLIGHT)]
+  })
+
+  return `<g class="sky">${moon}${stars.join('')}</g>`
 }
 
 function shell(): string {
@@ -1300,9 +1337,11 @@ function sparkles(length: number, base: string[], motion: string[]): string {
   return `<g class="spark">${star(-2.5, 3, 1, 0)}${star(19.5, 1, 1, 1)}${star(20.5, 6.5, 0.7, 2)}</g>`
 }
 
-function star(x: number, y: number, size: number, i: number): string {
+// A four-point sparkle centered on (x, y): the cheer's, in clay, or the night sky's, in starlight.
+function star(x: number, y: number, size: number, i: number, kind = `star star${i}`, fill = CLAY): string {
   const s = size
-  return `<path class="star star${i}" d="M${x} ${y - 1.6 * s}L${x + 0.45 * s} ${y - 0.45 * s}L${x + 1.6 * s} ${y}L${x + 0.45 * s} ${y + 0.45 * s}L${x} ${y + 1.6 * s}L${x - 0.45 * s} ${y + 0.45 * s}L${x - 1.6 * s} ${y}L${x - 0.45 * s} ${y - 0.45 * s}Z" fill="${CLAY}"/>`
+  const p = (n: number) => round(n)
+  return `<path class="${kind}" d="M${p(x)} ${p(y - 1.6 * s)}L${p(x + 0.45 * s)} ${p(y - 0.45 * s)}L${p(x + 1.6 * s)} ${p(y)}L${p(x + 0.45 * s)} ${p(y + 0.45 * s)}L${p(x)} ${p(y + 1.6 * s)}L${p(x - 0.45 * s)} ${p(y + 0.45 * s)}L${p(x - 1.6 * s)} ${p(y)}L${p(x - 0.45 * s)} ${p(y - 0.45 * s)}Z" fill="${fill}"/>`
 }
 
 function heart(x: number, y: number): string {

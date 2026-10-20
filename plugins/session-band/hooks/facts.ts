@@ -565,6 +565,32 @@ export function clockText(at: number | null, now: number): string | null {
   return at - now >= 20 * 3_600_000 ? `${DAYS[when.getDay()] ?? ''} ${time}` : time
 }
 
+/** Night over the beach, in the person's own time: from 8 in the evening until 6 in the morning. */
+export const NIGHT_FROM_HOUR = 20
+export const NIGHT_UNTIL_HOUR = 6
+
+/** Whether it is night at `now`, by the person's own clock: the stars are out over the beach. */
+export function isNightAt(now: number): boolean {
+  const hour = new Date(now).getHours()
+
+  return hour >= NIGHT_FROM_HOUR || hour < NIGHT_UNTIL_HOUR
+}
+
+/** How long from `now` until night falls or day breaks, in milliseconds, by the person's own clock. */
+export function nightTurnsIn(now: number): number {
+  const next = new Date(now)
+  const hour = next.getHours()
+  next.setMinutes(0, 0, 0)
+  if (!isNightAt(now)) {
+    next.setHours(NIGHT_FROM_HOUR)
+  } else {
+    if (hour >= NIGHT_FROM_HOUR) next.setDate(next.getDate() + 1)
+    next.setHours(NIGHT_UNTIL_HOUR)
+  }
+
+  return Math.max(0, next.getTime() - now)
+}
+
 export function figures(usage: Figures | null): Partial<Info> {
   const limit = limitShown(usage?.rateLimits ?? [])
 

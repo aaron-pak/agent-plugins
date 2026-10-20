@@ -16,9 +16,10 @@ rule on purpose, change its test and this page with it.
   alone, `/band look` or `/band motion`) says what is on and how to change it.
 - **The look.** **tide** is the default: Clawd on a little beach, where the tide comes in from the
   right as your context fills, so how full it is reads as how much sand he has left; a calm corner
-  of a summer afternoon, mostly still. **hearth** is the opt-out: Claude Code's own Clawd beside
-  three calm lines that change only when the session does. `/band hearth`, `/band tide` (or `/band
-  tidepool`) and the "Band look" row of `/config` switch.
+  of a summer afternoon, mostly still, and from 8pm to 6am by your own clock, a summer night, with
+  stars over the sea. **hearth** is the opt-out: Claude Code's own Clawd beside three calm lines
+  that change only when the session does. `/band hearth`, `/band tide` (or `/band tidepool`) and
+  the "Band look" row of `/config` switch.
 - **The motion.** `/band still` (or `calm`, `quiet`, `stop` or `pause`) stops the motion in either
   look while the words keep changing; `/band lively` lets it move again.
 - **Reduced motion wins.** With Claude Code's reduced-motion setting on, both looks stay still.
@@ -177,7 +178,7 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over. |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
-| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while Claude Code shows a survey there. |
+| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while Claude Code shows a survey there. Arms the redraw at the next nightfall or daybreak. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
 percent; the cost and the limit shown; when the session was last active; the tools running
@@ -297,6 +298,9 @@ activation's first draw arms again what the facts say is still to come (`pending
   timer is let go both when it fires and when work resumes; each covers for the other, so keep both.
 - **The start.** Both looks start the turn as the prompt is written, for 1.5 s at most without the
   host's word, so a prompt that wakes a napping Clawd is one desktop reload, not two.
+- **Nightfall and daybreak.** The beach's sky follows the person's own clock (`isNightAt`: 8pm to
+  6am), which nothing in the session announces, so every draw arms one redraw for the next turn of
+  it (`nightTurnsIn`, a second late), kept until it fires; a reload arms it again on its first draw.
 - **Robustness.** `session.start`, `prompt.submit`, `turn.complete` and `config.set` end in
   `.catch((_$, e, next) => next(e))`, and `tool.call`'s also takes a call that went wrong off the
   running list: a state write that throws leaves the event untouched, and a tool never runs twice.
@@ -339,6 +343,17 @@ each have places, best first, and take the first that is clear sky, a cell from 
 shell; with none clear, the mark is left out. With the tide in, the crest stands back while the
 heart or the cheer's ✻ shows.
 
+**The night sky asks nothing of the scene.** From 8pm to 6am by the person's own clock, faint stars
+(the theme's dim `·`) come out at their own places from the beach's right edge (`STAR_PLACES`):
+three in the sky row over the sea and the far shore, one low over the open water. They are drawn
+after everything else, each only where the sky is clear for two cells either side, so a star never
+crowds him, a mark, the wave or the shell, no mark ever moves for one, and he walks in front of
+them. One twinkles (`✳`) while a wave washes up the sand, a different one each wave: those frames
+change anyway, so the sky never spends a frame of the second's four, and a still beach's stars hold
+still. The desktop hangs a gold crescent moon and four small four-point stars over the sea, behind
+everything, which twinkle by shrinking to a glint and back at their own paces, never fading; still,
+they shine on. Its alt ends "The stars are out."
+
 - **One heart**, Claude Code's block heart (`▟▙▟▙` over `▝▜▛▘`); a three-cell one reads as a pink
   "Y". Where it has no room a cell from him (the 18-cell beach, tide well in), he holds it flush
   against his raised claw, the wave standing back, and keeps the claw up while it shows, so its
@@ -379,6 +394,7 @@ and 30% in other moods. The desktop moves a glancing pupil a pixel down onto cla
 | A tool failed | Eyes shut, arms up, the water rushing to his feet with spray; then, cold feet, he hops from one pair to the other for a second, looking round at the water as it slides back. Still, the hit is held. 'Splash! "Run the tests" failed' for 3 s, then the same in dim. | The sea surges to his feet and back over 2.4 s, and he hops on his cold feet as it does. Four drops burst from the crest, each its own height, size and reach, and arc out to sea at full color, never fading: each flies outward at an even pace in a group of its own while it rises and falls, so its path is a true arc, and lands past the calm line, where the sea is by then, shrinking into it, all by 2.2 s (`DROPS_END_S`). Each failure is a new frame (`data-wave`); one in the first 1.25 s of the same turn rides along. |
 | High tide | He backs up to the water's edge, and the water runs under his feet now and then. One toast. | The sea comes right up to him. |
 | Nap (3 quiet minutes) | He walks home and curls up by the shell, a z rising. "Napping · last turn took 41s". A prompt wakes him: he stands with a big stretch, arms up and eyes still shut, lowers them, then opens his eyes (¾ s). | He walks home, curls up, then "z Z Z". One source for the whole nap. Woken, he stretches the same way as the turn's first loop begins. |
+| Night (8pm to 6am, your clock) | Faint stars over the sea, one twinkling with each wave that washes up. | A gold crescent moon and four twinkling stars over the sea; the alt says the stars are out. |
 | Petted | A click: arms up and a wink, the heart 2 s. Asleep, he stays curled. During a cheer, the cheer still ends when it would have, and its arms-up finale keeps what the pet leaves only with a second or more to go (`finaleAt`, `FINALE_LEAST`); with less, he ends the cheer facing you at rest. | A pointer resting on the beach: a pixel heart beside him that walks with him and beats softly; over his head as he sleeps. |
 | Still | Nothing moves on its own: a cheer is one held pose, a nap is curled at once, a splash is its peak frame. By the band's edge a pet during the cheer takes him home on the pet's own pose change. | No keyframes; reduced motion puts every animation under `prefers-reduced-motion: no-preference`. The frame holds him where the last one had him (`stillDx`). The alts say "Clawd stands on the sand" idle and "A wave splashes over Clawd's feet" for the held splash. |
 
@@ -449,8 +465,9 @@ server's tool is quoted with its server whole, then named in words, never as an 
 ### Terminal and desktop
 
 On the terminal, `hooks/tide/band.tsx` is the beach's `Client` module: exactly three rows, none
-padded, built from block elements, ASCII `z`, ✻ ✶ · and the ellipsis. Clawd uses the theme keys
-`clawd_body` and `clawd_background`; the beach colors are accents no theme key covers.
+padded, built from block elements, ASCII `z`, Claude Code's sparkles (✻ ✽ ✶ ✢ ✳), · and the
+ellipsis. Clawd uses the theme keys `clawd_body` and `clawd_background`; the beach colors are
+accents no theme key covers.
 
 On the desktop, `hooks/tide/desk.tsx` draws an `Svg` diorama beside Box and Text words, with Clawd
 converted quadrant by quadrant from the terminal's sprites. The frame is 64 px tall at every width,
@@ -474,7 +491,9 @@ sand" when still), then the tide in words, never a number.
   he stood, inside the sand the tide leaves (`stillDx`), except up from a nap, where it stands him
   at his loop's start, as the walk home would, so the curl never moves his still home.
 - **The sea carries on.** Each Scene carries its sea outside the source's key, which `seaAfter`
-  writes as negative animation delays; a rising tide waits for his walk back (`glideWait`).
+  writes as negative animation delays; a rising tide waits for his walk back (`glideWait`). The
+  night's twinkling stars keep the same clock, each period dividing its 126 s wrap (`CLOCK_WRAP`), so
+  a new frame never snaps one back mid-twinkle.
 - **A splash's frame goes on into the work**, so a turn that lands after a failure loads one frame.
 - **The kept scene** goes to `$.state` from a `$.clock.after(0)` (a render cannot write), so a fresh
   activation keeps the frame on screen; the hearth clears it (`scene.forget()`). Several desktops
@@ -680,6 +699,10 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
 - **A wait on you:** whether the band shows beside Claude Code's own question is up to the host.
 - **Ambiguous-width glyphs on the hearth:** its meters (`━`) and the en dash before the first
   reading would shift line 2 on a terminal that draws them wide.
+- **The night is the machine's.** The sky follows the clock and time zone of the machine the
+  session runs on, which for a remote session may not be the person's own. On a light terminal the
+  stars are the theme's dim gray, faint by design; the desktop's gold moon is fainter on the light
+  page than on the dark one.
 - **Theme colors are rounded by the host.** Clawd, the words and the hearth's meters use Claude
   Code's theme keys, which a 256-color terminal shows as the host rounds them, as it does its own
   Clawd. Under chalk's rounding Clawd's clay shows as pink `#d78787`, entry 174, which the shell's
@@ -715,8 +738,8 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   `TodosShown`), `Look`, `Motion`, `LookPick`, `KeptScene`.
 - `hooks/hooks.json` names `hooks/register.tsx`: every hook, the timers, the kept scene, the render.
 - `hooks/facts.ts`: the facts' pure rules: `whole()`, `describe()`, `runningAfter`, the holds and
-  the todos held beside them (`tallied`, `shownTodos`), `TODO_TOOLS`, `isNewWave`, and the failure
-  nouns (`nounOf`, `NAME_NOUNS`, `nounsFor`).
+  the todos held beside them (`tallied`, `shownTodos`), `TODO_TOOLS`, `isNewWave`, the failure
+  nouns (`nounOf`, `NAME_NOUNS`, `nounsFor`), and the night (`isNightAt`, `nightTurnsIn`).
 - `hooks/look.ts`: the look and `/band`: `parseBand`, `lookNow`, `migrateMotion`, `replyFor`,
   `offReply`, `troubleReply`, the toasts, and `REPLY_MOST`, the most a reply may hold.
 - `hooks/clawd.ts`: Clawd's terminal cells, the shared palette (with `TERMINAL_HEART`, the heart
@@ -752,7 +775,11 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in
   the Svg's CSS (and the hover heart's walk against his); films of a pet at every 250 ms of a cheer,
   the sparkles at every width from 34 to 60 at six tides, the finale's twinkle and dance, the one
-  heart, the step home, a turn landing mid-splash, and his feet never on damp sand.
+  heart, the step home, a turn landing mid-splash, his feet never on damp sand, and the night sky
+  (its stars clear of everything, twinkling only on frames that change anyway, and nightfall
+  redrawing the band by itself). Times that matter to the night are local, so the tests hold in any
+  time zone (`claude plugin test` keeps UTC, so most run at night); a test that holds a whole alt
+  adds what its clock says of the stars (`starsSaid`).
 - `tests/hearth.test.ts`: the hearth on both surfaces (each test runs with `look: hearth`): every
   line at every width from 34 to 160 in cells and pixels (a todo beside its tally never cut), every
   moment, the bead, calm, petting and the `hh-` classes.

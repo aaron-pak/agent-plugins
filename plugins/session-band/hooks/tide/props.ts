@@ -1,7 +1,7 @@
 // The tide's props: the facts, with every line of words already written, and the desktop scene it
 // last handed out.
 
-import { NAP_AFTER_MS, SPLASH_MS } from '../facts'
+import { NAP_AFTER_MS, SPLASH_MS, isNightAt } from '../facts'
 import { carriedPhase, dioramaWidth, dozeAt, isCurledAt, positionAt, sceneKey, sceneOf, seaAfter } from './desk'
 import type { Scene } from './desk'
 import type { Motion } from '../../types'
@@ -61,6 +61,7 @@ export function bandProps(
     sinceTurnMs: known.turnAt === null ? null : now - known.turnAt,
     shownForMs,
     isAppleTerminal: known.isAppleTerminal,
+    isNight: isNightAt(now),
     isGreeting: greetedMs !== null && known.lastTurn === null && !isWorking,
     greetedMs: greetedMs !== null && known.lastTurn === null && !isWorking ? greetedMs : null,
     words: wordsFor(known, isWorking, isHigh, now, isDesktop),
@@ -231,6 +232,7 @@ function isShownScene(kept: unknown): kept is ShownScene {
     typeof scene.width === 'number' &&
     typeof scene.still === 'boolean' &&
     typeof scene.wave === 'number' &&
+    typeof scene.night === 'boolean' &&
     'from' in scene &&
     'sea' in scene &&
     // Only a scene this build would draw the same: its key is what this build makes of it.
