@@ -697,7 +697,7 @@ const DOING: Record<Mood, string> = {
 const HAPPENING: Record<Exclude<Moment, null>, string> = {
   cheer: 'Clawd spins with joy, then throws his arms up',
   splash: 'A wave splashes Clawd and slides back out',
-  wake: 'Clawd wakes up by his shell and watches the words',
+  wake: 'Clawd wakes up by his shell, stretches and watches the words',
   hello: 'Clawd waves hello',
 }
 // (The still splash's own words: "right up to his feet" is how the full tide is told, and beside a
@@ -810,6 +810,7 @@ const POSES: Record<string, Pose> = {
   walkR2: { eyes: 'right', arms: 'down', feet: 'right' },
   up: { eyes: 'open', arms: 'up', feet: 'both' },
   splash: { eyes: 'closed', arms: 'up', feet: 'both' },
+  stretch: { eyes: 'closed', arms: 'up', feet: 'both' },
   hopL: { eyes: 'closed', arms: 'down', feet: 'left' },
   hopR: { eyes: 'closed', arms: 'down', feet: 'right' },
   wave: { eyes: 'open', arms: 'one-up', feet: 'both' },
@@ -1225,7 +1226,7 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
 }
 
 // How long each moment plays before the loop takes over, in seconds.
-const INTRO: Record<Exclude<Moment, null>, number> = { cheer: 4.2, splash: 2.6, wake: 0.9, hello: 2 }
+const INTRO: Record<Exclude<Moment, null>, number> = { cheer: 4.2, splash: 2.6, wake: 1.1, hello: 2 }
 
 // The moment that plays once before the loop takes over: a spin, a splash, waking up, or hello.
 function beatsOf(kind: Exclude<Moment, null>): Beat[] {
@@ -1244,8 +1245,11 @@ function beatsOf(kind: Exclude<Moment, null>): Beat[] {
         { at: 1.3, pose: 'lookR', x: 0 },
       ]
     case 'wake':
-      // Up from his curl, standing with his eyes still shut, before he opens them.
-      return [{ at: 0, pose: 'blink', x: 0 }]
+      // Up from his curl with a big stretch, arms up and eyes still shut; arms down; then he opens them.
+      return [
+        { at: 0, pose: 'stretch', x: 0 },
+        { at: 0.6, pose: 'blink', x: 0 },
+      ]
     case 'hello':
       // A moment after the frame appears, one claw up, down, and up again: Claude Code's wave.
       return [

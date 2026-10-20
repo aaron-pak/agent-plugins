@@ -637,8 +637,10 @@ const DAMP_TICKS = 28
 const PET_TICKS = 10
 // The heart shows for the first 2 s of a pet.
 const HEART_TICKS = 8
-// Waking from a nap: standing, eyes still shut, for half a second.
-const WAKE_TICKS = 2
+// Waking from a nap: standing, eyes still shut, for three quarters of a second, the first half of it
+// a big stretch with his arms up.
+const WAKE_TICKS = 3
+const STRETCH_TICKS = 2
 /** Hello: half a second after the band appears, one claw up twice, as Claude Code waves (2.5 s). */
 const HELLO_FROM = 2
 const HELLO_TICKS = 10
@@ -1077,8 +1079,8 @@ function clawd(live: Live, beach: number): { rows: [Row, Row, Row]; marks: Place
     return { rows: lying(), marks, cheer: null }
   }
   if (isWaking(live)) {
-    // Up from the sand, eyes still shut for a moment, before he opens them.
-    return { rows: posed({ eyes: 'closed', arms: 'down', feet: 'both' }), marks, cheer: null }
+    // Up from the sand with a big stretch, arms up and eyes still shut; arms down; then he opens them.
+    return { rows: posed({ eyes: 'closed', arms: since(live, live.wakeAt) < STRETCH_TICKS ? 'up' : 'down', feet: 'both' }), marks, cheer: null }
   }
   if (isHello(live)) {
     // Hello: one claw up for three quarters of a second, down, and up again.

@@ -1537,7 +1537,7 @@ for (const when of ['up as the turn ends', 'put up mid-spin'] as const) {
   })
 }
 
-test('terminal: waking from a nap, he stands with his eyes shut a moment before opening them', async ($, on) => {
+test('terminal: waking from a nap, he stands with a stretch, his eyes still shut, before opening them', async ($, on) => {
   const { clock } = world(on)
   await start($)
   await turn($, clock)
@@ -1546,10 +1546,13 @@ test('terminal: waking from a nap, he stands with his eyes shut a moment before 
   expect((await look()).scene[1]).toContain('▐▂███▂█')
   await $.prompt.submit({ text: 'wake up', wait: false, origin: { kind: 'composer' } })
   await ui.redraw({ ...BAND, isWorking: true })
-  // Standing (his head back in the top row), eyes still shut.
-  expect((await look()).scene[0]).toContain('▐▂███▂█')
+  // Standing (his head back in the top row) with his arms up in a stretch, eyes still shut.
+  expect((await look()).scene[0]).toContain('▗▟▂███▂█▄')
   expect((await look()).scene[2]).toContain(FEET)
+  // Half a second on, his arms come down, eyes still shut; a beat later he opens them.
   await wait(500)
+  expect((await look()).scene[0]).toContain('▐▂███▂█')
+  await wait(250)
   expect((await look()).scene[0]).toContain(HEAD)
   await ui.unmount()
 })
@@ -1783,6 +1786,8 @@ test('desktop: waking from a nap, he stands with his eyes shut a moment, then wa
   const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
   const woke = (await look()).svg
   expect(woke?.alt).toContain('wakes up')
+  // A stretch, arms up and eyes shut, then his arms down, eyes still shut, before he watches the words.
+  expect(woke?.source).toMatch(/@keyframes m-stretch\{0%\{opacity:1\}/u)
   expect(woke?.source).toContain('m-blink')
   // The wake is part of the turn's first loop: tools coming and going leave it be.
   await clock.advance(2_000)
@@ -2332,9 +2337,10 @@ test('terminal: waking up and after a cheer, he looks at you before he looks awa
         await wait(250)
         await clock.advance(250)
       }
-      // Up with his eyes shut for half a second, then eyes open for 3 s at least: no glance out
-      // to sea (his pupils on the head's top edge, which a dark terminal swallows) before that.
-      expect([columns, minutes, woke]).toEqual([columns, minutes, expect.stringMatching(/^-{2}O{12}/u)])
+      // Up with his eyes shut for three quarters of a second (a stretch, then his arms down), then
+      // eyes open for 3 s at least: no glance out to sea (his pupils on the head's top edge, which a
+      // dark terminal swallows) before that.
+      expect([columns, minutes, woke]).toEqual([columns, minutes, expect.stringMatching(/^-{3}O{12}/u)])
 
       await $.turn.complete({ answer: 'Done.', durationMs: 3_000, isAborted: false, turnId: 'w', reason: 'answer' })
       await ui.redraw({ ...BAND, bodyColumns: columns })
