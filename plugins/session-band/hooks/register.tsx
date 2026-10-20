@@ -661,9 +661,9 @@ export const register: Register = (on, options) => {
     }
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
-    const [now, stored, motion, pick, kept] = await Promise.all([
+    const [now, { stored, isRead }, motion, pick, kept] = await Promise.all([
       $.clock.now(),
-      orNothing(read($, info)).then(found => found ?? EMPTY),
+      orNothing(read($, info)).then(found => ({ stored: found ?? EMPTY, isRead: found !== undefined })),
       orNothing(read($, motionOf)).then((found): Motion => found ?? 'lively'),
       orNothing(read($, pickOf)).then(found => found ?? null),
       orNothing(read($, sceneKept)).then(found => found ?? null),
@@ -830,8 +830,9 @@ export const register: Register = (on, options) => {
       // A fresh session's beach waits a moment for git: its where-line sets the beach's width, and
       // the branch joining it would narrow the beach under the words and start its frame over.
       // git's answer draws the band (this draw read the facts); a git slower than that, the wait's end.
+      // Facts that cannot be read say nothing of git: the band draws at once, as a fresh one.
       const waited = now - firstDrawnAt
-      if (!known.isGitRead && waited < GIT_WAIT_MS) {
+      if (isRead && !known.isGitRead && waited < GIT_WAIT_MS) {
         timers.git ??= nudge($, GIT_WAIT_MS - waited + 10, () => {
           timers.git = null
         })
