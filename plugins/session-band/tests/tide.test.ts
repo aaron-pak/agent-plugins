@@ -786,6 +786,67 @@ test('terminal: a splash runs up the sand and slides back a cell or two at a tim
   }
 })
 
+// Cold feet: after the hit (eyes shut, arms up) he hops from one pair of feet to the other while the
+// water is at them, a second, then stands on both; still, the hit is the one held frame.
+for (const motion of ['lively', 'still'] as const) {
+  test(`terminal, ${motion}: splashed, he ${motion === 'lively' ? 'hops from one pair of feet to the other, then stands' : 'holds the hit, both feet down'}`, async ($, on) => {
+    const { clock } = world(on)
+    await start($)
+    if (motion === 'still') await run($, 'band', 'still')
+    await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
+    const { ui, look, wait } = await band($, 'terminal', { ...BAND, isWorking: true })
+    await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+    const film: string[] = []
+    for (let i = 0; i < 14; i++) {
+      const view = await look()
+      const x = Math.min(...clawdAt(view))
+      const feet = cellsOf(view.rows[2]).flatMap((cell, col) => (cell.color === 'clawd_body' && cell.ch !== ' ' ? [col - x] : []))
+      const arms = (view.scene[0] ?? '').includes('▗▟') ? 'up' : 'down'
+      film.push(`${arms} ${feet.includes(1) ? 'L' : '-'}${feet.includes(6) ? 'R' : '-'}`)
+      await wait(250)
+      await clock.advance(250)
+    }
+    const shown = film.join(', ')
+    if (motion === 'still') {
+      // The hit held for the splash's seconds, then at rest: never a foot lifted.
+      const held = film.filter(tick => tick === 'up LR').length
+      expect([shown, held >= 8, film.slice(held).every(tick => tick === 'down LR')]).toEqual([shown, true, true])
+    } else {
+      // The hit, then four ticks of hops, one pair down at a time, then both feet down for good.
+      const hops = film.map(tick => tick.endsWith('L-') || tick.endsWith('-R'))
+      const first = hops.indexOf(true)
+      expect([shown, film.slice(0, first).every(tick => tick.endsWith('LR')), film.slice(first, first + 4)]).toEqual([shown, true, ['down L-', 'down -R', 'down L-', 'down -R']])
+      expect([shown, film.slice(first + 4).every(tick => tick === 'down LR')]).toEqual([shown, true])
+    }
+    await ui.unmount()
+  })
+}
+
+test('desktop: splashed, he hops on his cold feet, and the spray arcs out to land in the sea past the calm line, all by 2.2 s', async ($, on) => {
+  world(on)
+  await start($)
+  const { ui, look } = await band($, 'desktop', { ...BAND, isWorking: true })
+  await $.prompt.submit({ text: 'run it', wait: false, origin: { kind: 'composer' } })
+  await $.tool.call({ tool: 'Bash', command: 'npm test -- fail', description: 'Run the tests' })
+  const source = (await look()).svg?.source ?? ''
+  // His hop, eyes shut, one pair of feet and then the other, between the hit and his look round.
+  expect(source).toContain('class="pose p-hopL"')
+  expect(source).toContain('class="pose p-hopR"')
+  const lead = /@keyframes m-hopL\{([^@]*?)\}\}/u.exec(source)?.[1] ?? ''
+  expect(lead).toContain('opacity:1')
+  // Each drop flies out at an even pace in a group of its own while it rises and falls, so its path is
+  // an arc; it lands past the calm line (inside the picture) and shrinks into the water as it does.
+  const width = Number(/viewBox="0 -5 (\d+) 64"/u.exec(source)?.[1]) / 3
+  for (const i of [0, 1, 2, 3]) {
+    const out = Number(new RegExp(`@keyframes dropx${i}\\{from\\{transform:translateX\\(0\\)\\}to\\{transform:translateX\\(([\\d.]+)px\\)\\}\\}`, 'u').exec(source)?.[1])
+    const cx = Number(new RegExp(`<g class="dropx${i}"><circle class="drop drop${i}" cx="([\\d.]+)"`, 'u').exec(source)?.[1])
+    expect([i, out > 0, cx + out < width]).toEqual([i, true, true])
+    expect(source).toMatch(new RegExp(`\\.dropx${i}\\{animation:dropx${i} ([\\d.]+)s linear ([\\d.]+)s 1 both\\}`, 'u'))
+    expect(source).toMatch(new RegExp(`@keyframes drop${i}\\{[^@]*100%\\{transform:translate\\(0,1px\\) scale\\(0\\)\\}\\}`, 'u'))
+  }
+  await ui.unmount()
+})
+
 test('terminal: a beat after Claude starts reading, Clawd glances over at the words, then back', async ($, on) => {
   const { release, clock } = world(on)
   await start($)

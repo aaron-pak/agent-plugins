@@ -1033,11 +1033,13 @@ function clawd(live: Live, beach: number): { rows: [Row, Row, Row]; marks: Place
     return { rows: posed({ eyes: t < 6 ? 'wink' : 'open', arms: t < 6 || isHeld ? 'up' : 'down', feet: 'both' }), marks, cheer: null, ...ahead }
   }
   if (isSplashShown(live)) {
-    // Eyes squeezed shut as it hits, then a look at the water going back out, then settled.
+    // Eyes squeezed shut as it hits; then, cold feet, he hops from one pair to the other to shake
+    // them dry, looking round at the water as it goes back out; then settled. (Still: the hit, held.)
     const t = splashTick(live)
     marks.push(...spray(x, t))
+    const feet: Feet = t >= 4 && t < 8 ? (t % 2 === 0 ? 'left' : 'right') : 'both'
 
-    return { rows: posed({ eyes: t < 6 ? 'closed' : t < 10 ? 'right' : 'open', arms: t < 4 ? 'up' : 'down', feet: 'both' }), marks, cheer: null }
+    return { rows: posed({ eyes: t < 6 ? 'closed' : t < 10 ? 'right' : 'open', arms: t < 4 ? 'up' : 'down', feet }), marks, cheer: null }
   }
   if (isCheering(live)) {
     const t = since(live, live.cheerAt)

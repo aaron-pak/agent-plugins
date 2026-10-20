@@ -127,6 +127,8 @@ const CLOCK_WRAP = 126
 const SURGE_S = 2.4
 /** When the splash's last drop has fallen back into the sea, in seconds from the splash's start. */
 const DROPS_END_S = 2.2
+/** How far through its flight a drop of spray reaches the top of its arc. */
+const PEAK_AT = 0.42
 
 /**
  * How wide the diorama is beside a band of `columns`, in units: 64 from 48 columns, 40 on the
@@ -808,6 +810,8 @@ const POSES: Record<string, Pose> = {
   walkR2: { eyes: 'right', arms: 'down', feet: 'right' },
   up: { eyes: 'open', arms: 'up', feet: 'both' },
   splash: { eyes: 'closed', arms: 'up', feet: 'both' },
+  hopL: { eyes: 'closed', arms: 'down', feet: 'left' },
+  hopR: { eyes: 'closed', arms: 'down', feet: 'right' },
   wave: { eyes: 'open', arms: 'one-up', feet: 'both' },
 }
 
@@ -1181,24 +1185,40 @@ function sea(scene: Scene, base: string[], motion: string[]): { water: string; s
     `@keyframes surge{0%{transform:translateX(${rushFrom === 0 ? 0 : `-${rushFrom}px`});${ease('cubic-bezier(.25,.8,.35,1)')}}24%{transform:translateX(-${run}px);${ease('ease-in-out')}}46%{transform:translateX(-${round(run * 0.9)}px);${ease('cubic-bezier(.45,0,.4,1)')}}100%{transform:translateX(0)}}`,
   )
   // Spray off the water just beside him, a unit of sky clear of his raised claw: each drop swells up
-  // out of the crest, leaps up and out to sea, hangs, and shrinks away as it falls, at full color
-  // all the while (a fade, in or out, turns a drop into a slate-gray smudge on the dark page halfway
-  // through). They leave the air together, by DROPS_END_S, the later ones on a shorter hop, so no
-  // lone speck is left hanging. The still frame holds the sea at his feet and the drops in the air
+  // out of the crest and arcs up and out to sea, the sea going back out under it, and falls back in
+  // just past the calm line, where the water is by then, shrinking away as it lands. It flies at an
+  // even pace outward (its own group, `dropx`) while it rises and falls (the drop), so its path is a
+  // true arc, never the straight legs a single transform draws between keyframes. At full color all
+  // the while (a fade, in or out, turns a drop into a slate-gray smudge on the dark page halfway
+  // through). They land together, by DROPS_END_S, the later ones on a shorter hop, so no lone speck
+  // is left hanging. The still frame holds the sea at his feet and the drops at the top of their arcs
   // (where motion plays, the surge and the drops' own animations take over).
   const by = start + (scene.still ? stillDx(scene) : leadOf(scene).dx) + SPRITE_W + 1.2
-  const peaks: Array<[number, number]> = [[0, 7.4], [0.8, 8.2], [1.6, 7.4], [2.4, 6.2]]
+  // A burst of four thrown from about one point, each its own way, so they scatter rather than fly
+  // in a line: [how high it flies, how far past the calm line it lands, its size, when it leaves].
+  const flights: Array<[number, number, number, number]> = [
+    [6.6, 0.6, 0.95, 0.4],
+    [3.4, 4.6, 0.7, 0.46],
+    [5, 6.8, 0.82, 0.55],
+    [4.2, 2.6, 0.6, 0.62],
+  ]
   base.push(`.surge{transform:translateX(-${run}px)}.drop{transform-box:fill-box;transform-origin:center}`)
   motion.push('@keyframes swell{from{scale:0}to{scale:1}}')
-  const drops = peaks.map(([dx, dy], i) => {
-    const delay = round(0.4 + 0.12 * i)
-    base.push(`.drop${i}{transform:translate(${dx}px,-${dy}px)}`)
-    motion.push(`.drop${i}{animation:drop${i} ${round(DROPS_END_S - delay)}s ease-out ${delay}s 1 both,swell .2s ease-out ${delay}s 1 both}`)
+  const drops = flights.map(([height, past, r, leaves], i) => {
+    const delay = round(leaves)
+    const length = round(DROPS_END_S - delay)
+    const cx = round(by + i * 0.8)
+    // Where it lands: past the calm line, where the sea is by then, inside the picture.
+    const out = round(Math.max(1.5, Math.min(width - 1, shore + past) - cx))
+    base.push(`.dropx${i}{transform:translateX(${round(out * PEAK_AT)}px)}.drop${i}{transform:translate(0,-${height}px)}`)
+    motion.push(`.dropx${i}{animation:dropx${i} ${length}s linear ${delay}s 1 both}@keyframes dropx${i}{from{transform:translateX(0)}to{transform:translateX(${out}px)}}`)
+    motion.push(`.drop${i}{animation:drop${i} ${length}s ease-out ${delay}s 1 both,swell .2s ease-out ${delay}s 1 both}`)
     motion.push(
-      `@keyframes drop${i}{0%{transform:translate(0,0) scale(1)}45%{transform:translate(${dx}px,-${dy}px) scale(1)}80%{transform:translate(${round(dx + 0.6 + i * 0.3)}px,-4px) scale(.8)}100%{transform:translate(${round(dx + 0.9 + i * 0.4)}px,-2px) scale(0)}}`,
+      `@keyframes drop${i}{0%{transform:translate(0,0) scale(1);animation-timing-function:cubic-bezier(.25,.6,.45,1)}${pct(PEAK_AT)}{transform:translate(0,-${height}px) scale(1);animation-timing-function:cubic-bezier(.55,0,.75,.4)}` +
+        `88%{transform:translate(0,.3px) scale(.85);animation-timing-function:ease-in}100%{transform:translate(0,1px) scale(0)}}`,
     )
 
-    return `<circle class="drop drop${i}" cx="${round(by + i * 1.5)}" cy="${GROUND - 1}" r=".95" fill="${i % 2 === 0 ? SEA : DROP}"/>`
+    return `<g class="dropx${i}"><circle class="drop drop${i}" cx="${cx}" cy="${GROUND - 1}" r="${r}" fill="${i % 2 === 0 ? SEA : DROP}"/></g>`
   })
 
   return { water, spray: drops.join('') }
@@ -1213,9 +1233,15 @@ function beatsOf(kind: Exclude<Moment, null>): Beat[] {
     case 'cheer':
       return [...SPIN.map((_, i) => ({ at: round(i * 0.2), pose: `spin${i}`, x: 0 })), { at: round(SPIN.length * 0.2), pose: 'up', x: 0 }]
     case 'splash':
+      // The hit, eyes shut and arms up; then, cold feet, a hop from one pair to the other while
+      // the water is at them, a look round at it going back out, and he settles.
       return [
         { at: 0, pose: 'splash', x: 0 },
-        { at: 1.2, pose: 'lookR', x: 0 },
+        { at: 0.7, pose: 'hopL', x: 0 },
+        { at: 0.85, pose: 'hopR', x: 0 },
+        { at: 1, pose: 'walkR1', x: 0 },
+        { at: 1.15, pose: 'walkR2', x: 0 },
+        { at: 1.3, pose: 'lookR', x: 0 },
       ]
     case 'wake':
       // Up from his curl, standing with his eyes still shut, before he opens them.
