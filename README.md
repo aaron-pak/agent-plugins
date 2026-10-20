@@ -13,6 +13,7 @@ Current plugins:
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `session-manager` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
+- `t3-coordinator` (for agents running inside T3 Code)
 - `verification` (`create-verification-skill` and `maintain-verification-skill` together)
 
 Changing this repository? [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks CI runs.

@@ -53,6 +53,11 @@
       "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer."
     },
     {
+      "name": "t3-coordinator",
+      "source": "./plugins/t3-coordinator",
+      "description": "Coordinate worker threads from a T3 Code thread: delegated child tasks that report back, or separate threads the user steers, each with a self-contained brief."
+    },
+    {
       "name": "verification",
       "source": "./plugins/verification",
       "description": "Create a project-local verification skill that drives an app the way a user does, and keep it and its feature map accurate with periodic audits. From Lauren Tan's pstack."
