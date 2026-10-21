@@ -66,7 +66,7 @@ Publishing asks too. Claude Code asks before the plugin's `Artifact` and `Artifa
 
 The skill uses the server's tools by default and falls back to the `cua-driver` command line. In sandboxed Codex the command line can't reach the macOS daemon's socket, so keep the MCP tools available there.
 
-The plugin carries the skill pack, so skip `cua-driver skills install`, which links a second copy into each agent's skills folder. If you ran it before, remove the links for agents that have this plugin: `~/.claude/skills/cua-driver` for Claude Code and `~/.agents/skills/cua-driver` for Codex (`cua-driver skills uninstall` removes every agent's link). `cua-driver skills update` adds those links back, so remove them again after each update. Also remove any `cua-driver` or `cua-computer-use` server you added with `claude mcp add` or `codex mcp add`, so the agent doesn't start two servers.
+The plugin carries the skill pack, so skip `cua-driver skills install`, which links a second copy into each agent's skills folder. If you ran it before, remove the links for agents that have this plugin: `~/.claude/skills/cua-driver` for Claude Code and `~/.agents/skills/cua-driver` for Codex, which Cursor and Pi share (`cua-driver skills uninstall` removes every agent's link). `cua-driver skills update` adds those links back, so remove them again after each update. After updating the driver, restart Claude Code or Codex so the plugin's server runs the new version. Also remove any `cua-driver` or `cua-computer-use` server you added with `claude mcp add` or `codex mcp add`, so the agent doesn't start two servers.
 
 ## Global instructions
 
