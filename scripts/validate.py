@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the marketplace catalog, plugin manifests, skills, and README agree.
+"""Check that the marketplace catalogs, plugin manifests, skills, and README agree.
 
 Run from anywhere: python3 scripts/validate.py
 Exits 1 and lists every problem it finds.
@@ -196,6 +196,78 @@ def check_mod(entry, plugin_dir, where):
         error(where, "author.name is missing")
 
 
+CURSOR_ENTRY_KEYS = {"name", "source", "description", "minClientVersions"}
+CURSOR_TOP_KEYS = {"name", "owner", "metadata", "plugins"}
+CLAUDE_CODE_ONLY = "Claude Code only"
+
+
+def check_cursor_marketplace(claude_entries):
+    """The Cursor catalog is the Claude catalog, minus plugins described as Claude Code only.
+
+    Marketplace entries follow cursor/plugins schemas/marketplace.schema.json:
+    name, source, description, and minClientVersions only. source has no leading ./.
+    """
+    where = ".cursor-plugin/marketplace.json"
+    marketplace = load_json(ROOT / ".cursor-plugin" / "marketplace.json")
+    if marketplace is None:
+        return
+    extra = set(marketplace) - CURSOR_TOP_KEYS
+    if extra:
+        error(where, f"has unsupported fields {sorted(extra)}")
+    if not marketplace.get("name"):
+        error(where, "has no name")
+    elif marketplace.get("name") != "agent-plugins":
+        error(where, f"name {marketplace.get('name')!r} should be 'agent-plugins'")
+    entries = marketplace.get("plugins")
+    if not isinstance(entries, list):
+        error(where, "plugins should be an array")
+        return
+    claude_by_name = {}
+    for entry in claude_entries:
+        name = entry.get("name")
+        if name and name not in claude_by_name:
+            claude_by_name[name] = entry
+    listed = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            error(where, "plugin entry should be an object")
+            continue
+        name = entry.get("name")
+        listed.append(name)
+        extra = set(entry) - CURSOR_ENTRY_KEYS
+        if extra:
+            error(where, f"entry {name!r} has unsupported fields {sorted(extra)}")
+        for key in ("name", "source", "description"):
+            if not entry.get(key):
+                error(where, f"entry {name!r} has no {key}")
+        if name and entry.get("source") != f"plugins/{name}":
+            error(where, f"entry {name!r} source should be plugins/{name}")
+        claude = claude_by_name.get(name)
+        if claude is None:
+            error(where, f"entry {name!r} is not in .claude-plugin/marketplace.json")
+        elif entry.get("description") != claude.get("description"):
+            error(where, f"entry {name!r} description does not match the Claude catalog")
+        if claude is not None and CLAUDE_CODE_ONLY in (claude.get("description") or ""):
+            error(where, f"entry {name!r} says Claude Code only; leave it out of the Cursor catalog")
+        versions = entry.get("minClientVersions", None)
+        if name == "mac-computer-use":
+            if versions != {"cursor": "never"}:
+                error(where, "mac-computer-use should set minClientVersions to {\"cursor\": \"never\"}")
+        elif versions is not None:
+            error(where, f"entry {name!r} sets minClientVersions; only mac-computer-use does")
+    for name in {n for n in listed if n and listed.count(n) > 1}:
+        error(where, f"plugin {name!r} is listed more than once")
+    expected = [
+        entry.get("name")
+        for entry in claude_entries
+        if entry.get("name")
+        and CLAUDE_CODE_ONLY not in (entry.get("description") or "")
+    ]
+    for name in expected:
+        if name not in listed:
+            error(where, f"plugin {name!r} is missing")
+
+
 def check_readme(names):
     readme = (ROOT / "README.md").read_text()
     # One bullet per plugin, so pull requests that add plugins touch different lines.
@@ -223,6 +295,7 @@ def main():
     for name in sorted(on_disk - set(names)):
         error(f"plugins/{name}", "not listed in .claude-plugin/marketplace.json")
     check_readme(names)
+    check_cursor_marketplace(entries)
 
 
 main()

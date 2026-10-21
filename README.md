@@ -40,7 +40,9 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### Grok Bot
 
-Grok Bot installs plugins from Cursor's marketplaces, so it reads `.cursor-plugin/marketplace.json`, which lists only the plugins meant for it (`minClientVersions.cursor` is `never`, so Cursor itself hides them). Import this repository once as a team marketplace in the Cursor dashboard (Plugins & MCPs → Team Marketplaces → Add Marketplace → Import from Repo) with Auto Refresh on; each push to `main` is then picked up, and Grok Bot offers the plugin under Connect apps.
+Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band` and `session-manager`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
+
+Team marketplaces are available on Teams and Enterprise plans. Add one from Dashboard → Plugins & MCPs → Team Marketplaces → Add Marketplace, using Import from Repo. Auto Refresh is a Marketplace Setting there: on a GitHub import it re-indexes when commits are pushed to the tracked branch, which requires the Cursor GitHub App, and Cursor re-indexes at most once every 10 minutes. On a marketplace created with Import from Repo, Auto Refresh re-reads the full manifest on each push. See [Plugins](https://cursor.com/docs/plugins). Aaron is on Pro, so this repository is a personal marketplace, and Cursor's docs describe no refresh for those.
 
 ### The `artifact` server
 
@@ -77,7 +79,7 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 
 ## Mods
 
-A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands) or adds tools. Mods are Claude Code only. They are listed in `marketplace.json` so Claude Code can install them like any other plugin, and their descriptions say Claude Code only for Codex, which reads the same catalog.
+A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands) or adds tools. Mods are Claude Code only. They are listed in `.claude-plugin/marketplace.json` so Claude Code can install them like any other plugin, and their descriptions say Claude Code only for Codex, which reads the same catalog. The Cursor catalog leaves out a plugin whose description says that.
 
 A mod folder holds `.claude-plugin/plugin.json` (with `version` unset, as for every plugin here), `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
 

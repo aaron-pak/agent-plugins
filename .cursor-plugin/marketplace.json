@@ -8,12 +8,52 @@
   },
   "plugins": [
     {
+      "name": "artifact-design",
+      "source": "plugins/artifact-design",
+      "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with Artifact and ArtifactCheck MCP tools that publish and preview them on this machine. From Anthropic's Claude Code."
+    },
+    {
+      "name": "deeper-task",
+      "source": "plugins/deeper-task",
+      "description": "Ask for a deeper version of a task, not a bigger one: what an expert would do, the rawest material, their methods and tools, and an outside check, then a rewritten prompt. From Felix Rieseberg."
+    },
+    {
+      "name": "eli5",
+      "source": "plugins/eli5",
+      "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words."
+    },
+    {
+      "name": "frontend-skill",
+      "source": "plugins/frontend-skill",
+      "description": "Design visually strong landing pages, websites, apps, prototypes, and game UI with restrained composition and tasteful motion. From OpenAI."
+    },
+    {
+      "name": "implement-with-notes",
+      "source": "plugins/implement-with-notes",
+      "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
+    },
+    {
       "name": "mac-computer-use",
       "source": "plugins/mac-computer-use",
       "description": "Run Cua's cua-driver on Aaron's Mac mini from Grok Bot: an adapter that loads the driver's own skill on the Mac and covers only what differs when the Mac is another computer, plus a few facts about how this Mac is set up. Grok Bot only.",
       "minClientVersions": {
         "cursor": "never"
       }
+    },
+    {
+      "name": "pstack",
+      "source": "plugins/pstack",
+      "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
+    },
+    {
+      "name": "show-me",
+      "source": "plugins/show-me",
+      "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer."
+    },
+    {
+      "name": "verification",
+      "source": "plugins/verification",
+      "description": "Create a project-local verification skill that drives an app the way a user does, and keep it and its feature map accurate with periodic audits. From Lauren Tan's pstack."
     }
   ]
 }
