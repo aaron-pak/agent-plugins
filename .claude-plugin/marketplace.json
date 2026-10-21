@@ -33,6 +33,11 @@
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
     },
     {
+      "name": "mac-computer-use",
+      "source": "./plugins/mac-computer-use",
+      "description": "Run Cua's cua-driver on Aaron's Mac mini from Grok Bot: an adapter that loads the driver's own skill on the Mac and covers only what differs when the Mac is another computer, plus a few facts about how this Mac is set up. Grok Bot only."
+    },
+    {
       "name": "pstack",
       "source": "./plugins/pstack",
       "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
