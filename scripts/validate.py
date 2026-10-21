@@ -198,18 +198,11 @@ def check_mod(entry, plugin_dir, where):
 
 CURSOR_ENTRY_KEYS = {"name", "source", "description", "minClientVersions"}
 CURSOR_TOP_KEYS = {"name", "owner", "metadata", "plugins"}
-# Cursor loads an Agent Plugin from a root plugin.json, or a Cursor Plugin from
-# .cursor-plugin/plugin.json. .codex-plugin and .claude-plugin manifests are not those.
 CLAUDE_CODE_ONLY = "Claude Code only"
 
 
-def cursor_readable(name):
-    plugin_dir = ROOT / "plugins" / name
-    return (plugin_dir / "plugin.json").is_file() or (plugin_dir / ".cursor-plugin" / "plugin.json").is_file()
-
-
 def check_cursor_marketplace(claude_entries):
-    """The Cursor catalog is the Claude catalog, minus plugins Cursor cannot read.
+    """The Cursor catalog is the Claude catalog, minus plugins described as Claude Code only.
 
     Marketplace entries follow cursor/plugins schemas/marketplace.schema.json:
     name, source, description, and minClientVersions only. source has no leading ./.
@@ -256,8 +249,6 @@ def check_cursor_marketplace(claude_entries):
             error(where, f"entry {name!r} description does not match the Claude catalog")
         if claude is not None and CLAUDE_CODE_ONLY in (claude.get("description") or ""):
             error(where, f"entry {name!r} says Claude Code only; leave it out of the Cursor catalog")
-        if name and not cursor_readable(name):
-            error(where, f"entry {name!r} has no root plugin.json or .cursor-plugin/plugin.json for Cursor to read")
         versions = entry.get("minClientVersions", None)
         if name == "mac-computer-use":
             if versions != {"cursor": "never"}:
@@ -271,7 +262,6 @@ def check_cursor_marketplace(claude_entries):
         for entry in claude_entries
         if entry.get("name")
         and CLAUDE_CODE_ONLY not in (entry.get("description") or "")
-        and cursor_readable(entry.get("name"))
     ]
     for name in expected:
         if name not in listed:

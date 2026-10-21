@@ -40,9 +40,9 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### Grok Bot
 
-Grok Bot installs plugins from Cursor's marketplaces. When `.cursor-plugin/marketplace.json` exists, Cursor reads that file alone and does not merge `.claude-plugin/marketplace.json`, so the file is the full catalog for Cursor and Grok Bot. It lists every plugin from the Claude Code catalog that Cursor can load. A description that says Claude Code only leaves a plugin out (`session-band` and `session-manager`). `artifact-design` is left out too: its only manifest is `.codex-plugin/plugin.json`, and Cursor loads a plugin from a root `plugin.json` or `.cursor-plugin/plugin.json`. `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
+Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band` and `session-manager`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
 
-Team marketplaces are available on Teams and Enterprise plans. Add one from Dashboard → Plugins & MCPs → Team Marketplaces → Add Marketplace, using Import from Repo. Auto Refresh is a Marketplace Setting there: on a GitHub import it re-indexes when commits are pushed to the tracked branch, which requires the Cursor GitHub App, and Cursor re-indexes at most once every 10 minutes. On a marketplace created with Import from Repo, Auto Refresh re-reads the full manifest on each push. See [Plugins](https://cursor.com/docs/plugins). Aaron is on Pro, where this repository is a personal marketplace and does not auto-sync.
+Team marketplaces are available on Teams and Enterprise plans. Add one from Dashboard → Plugins & MCPs → Team Marketplaces → Add Marketplace, using Import from Repo. Auto Refresh is a Marketplace Setting there: on a GitHub import it re-indexes when commits are pushed to the tracked branch, which requires the Cursor GitHub App, and Cursor re-indexes at most once every 10 minutes. On a marketplace created with Import from Repo, Auto Refresh re-reads the full manifest on each push. See [Plugins](https://cursor.com/docs/plugins). Aaron is on Pro, so this repository is a personal marketplace, and Cursor's docs describe no refresh for those.
 
 ### The `artifact` server
 
@@ -79,7 +79,7 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 
 ## Mods
 
-A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands) or adds tools. Mods are Claude Code only. They are listed in `.claude-plugin/marketplace.json` so Claude Code can install them like any other plugin. Their descriptions say Claude Code only: Codex reads that catalog and skips them for that reason, and the Cursor catalog leaves them out.
+A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands) or adds tools. Mods are Claude Code only. They are listed in `.claude-plugin/marketplace.json` so Claude Code can install them like any other plugin, and their descriptions say Claude Code only for Codex, which reads the same catalog. The Cursor catalog leaves out a plugin whose description says that.
 
 A mod folder holds `.claude-plugin/plugin.json` (with `version` unset, as for every plugin here), `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
 
