@@ -1,9 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "cua-driver",
-  "description": "Operate native desktop apps on macOS, Windows, and Linux through the cua-driver MCP server and its skill. Needs cua-driver installed. From Cua.",
-  "author": {
-    "name": "Cua"
-  },
-  "license": "MIT"
-}
