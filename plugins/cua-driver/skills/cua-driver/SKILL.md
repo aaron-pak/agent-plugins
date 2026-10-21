@@ -185,15 +185,18 @@ or a public session label.
 
 ## GUI transport defaults — prefer cua-driver over GUI shell shims
 
-**Default transport is the `cua-driver` CLI** — `Bash` shelling out
-to `cua-driver <tool-name> '<JSON-args>'`. MCP tools (prefix
-`mcp__cua-driver__*`) only when the user explicitly asks for them.
-CLI wins because it picks up rebuilds instantly, failures are
-easier to diagnose, and there's no per-tool schema-load overhead.
+**Default transport is the `cua-driver` MCP server when its tools
+are available** — the plugin that carries this skill also starts that
+server, so its tools (in Claude Code, `mcp__plugin_cua-driver_cua-driver__*`)
+are present or can be loaded through tool search. Use the `cua-driver`
+CLI — `Bash` shelling out to `cua-driver <tool-name> '<JSON-args>'` —
+when the MCP tools are missing, for management subcommands
+(`status`, `doctor`, `permissions`, `recording`), and to diagnose a
+failing MCP call.
 
 Every reference to `click(...)`, `get_window_state(...)` etc. in this
-skill means `cua-driver click '{...}'` — translate to MCP form only
-when MCP is requested.
+skill means the MCP tool of that name, or `cua-driver click '{...}'`
+on the CLI.
 
 ### Claude Code computer-use compatibility mode
 
