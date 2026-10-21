@@ -5,6 +5,7 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 Current plugins:
 
 - `artifact-design` (`artifact-design`, `artifact-diagramming` and, in Codex, `dataviz`, plus an `artifact` MCP server)
+- `cua-driver` (Cua's skill plus a `cua-driver` MCP server, see [The `cua-driver` server](#the-cua-driver-server))
 - `deeper-task` (Felix Rieseberg's prompt, see [Credits](#credits))
 - `eli5`
 - `frontend-skill`
@@ -59,6 +60,14 @@ direct_only_tool_namespaces = ["mcp__artifact"]
 
 Publishing asks too. Claude Code asks before the plugin's `Artifact` and `ArtifactCheck` tools run, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
 
+### The `cua-driver` server
+
+`cua-driver` starts the `cua-driver mcp` stdio server, so the driver must be installed and `cua-driver` must be on the `PATH` that Claude Code or Codex starts with. The macOS and Linux installer puts it in `~/.local/bin`; if your agent starts without your login shell's `PATH`, link it into `/usr/local/bin`. Install the driver with `/bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"` on macOS or Linux, or `irm https://cua.ai/driver/install.ps1 | iex` on Windows. On macOS, run `cua-driver permissions grant`, then check the host with `cua-driver doctor`. The macOS server forwards to the CuaDriver app's daemon, so grant Accessibility and Screen Recording to CuaDriver.
+
+The skill uses the server's tools by default and falls back to the `cua-driver` command line. In sandboxed Codex the command line can't reach the macOS daemon's socket, so keep the MCP tools available there.
+
+The plugin carries the skill pack, so skip `cua-driver skills install`, which links a second copy into each agent's skills folder. If you ran it before, remove the Claude Code link with `rm ~/.claude/skills/cua-driver` (`cua-driver skills uninstall` removes every agent's link). Also remove any `cua-driver` or `cua-computer-use` server you added with `claude mcp add` or `codex mcp add`, so the agent doesn't start two servers.
+
 ## Global instructions
 
 `instructions/AGENTS.md` holds the shared global instructions and `instructions/CLAUDE.md` imports them for Claude. Link them manually:
@@ -105,6 +114,8 @@ The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.
 
 `pstack` is Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/11713c683fe4add4fd403ea880580abbc9e0875f/pstack), vendored at revision `11713c683fe4add4fd403ea880580abbc9e0875f` under the MIT license in its directory. Upstream targets Cursor. This copy runs in Cursor, Claude Code, and Codex: `plugins/pstack/scripts/pstack` handles per-role models (`~/.config/pstack/models`), cross-family seats through `claude -p` and `codex exec`, transcripts, and state, and `plugins/pstack/references/harness.md` maps the skills' neutral terms to each harness. The Cursor-only `make-bot-ui` skill and benny automations are removed. To port later upstream changes, diff upstream `pstack/` from that revision to its new head and apply the changes here.
+
+`cua-driver` is Cua's agent skill pack from [trycua/cua](https://github.com/trycua/cua/tree/70db98d1bcd92890d778f4978e0eb107a4b66c1b/libs/cua-driver/rust/Skills/cua-driver), release `cua-driver-rs-v0.21.0` (revision `70db98d1bcd92890d778f4978e0eb107a4b66c1b`), under the MIT license in its directory. One passage in `SKILL.md` differs from upstream: upstream makes the CLI the default and uses MCP tools only when the user asks for them, and this copy makes the bundled MCP server the default and keeps the CLI for management commands, diagnosis, and sessions without the MCP tools. To update the skill, download `cua-driver-rs-v<version>-skills.tar.gz` from the matching [release](https://github.com/trycua/cua/releases), copy its files over `plugins/cua-driver/skills/cua-driver/` (keeping `LICENSE.md`), and reapply that passage. The copy in `~/.cua-driver/skills/` keeps only the current platform's document, so it is missing files.
 
 `deeper-task` is the depth prompt from Felix Rieseberg's post [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/), word for word as the skill's body. The post gives no license.
 
