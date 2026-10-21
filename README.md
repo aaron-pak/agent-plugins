@@ -9,6 +9,7 @@ Current plugins:
 - `eli5`
 - `frontend-skill`
 - `implement-with-notes`
+- `mac-computer-use` (Grok Bot only, see [Grok Bot](#grok-bot))
 - `pstack` (Lauren Tan's, adapted, see [Credits](#credits))
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `session-manager` (a Claude Code mod, see [Mods](#mods))
@@ -36,6 +37,10 @@ codex plugin add eli5@agent-plugins
 ```
 
 Codex installs plugins for the user and records them in `~/.codex/config.toml`. Pull new commits with `codex plugin marketplace upgrade agent-plugins`, which also refreshes installed plugins. Codex shows a plugin without a version as `1.0.0` or `local` and has no auto-update. Remove one with `codex plugin remove eli5@agent-plugins`.
+
+### Grok Bot
+
+Grok Bot installs plugins from Cursor's marketplaces, so it reads `.cursor-plugin/marketplace.json`, which lists only the plugins meant for it (`minClientVersions.cursor` is `never`, so Cursor itself hides them). Import this repository once as a team marketplace in the Cursor dashboard (Plugins & MCPs → Team Marketplaces → Add Marketplace → Import from Repo) with Auto Refresh on; each push to `main` is then picked up, and Grok Bot offers the plugin under Connect apps.
 
 ### The `artifact` server
 

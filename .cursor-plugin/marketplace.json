@@ -1,0 +1,19 @@
+{
+  "name": "agent-plugins",
+  "owner": {
+    "name": "Aaron Pak"
+  },
+  "metadata": {
+    "description": "Aaron's personal skills as plugins for Cursor and Grok Bot."
+  },
+  "plugins": [
+    {
+      "name": "mac-computer-use",
+      "source": "plugins/mac-computer-use",
+      "description": "Run Cua's cua-driver on Aaron's Mac mini from Grok Bot: an adapter that loads the driver's own skill on the Mac and covers only what differs when the Mac is another computer. Grok Bot only.",
+      "minClientVersions": {
+        "cursor": "never"
+      }
+    }
+  ]
+}
