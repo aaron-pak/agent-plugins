@@ -21,7 +21,7 @@ Use the advertised `tools/list` contract over MCP. Tool names are `snake_case`; 
 | CLI without a named session                | Disposable implicit lease, cleaned up after the response                             |
 | Persistent MCP/SDK connection              | One private transport lifecycle; implicit or explicitly named runs live within it    |
 
-Use the CLI by default when a shell is available, or the existing MCP connection when the caller provides one. A multi-call CLI workflow must pass the same nonempty, non-`default` label on every call that accepts it. Tools without a public session parameter, particularly recording controls, need one persistent MCP connection for a coherent lifecycle.
+Use the existing MCP connection by default when the caller provides one: the plugin that carries this skill starts that server, so its tools (in Claude Code, `mcp__plugin_cua-driver_cua-driver__*`) are present or can be loaded through tool search. Use the CLI when no MCP connection is available, for management commands, and to diagnose a failing MCP call. A multi-call CLI workflow must pass the same nonempty, non-`default` label on every call that accepts it. Tools without a public session parameter, particularly recording controls, need one persistent MCP connection for a coherent lifecycle.
 
 Bare MCP owns a runtime on Windows/Linux and uses the signed service identity on macOS. `cua-driver mcp --socket <endpoint>` explicitly selects a service. One-shot CLI calls are service-backed. Starting a process that serves MCP is not the same as connecting a client: use the harness's MCP integration, not independent shell writes to a dead stdin.
 
