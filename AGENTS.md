@@ -6,7 +6,7 @@ This repository is a plugin marketplace that Claude Code and Codex both install 
 
 - `.claude-plugin/marketplace.json`: the marketplace catalog, named `agent-plugins`. Claude Code and Codex both read it.
 - `plugins/<name>/`: one plugin per tool or workflow. `plugin.json` at the plugin root follows the open [Agent Plugins 1.0.0](https://agent-plugins.org) format, which Codex reads natively, and `skills/<skill>/` holds each skill with its references and license. Claude Code takes the plugin's name and description from the marketplace entry and finds `skills/` on its own, so plugins carry no `.claude-plugin/plugin.json`. Plugins that work only in Claude Code, such as the mod `session-manager`, are the exception: their manifest is `.claude-plugin/plugin.json` beside `hooks/` (see Mods in README.md), which is also where `claude plugin validate` looks for a plugin without `skills/`. `artifact-design` is the other exception: its manifest is Codex's own `.codex-plugin/plugin.json`, with its MCP server inline, because only that format lets a plugin ask Codex to load a tool up front (`omit_tools_from`) instead of behind tool search. Its `skills` also names `codex-skills/`, for `dataviz`, which Claude Code has built in and so doesn't need from the plugin. Codex reads a root `plugin.json` with the Agent Plugins `$schema` before `.codex-plugin/`, so that plugin has none, and its server runs `mcp/server.mjs` from `cwd: "."` because Codex expands `${PLUGIN_ROOT}` only in the Agent Plugins format. A plugin may also carry command hooks in `hooks/hooks.json`. Only Claude Code loads them: Codex (checked on 0.162.1) skips the hooks of a plugin with a root `plugin.json`, and a Codex `PreToolUse` hook can't approve a call anyway.
-- `.cursor-plugin/marketplace.json`: the catalog Cursor and Grok Bot read when this repository is imported as a Cursor team marketplace. It lists only the plugins meant for Grok Bot, each with `minClientVersions.cursor` set to `never`, and its `source` paths omit the leading `./`. A plugin listed here is also listed in `.claude-plugin/marketplace.json`, with the same name and description.
+- `.cursor-plugin/marketplace.json`: the catalog Cursor and Grok Bot read. When this file exists, Cursor reads it alone and does not merge `.claude-plugin/marketplace.json`, so it lists every plugin from that catalog except plugins whose description says Claude Code only, with the same name and description and with `source` `plugins/<name>` (no leading `./`). `minClientVersions` is set only on `mac-computer-use`, as `{"cursor": "never"}`, which hides that plugin from Cursor. List a plugin only when Cursor can read it: a root `plugin.json` (Agent Plugins) or `.cursor-plugin/plugin.json`. `artifact-design` has only `.codex-plugin/plugin.json`, which Cursor does not read, and a root `plugin.json` would make Codex ignore that manifest, so it stays out until it has a `.cursor-plugin/plugin.json`. Team marketplaces, including Auto Refresh, are on Teams and Enterprise plans (https://cursor.com/docs/plugins). Aaron is on Pro, where this repository is a personal marketplace and does not auto-sync.
 - `instructions/`: Aaron's global agent instructions, linked by hand into `~/.codex` and `~/.claude` (see README.md). They are not instructions for this repository.
 - `scripts/validate.py`: the consistency check CI runs.
 - `package.json`, `tsconfig.json` and `scripts/build.ts`: the TypeScript toolchain for plugin code (see TypeScript below).
@@ -15,8 +15,9 @@ This repository is a plugin marketplace that Claude Code and Codex both install 
 
 1. Create `plugins/<name>/plugin.json` and `skills/<skill>/SKILL.md`. Each skill's frontmatter `name` matches its directory, and every skill has a `description`.
 2. Add an entry to `.claude-plugin/marketplace.json` with the same name and description as `plugin.json`, and source `./plugins/<name>`.
-3. Add the plugin to the "Current plugins" list in README.md, one line each in alphabetical order.
-4. Leave `version` unset in every manifest. Claude Code uses the Git commit as the version, and Codex pulls new commits when the marketplace is upgraded.
+3. Add the same name and description to `.cursor-plugin/marketplace.json` with source `plugins/<name>` (no leading `./`), unless the description says Claude Code only or the plugin has no manifest Cursor reads. See Layout.
+4. Add the plugin to the "Current plugins" list in README.md, one line each in alphabetical order.
+5. Leave `version` unset in every manifest. Claude Code uses the Git commit as the version, and Codex pulls new commits when the marketplace is upgraded.
 
 ## Plugins from elsewhere
 
@@ -33,7 +34,7 @@ The `artifact-design` plugin copies Claude Code's built-in `artifact-design`, `a
 
 CI (`.github/workflows/validate.yml`) runs on every push to `main` and every pull request:
 
-- `python3 scripts/validate.py` checks that marketplace entries, `plugin.json` files (including Codex's `.codex-plugin/plugin.json`), skill frontmatter, MCP config pairs, and the README plugin list agree.
+- `python3 scripts/validate.py` checks that marketplace entries, `plugin.json` files (including Codex's `.codex-plugin/plugin.json`), skill frontmatter, MCP config pairs, and the README plugin list agree, and that `.cursor-plugin/marketplace.json` lists the plugins from the Claude catalog that Cursor can read, with the same name and description.
 - `claude plugin validate --strict` checks the marketplace and each plugin the way Claude Code loads them. CI allows one warning, a missing version, which every mod's `.claude-plugin/plugin.json` gets because versions stay unset.
 - `bun run lint`, `bun run typecheck` and `bun run test` check the TypeScript, and `bun run build` must leave the committed bundles unchanged.
 - `bun run mod test` runs the tests of each mod the change touches (all of them when `scripts/mod/` changes).
