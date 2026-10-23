@@ -225,6 +225,33 @@ function neat(text: string): string {
   return text.replace(/[\s/._:;,-]+$/u, '')
 }
 
+/** Terminal cells: wide CJK characters and emoji count two (see `cells`). */
+export const CELLS: Measure = { row: segs => segs.reduce((sum, seg) => sum + cells(seg.text), 0), gap: 2 }
+
+/**
+ * A squeezed part that must be cut, on the terminal, is given a box exactly as wide as what shows of
+ * it and Ink's ellipsis. A cut that would end inside a wide character (CJK, an emoji) then lands on a
+ * cell boundary, so no stray blank cell opens up before what follows it.
+ */
+export function cutAt(line: Line, panel: number): Line {
+  if (line.squeeze === undefined) {
+    return line
+  }
+  const room = squeezeRoom(line, panel, CELLS)
+  const text = line.squeeze.map(seg => seg.text).join('')
+  if (cells(text) <= room) {
+    return line
+  }
+
+  // Never an ellipsis straight after a hyphen, a slash, a dot or a space ("first-…", "register.…"):
+  // the cut steps back to the last letter, as the tide's does; words a person wrote, to the end of
+  // their last whole word ("Run the…").
+  const kept = cut(text, room - 1)
+  const neat = squeezeCut(line, text, kept)
+
+  return { ...line, squeezeWidth: Math.max(1, cells(neat === '' ? kept : neat) + 1) }
+}
+
 /** The room left for a line's squeezed part once everything else has its place. */
 export function squeezeRoom(line: Line, room: number, m: Measure): number {
   return room - m.row(line.left) - m.row(line.tail ?? []) - (line.right.length === 0 ? 0 : m.gap + m.row(line.right))

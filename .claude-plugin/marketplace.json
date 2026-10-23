@@ -45,7 +45,7 @@
     {
       "name": "session-band",
       "source": "./plugins/session-band",
-      "description": "Clawd above the prompt with your session at a glance. Two looks: tide (the default) puts him on a little beach where the tide rises as context fills; hearth sets him beside three calm lines. Switch with /band or in /config. /band still keeps either look calm, and /band lively brings the motion back. Works in the terminal and the desktop Code tab. Claude Code only."
+      "description": "Clawd above the prompt with your session at a glance. Two looks: tide (the default) puts him on a little beach where the tide rises as context fills; hearth sets him beside three calm lines. Switch with /band or in /config. /band still keeps either look calm, and /band lively brings the motion back. In the terminal's fullscreen layout it steps aside while a / or @ menu is up, and the Band size row in /config keeps it to one row. Works in the terminal and the desktop Code tab. Claude Code only."
     },
     {
       "name": "session-manager",

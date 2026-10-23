@@ -25,6 +25,17 @@ rule on purpose, change its test and this page with it.
 - **The motion.** `/band still` (or `calm`, `quiet`, `stop` or `pause`) stops the motion in either
   look while the words keep changing; `/band lively` lets it move again.
 - **Reduced motion wins.** With Claude Code's reduced-motion setting on, both looks stay still.
+- **Out of the menus' way.** In the terminal's fullscreen layout the prompt's own menus (a `/`
+  command being named, an `@` file) open just above the prompt, where the band sits, and it would
+  push them up over Clawd's beach; so while one is up the band takes no rows, and it comes back as
+  the draft moves on. Its terminal band stays mounted at no height meanwhile, so Clawd carries on
+  where he was. Inline, the menus open below the prompt, and the band stays. It reads the draft as
+  Claude Code's typeahead does (`isTypeahead`), from its own patterns: again only when the text
+  changes (a caret moved alone leaves the menu as it was), and a command named later in the draft
+  against the session's commands. It cannot see which files match an `@` word (see "Known gaps").
+- **The size.** On the terminal, "Band size" in `/config` is `full` (three rows) or `compact`: one
+  row, Clawd's head beside what is happening and how full the context is (see "One row"). Either
+  way the band keeps to one row whenever Claude Code leaves it fewer than three (a tall draft).
 - **`warnAt`** (default 80): the context percent where the band nudges toward `/compact` (high tide
   on the beach, a clay percent and a sweating Clawd by the hearth, and a toast at each crossing).
   On the beach, a compaction that lets the tide out leaves a starfish on the sand where the water
@@ -36,6 +47,7 @@ rule on purpose, change its test and this page with it.
 |---|---|---|---|
 | Look | `tide` (default), `hearth` | the `look` field of `userConfig` (the "Band look" row of `/config`) | `/band tide`, `/band hearth`, `/config` |
 | Motion | `lively` (default), `still` | the plugin's store (`motion`), kept across sessions | `/band still`, `/band lively` |
+| Size | `full` (default), `compact` | the `size` field of `userConfig` (the "Band size" row of `/config`), terminal only | `/config` |
 
 - **One home for the look.** `/band` writes the `/config` row through `$.config.set`, and nothing
   else stores a look. That write reloads the plugin, so `/band` also records a pick (`LookPick` in
@@ -179,11 +191,12 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `session.compact` | A compaction of the conversation that went through (not a precompute, a subagent's, or one a hook skipped) leaves the beach a starfish at the high-water mark: the context as it stood before the compaction ran, read first, since a measure may land while it runs. |
 | `classic.PostModelSwitch` | The main loop's new model, on line 3 at once. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
+| `prompt.edit`, `prompt.change` | After each, a look at the prompt as it stands (`$.prompt.read`, a moment later, once an edit has landed, so a clear in the meantime counts, and so does a plugin's rewrite made by then): whether one of its menus is up (`isTypeahead`, read again only when the draft's text has changed, as the typeahead does, with the session's commands from `$.command.list` for one named later in the draft), written to `$.state` (`menu`) only when it differs from what the band last wrote, one write at a time and each of the newest look's answer (one that lands after the answer changed is followed by another; one that fails is written again at the next look). Nothing holds a keystroke up, though each edit now passes through the hooks worker (2 to 4 ms). `session.start` takes the same look, and a submit that is not the person's (a loop, a notification) changes nothing. |
 | `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over, and the next conversation builds its own sandcastle (`castleFrom`). |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
-| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
+| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. On the terminal it draws one row (`compact.tsx`) when the size is compact or `maxRows` is under three, and takes no rows while a menu is up in the fullscreen layout or no row is left: the three-row band stays mounted at no height, and one row steps aside. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
 percent; the cost and the limit shown; when the session was last active; the tools running
@@ -500,6 +513,23 @@ page", "A listing"); then "A tool", left out under a word as short ("A task", "A
 server's tool is quoted with its server whole, then named in words, never as an order nobody gave
 ("A GitHub tool failed", "An Asana tool failed": `article`).
 
+### One row
+
+`hooks/compact.tsx` draws the band in one row on the terminal: Clawd's head, nine cells wide whatever
+his arms do (up for a cheer, his eyes shut for a nap or a failure), then the look's own first words
+(the beach's line 1 as its desktop picks it, the hearth's line 3 with its tally), and at the right
+how full the context is (the beach's context line, the hearth's `context 42%`), as much as fits. The
+hooks module draws it, with no surface module, so it changes with the facts and the moments' own
+redraws (as the desktop does), and a band kept to one row never loads the terminal bands at all
+(about 13 MB less, measured). So it gives up what only the terminal bands draw: the pet and its
+heart (nothing takes the click), the hello's wave, the cheer's sparkles, the drifting z's (asleep,
+he has a dim `z` by his head instead), the beach itself with its starfish and night sky, and the
+hearth's meters and where-you-are line. Going back to three rows starts the terminal band afresh,
+Clawd at home, as a band that appears does. It
+is the band when "Band size" is `compact`, and whenever Claude Code leaves the band fewer than three
+rows (in the fullscreen layout the prompt and the band share half the screen, so a tall draft
+squeezes it), which would otherwise scroll three rows in a smaller window.
+
 ### Terminal and desktop
 
 On the terminal, `hooks/tide/band.tsx` is the beach's `Client` module: exactly three rows, none
@@ -509,7 +539,7 @@ ellipsis. Clawd uses the theme keys `clawd_body` and `clawd_background`; the bea
 accents no theme key covers.
 
 On the desktop, `hooks/tide/desk.tsx` draws an `Svg` diorama beside Box and Text words, with Clawd
-converted quadrant by quadrant from the terminal's sprites. The frame is 64 px tall at every width,
+converted quadrant by quadrant from the terminal's sprites (`hooks/tide/sprite.ts`). The frame is 64 px tall at every width,
 its 54 px scene 5 px from the top, in a whole-pixel view (`viewBox="0 -5 192 64"`) at `scale(3)`.
 Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 px, between 120 and
 192 px. On a wider band it widens into the room the words leave (`beachWidth`): 64 units until the
@@ -767,12 +797,44 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   cube has no tan between the sand's 180 and 137, nor a blue between the sea's 67 and 24, so the damp
   strip and the ripples are darker than a free choice would make them, in truecolor too. Clawd and
   the words use theme keys, which are the host's to round (see "Known gaps").
+- **Memory: what the band costs is its code, and nothing it keeps grows.** Claude Code 2.1.308
+  holds about 30 to 40 bytes for each character of JavaScript a mod loads, in each environment that
+  loads it (the hooks module's, and the surface modules'), and about 8 for each character of
+  comment. So the band, some 260,000 characters of JavaScript once compiled, holds about 10 MB more
+  than a minimal mod with a terminal `Client` (which Claude Code itself takes about 50 MB to host),
+  almost all of it from loading; running adds nothing measurable at idle. Everything kept has a
+  bound: the facts cap their lists (32 tools running, 256 todos, 256 files a turn), the scene memory
+  keeps 16 widths and the terminal 8 band ids, and the desktop draws each scene's two pictures once
+  (`sourcesOf`), letting them go with the scene; in the test kit the footprint stays flat over
+  20,000 turns. Caching the terminal's frames saved a few microseconds a tick and no memory, so they
+  are built afresh each tick. A surface module loads the first time a `Client` is drawn, with every
+  other one the hooks module names, so the desktop never loads the terminal bands, nor does a band
+  kept to one row. The hooks module is one import graph for every surface, so a terminal session
+  carries the desktop's drawing (no module loads later, and none loads per surface); Clawd's
+  sprites live apart from the terminal band, so that graph never takes the terminal band in.
 - **The hearth's Svg classes start with `hh-`** only in case a host ever draws it inline: both
   looks' Svgs draw as images, whose classes never meet the page's. A prefix on the tide's would
   change every tide source for no gain.
 
 ## Known gaps
 
+- **A menu closed with Esc.** Claude Code's Esc closes the typeahead and leaves the draft as it is,
+  with no edit or change to say so, so the band stays aside until the draft's text next changes: an
+  `@` meant as itself, its menu closed with Esc, holds the band aside until the next letter.
+- **Menus the band cannot see.** It reads the draft as the typeahead does, but not which files it
+  finds: an `@` word that names none (`@alice`) still sets the band aside until it ends. The menus
+  it does not read for still open above the band: a command's own argument menu (`/config th`,
+  `/add-dir src`, `/resume fix`), the list for a name no command has once a space follows it
+  (`/mo `), `:` emoji, `#` channels, paths in bash mode, and rows another
+  plugin adds. In bash mode, where the typeahead offers paths instead, an `@` or `/` word still sets
+  the band aside.
+- **A collapsed band keeps its hint above a menu.** Stepping aside keeps the terminal band mounted
+  at no height, which Claude Code counts as drawn, so a band collapsed with ctrl+x ctrl+a still shows
+  its one-row "plugin panel hidden" hint above an open menu.
+- **A rewrite of an edit that lands late.** The band looks at the prompt a moment after its own part
+  of an edit settles. A plugin hooked above it that rewrites the edit after that moment (waiting on
+  something of its own first) leaves the band with the answer for the draft before the rewrite,
+  since no edit or change comes for it, until the draft next changes.
 - **Live reload is verified on the module side only.** The suite runs real new activations seeded
   with the last `$.state`, but cannot check whether Claude Code runs `session.start` again on an
   options-only reload, keeps `/band` registered, or lets the `/band` reply survive a reload.
@@ -871,6 +933,10 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   desktops' `CELL_PX`, the terminal bands' `dice`, and the cuts.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
+- `hooks/tide/sprite.ts`: Clawd's cells on the beach (`pose`, `spin`, `curled`, and Apple's
+  Terminal's simpler Clawd), which the terminal band draws, the desktop turns into pixels and the one
+  row keeps his head from.
+- `hooks/compact.tsx`: the band in one row on the terminal, in either look (see "One row").
 - `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text, and where its
   heart parks (`HEART_PARKED`, `HEART_SHOWN`, `ROW_PX`).
 - `hooks/tide/props.ts`: the beach's props, `sceneMemory()` and `desktopScenes()`.
@@ -895,7 +961,15 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   answer after a start that failed partway, or one a turn's answer overtook), `/band off` by what is
   on, every terminal color against its 256-color rounding, with every other color a theme key, and
   the band stepping aside while something holds its place and coming back once it is free (beside
-  another band drawn free too).
+  another band drawn free too), which drafts have one of the prompt's menus up (`isTypeahead`) and
+  the terminal band taking no rows for one, driven through the editor's own edits, changes and
+  submits (a caret moved alone, a command named later in the draft, a clear while the menu's write
+  is on its way, and an edit settling after a later clear included; the rule itself is held against
+  Claude Code's typeahead patterns and drafts it was seen to open menus for), the one-row band in
+  both looks at widths sampled from 34 to 200 columns, kept compact or left fewer than three rows,
+  saying no less as it widens (every width from 34 to 120, a long command running), and asleep with
+  his whole head beside the z in either sprite, and one band going from three rows to one and back
+  as its room changes.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in

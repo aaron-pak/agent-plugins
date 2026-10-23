@@ -2,8 +2,8 @@ import type { Elements, RenderElement } from 'claude-code'
 
 import type { BandProps, Piece, Words } from './types'
 import { CELL_PX, CLAY, DOZE_SLATE, EYE_INK, HEART_ALT, HEART_PINK, SPIN, pixelHeart, textPx } from '../clawd'
-import { BODY, EYE, curled, pose, spin } from './band'
-import type { Pose, Row } from './band'
+import { BODY, EYE, curled, pose, spin } from './sprite'
+import type { Pose, Row } from './sprite'
 import { PIXELS, fitLine } from './fit'
 import { NAP_AFTER_MS, SPLASH_MS, skySteps } from '../facts'
 
@@ -233,14 +233,15 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene): Render
   const { Box, Text, Svg } = el
   const room = deskRoom(props.columns, scene.width)
   const lines = linesFor(props).map(forms => fitLine(forms, room, PIXELS))
+  const { picture, heart } = sourcesOf(scene)
 
   return (
     <Box flexDirection="row" alignItems="center">
       <Box key="beach" position="relative" flexShrink={0}>
-        <Svg source={diorama(scene)} alt={altFor(scene, props.percent !== null)} width={scene.width * U} height={FRAME_PX} />
+        <Svg source={picture} alt={altFor(scene, props.percent !== null)} width={scene.width * U} height={FRAME_PX} />
         {/* Parked across the band's bottom edge and moved onto him by the hover; a reveal would be a card above the band and restart his walk. */}
         <Box position="absolute" top={HEART_PARKED} left={0} hover={{ top: HEART_SHOWN }}>
-          <Svg source={petHeart(scene)} alt={HEART_ALT} width={scene.width * U} height={FRAME_PX + ROW_PX} />
+          <Svg source={heart} alt={HEART_ALT} width={scene.width * U} height={FRAME_PX + ROW_PX} />
         </Box>
       </Box>
       <Box flexDirection="column" marginLeft={2} flexGrow={1} flexShrink={1} minWidth={0}>
@@ -254,6 +255,20 @@ export function desktopBand(el: Desktop, props: BandProps, scene: Scene): Render
       </Box>
     </Box>
   )
+}
+
+// The scene's two pictures, drawn once for each scene the hooks module settles on: every redraw until
+// the beach changes hands this the same scene, and each picture runs to tens of thousands of characters.
+const SOURCES = new WeakMap<Scene, { picture: string; heart: string }>()
+
+function sourcesOf(scene: Scene): { picture: string; heart: string } {
+  let drawn = SOURCES.get(scene)
+  if (drawn === undefined) {
+    drawn = { picture: diorama(scene), heart: petHeart(scene) }
+    SOURCES.set(scene, drawn)
+  }
+
+  return drawn
 }
 
 function isNapping(props: BandProps): boolean {
@@ -740,7 +755,7 @@ function tideOf(props: BandProps, moment: Moment): number {
 }
 
 // The three lines, each as its forms, longest first (see fitLine).
-function linesFor(props: BandProps): Words[][] {
+export function linesFor(props: BandProps): Words[][] {
   const { words } = props
   const mood = moodOf(props)
   const moment = momentOf(props, mood)
@@ -751,7 +766,7 @@ function linesFor(props: BandProps): Words[][] {
   return [first, words.tide, words.place]
 }
 
-function style(piece: Piece): { color?: string; dimColor?: boolean; bold?: boolean } {
+export function style(piece: Piece): { color?: string; dimColor?: boolean; bold?: boolean } {
   const bold = piece.bold === true ? { bold: true } : {}
   switch (piece.tone) {
     case 'dim':

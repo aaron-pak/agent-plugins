@@ -26,6 +26,8 @@ import {
   isInterrupted,
   isNewWave,
   isPhrase,
+  isTypeahead,
+  laterCommand,
   nameIn,
   nextTodos,
   nounOf,
@@ -38,6 +40,7 @@ import {
   todosAfterTurn,
   whole,
 } from './facts'
+import { hearthRow, tideRow } from './compact'
 import { CHEER_FOR_MS, FLINCH_MS, desk } from './hearth/desk'
 import { bandProps as hearthProps, doing } from './hearth/props'
 import { hearthActivity, hearthInfo, slipAt } from './hearth/view'
@@ -58,6 +61,8 @@ const motionOf = atom({ plugin: 'session-band', key: 'motion' } as const, 'livel
 const pickOf = atom({ plugin: 'session-band', key: 'pick' } as const, null)
 /** The tide desktop's last scene, kept through a reload of this module (see sceneMemory). */
 const sceneKept = atom({ plugin: 'session-band', key: 'scene' } as const, null)
+/** One of the prompt's own menus is up on the terminal (see isTypeahead): the band steps aside for it. */
+const menuOf = atom({ plugin: 'session-band', key: 'menu' } as const, false)
 
 /** Each moment's redraws, in ms after it starts: a cheer's end (the hearth's, then the tide's), a splash's, a flinch's. */
 const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLASH_MS + 100], flinch: [FLINCH_MS + 10] } as const
@@ -104,12 +109,23 @@ const ESC_MS = 1000
 /** What the band has seen of the work since the prompt: whether Claude Code said it was working, and since when it has said it is not. */
 type Landing = { sawWork: boolean; quietSince: number | null }
 
+/**
+ * What the band knows of the prompt's menus: the draft it last read them from, whether one was up
+ * then and whether that was a command's named later in the draft, what `$.state` holds as far as it
+ * knows (null before its first write lands, or after one fails), whether a write is under way, and
+ * how many looks at the prompt it has taken, so only the newest one counts.
+ */
+type MenuSeen = { text: string | null; isUp: boolean; isLater: boolean; written: boolean | null; isWriting: boolean; looks: number }
+
 type Saved = { kind: 'saved' } | { kind: 'denied'; reason: string } | { kind: 'unsaved' }
 type Row = { key: string }
 
 export const register: Register = (on, options) => {
   const warnAt = typeof options.warnAt === 'number' ? options.warnAt : DEFAULT_WARN_AT
   const configured = options.look
+  // On the terminal: three rows (Clawd on his beach or by the hearth), or one (see compact.tsx).
+  const isCompact = options.size === 'compact'
+  const menu: MenuSeen = { text: null, isUp: false, isLater: false, written: null, isWriting: false, looks: 0 }
   // A pick /band makes counts only in this activation: any reload (a /config change among them) spends it.
   const activation = newActivation()
   // The look's /config row, found again through /config's own list where it is keyed otherwise.
@@ -172,6 +188,8 @@ export const register: Register = (on, options) => {
       const unsaved = whole(kept ?? {}).unsavedMotion
       const motion = unsaved ?? migrateMotion(storedMotion, storedStyle)
       await update($, motionOf, () => motion).catch(() => undefined)
+      // Whether a menu is up as the prompt stands now (one a reload left marked would keep the band aside).
+      void lookAtPrompt($, menu)
       const isRemembered = storedMotion === motion || (await remember($, motion))
 
       // Each fact on its own: a lookup that fails leaves its own field as it was (or as the folder
@@ -275,6 +293,25 @@ export const register: Register = (on, options) => {
 
     return next(e)
   }).catch((_$, e, next) => next(e))
+
+  // The prompt's own menus (a / command being named, an @ file) open just above the prompt, where the
+  // band sits, which would push them up over Clawd's beach: on the terminal the band steps aside while
+  // one is up. Typing and deleting come as edits, and a recalled entry, a clear or a submit as
+  // changes; after each the band looks at the prompt as it then stands (a plugin above may have
+  // changed what an edit put in, and a clear may have come since), a moment later, once the edit has
+  // landed, or failed below it and left the editor's own. Nothing here holds a keystroke up.
+  on('prompt.edit', ($, e, next) => {
+    const box = next(e)
+    const look = () => after($, 0, () => void lookAtPrompt($, menu))
+    void box.then(look, look)
+
+    return box
+  })
+  on('prompt.change', async ($, e, next) => {
+    after($, 0, () => void lookAtPrompt($, menu))
+
+    return next(e)
+  })
 
   // The band only watches the prompt and the tools. Should its bookkeeping throw, the `.catch`
   // says outright what the engine would do anyway: hand the event on untouched, or keep what the
@@ -659,6 +696,18 @@ export const register: Register = (on, options) => {
       timers.held?.cancel()
       timers.held = null
     }
+    // One of the prompt's menus is up just above it (the fullscreen layout: inline, they open below
+    // the prompt), or no row is left: the band takes no rows. Its terminal band stays mounted at no
+    // height, so Clawd carries on where he was once the menu goes; reading whether the menu is up
+    // draws the band again as it goes.
+    const isMenu = e.surface === 'terminal' && e.viewport?.isFullscreen !== false && (await orNothing(read($, menuOf))) === true
+    const isAside = e.surface === 'terminal' && (isMenu || e.props.maxRows < 1)
+    // One row on the terminal when the person keeps it there, or when Claude Code leaves fewer than
+    // three (a tall draft): never three rows scrolled in a smaller window. One row has nothing to keep.
+    const isOneRow = e.surface === 'terminal' && (isCompact || e.props.maxRows < 3)
+    if (isAside && isOneRow) {
+      return next(e)
+    }
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
     const [now, { stored, isRead }, motion, pick, kept] = await Promise.all([
@@ -805,9 +854,12 @@ export const register: Register = (on, options) => {
           dozedS,
         })
       }
+      if (isOneRow) {
+        return hearthRow($.ui.resolve(e), props, columns)
+      }
       const { Client } = $.ui.resolve(e)
 
-      return <Client key="hearth" module="./hearth/band.tsx" props={props} width={columns} height={3} />
+      return <Client key="hearth" module="./hearth/band.tsx" props={props} width={columns} height={isAside ? 0 : 3} />
     }
 
     // The hearth's frame is gone: its bead starts afresh when it comes back, and its nap frame
@@ -853,9 +905,12 @@ export const register: Register = (on, options) => {
 
       return desktopBand($.ui.resolve(e), props, shown.scene)
     }
+    if (isOneRow) {
+      return tideRow($.ui.resolve(e), drawn, columns)
+    }
     const { Client } = $.ui.resolve(e)
 
-    return <Client key="band" module="./tide/band.tsx" props={{ ...drawn, isSwapped }} width={columns} height={3} />
+    return <Client key="band" module="./tide/band.tsx" props={{ ...drawn, isSwapped }} width={columns} height={isAside ? 0 : 3} />
   })
 }
 
@@ -1005,6 +1060,47 @@ async function remember($: EngineInterface, motion: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * Looks at the prompt as it stands and writes whether one of its menus is up, only as one comes or
+ * goes (typing is many edits, and each write redraws the band). A look that a newer one has followed
+ * writes nothing, so looks that come back out of order still leave the band as the prompt is; a write
+ * that fails is tried again at the next look.
+ */
+async function lookAtPrompt($: EngineInterface, menu: MenuSeen): Promise<void> {
+  const look = ++menu.looks
+  const box = await $.prompt.read().catch(() => null)
+  if (box === null || look !== menu.looks) {
+    return
+  }
+  // The typeahead reads the draft again only when its text changes: the caret moved alone leaves its
+  // menu as it was, and so the band. A command named later in the draft needs the session's commands.
+  if (box.text !== menu.text) {
+    const later = laterCommand(box.text, box.cursor)
+    const commands = later === null || later === '' ? [] : await $.command.list().then(list => list.map(command => command.name), () => [])
+    if (look !== menu.looks) {
+      return
+    }
+    menu.text = box.text
+    menu.isUp = isTypeahead(box.text, box.cursor, commands, menu.isLater)
+    menu.isLater = menu.isUp && later !== null
+  }
+  // One write at a time, each of the newest answer: a look while one is under way leaves it to that
+  // write, which writes again once it lands if the answer has changed meanwhile.
+  if (menu.isWriting) {
+    return
+  }
+  menu.isWriting = true
+  try {
+    while (menu.isUp !== menu.written) {
+      menu.written = await update($, menuOf, () => menu.isUp)
+    }
+  } catch {
+    menu.written = null
+  } finally {
+    menu.isWriting = false
   }
 }
 
