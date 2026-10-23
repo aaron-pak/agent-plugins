@@ -111,10 +111,11 @@ type Landing = { sawWork: boolean; quietSince: number | null }
 
 /**
  * What the band knows of the prompt's menus: the draft it last read them from, whether one was up
- * then, what `$.state` holds as far as it knows (null before its first write lands, or after one
- * fails), and how many looks at the prompt it has taken, so only the newest one counts.
+ * then and whether that was a command's named later in the draft, what `$.state` holds as far as it
+ * knows (null before its first write lands, or after one fails), whether a write is under way, and
+ * how many looks at the prompt it has taken, so only the newest one counts.
  */
-type MenuSeen = { text: string | null; isUp: boolean; written: boolean | null; looks: number }
+type MenuSeen = { text: string | null; isUp: boolean; isLater: boolean; written: boolean | null; isWriting: boolean; looks: number }
 
 type Saved = { kind: 'saved' } | { kind: 'denied'; reason: string } | { kind: 'unsaved' }
 type Row = { key: string }
@@ -124,7 +125,7 @@ export const register: Register = (on, options) => {
   const configured = options.look
   // On the terminal: three rows (Clawd on his beach or by the hearth), or one (see compact.tsx).
   const isCompact = options.size === 'compact'
-  const menu: MenuSeen = { text: null, isUp: false, written: null, looks: 0 }
+  const menu: MenuSeen = { text: null, isUp: false, isLater: false, written: null, isWriting: false, looks: 0 }
   // A pick /band makes counts only in this activation: any reload (a /config change among them) spends it.
   const activation = newActivation()
   // The look's /config row, found again through /config's own list where it is keyed otherwise.
@@ -1077,21 +1078,29 @@ async function lookAtPrompt($: EngineInterface, menu: MenuSeen): Promise<void> {
   // The typeahead reads the draft again only when its text changes: the caret moved alone leaves its
   // menu as it was, and so the band. A command named later in the draft needs the session's commands.
   if (box.text !== menu.text) {
-    const commands = laterCommand(box.text, box.cursor) === null ? [] : await $.command.list().then(list => list.map(command => command.name), () => [])
+    const later = laterCommand(box.text, box.cursor)
+    const commands = later === null || later === '' ? [] : await $.command.list().then(list => list.map(command => command.name), () => [])
     if (look !== menu.looks) {
       return
     }
     menu.text = box.text
-    menu.isUp = isTypeahead(box.text, box.cursor, commands)
+    menu.isUp = isTypeahead(box.text, box.cursor, commands, menu.isLater)
+    menu.isLater = menu.isUp && later !== null
   }
-  if (menu.isUp === menu.written) {
+  // One write at a time, each of the newest answer: a look while one is under way leaves it to that
+  // write, which writes again once it lands if the answer has changed meanwhile.
+  if (menu.isWriting) {
     return
   }
+  menu.isWriting = true
   try {
-    // The newest answer, not this look's: two writes that land out of order still leave it right.
-    menu.written = await update($, menuOf, () => menu.isUp)
+    while (menu.isUp !== menu.written) {
+      menu.written = await update($, menuOf, () => menu.isUp)
+    }
   } catch {
     menu.written = null
+  } finally {
+    menu.isWriting = false
   }
 }
 

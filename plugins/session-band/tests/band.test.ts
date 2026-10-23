@@ -5524,11 +5524,13 @@ test('a menu is up while a / command or an @ file is being named, and not once t
     ['/mo', 3, true],
     // The draft's own command has its menu whatever it names ("No commands match").
     ['/zzz', 4, true],
-    // A space ends the command's name, and with it its menu; an edit that leaves the caret back in
-    // the name (an "l" typed into "/mode ") puts it up again.
+    // A space ends the command's name, and with it its menu (the argument's hint shows instead),
+    // wherever the caret is: the typeahead reads the whole draft, so a typo fixed in the name, the
+    // caret then inside it, opens nothing.
     ['/model ', 7, false],
-    ['/model ', 6, true],
+    ['/model ', 6, false],
     ['/model opus', 11, false],
+    ['/model opus', 3, false],
     // A command named later in the draft has its menu while a command's name runs on from it (the
     // part after a plugin's colon too), and a second slash makes a path of it.
     ['please /mo', 10, true],
@@ -5536,6 +5538,7 @@ test('a menu is up while a / command or an @ file is being named, and not once t
     ['please /zzz', 11, false],
     ['please /model', 13, false],
     ['and /', 5, false],
+    ['please /', 8, false],
     ['cd /Us', 6, true],
     ['cd /Users', 9, false],
     ['/tmp/foo', 8, false],
@@ -5560,6 +5563,8 @@ test('a menu is up while a / command or an @ file is being named, and not once t
     ['two\n@lines', 11, true],
   ]
   expect(cases.map(([text, cursor]) => isTypeahead(text, cursor, commands))).toEqual(cases.map(([, , isUp]) => isUp))
+  // Back to the bare slash from a later command's menu, the menu stays up, listing every command.
+  expect(isTypeahead('please /', 8, commands, true)).toBe(true)
 })
 
 /** How tall the band's terminal band is drawn, or null with none in the tree. */
@@ -5620,6 +5625,13 @@ test('terminal: typing, deleting, recalling and clearing a draft take the band a
   })
   on('prompt.read', () => ({ value: box }))
   on('command.list', () => ({ value: [{ name: 'model', description: 'Set the model', source: 'builtin' }] }))
+  // The menu's writes to the session's state, held while `writing` is.
+  let writing: Promise<void> | null = null
+  on('state.set', async ($, e, next) => {
+    if (e.plugin === 'session-band' && e.key === 'menu' && writing !== null) await writing
+
+    return next(e)
+  })
   await start($)
   const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   const editor = $.prompt as unknown as Editor
@@ -5648,6 +5660,19 @@ test('terminal: typing, deleting, recalling and clearing a draft take the band a
   // Later in the draft, only a command's name running on from what is typed opens its menu.
   expect([await change('please /mo', 'history'), await change('please /zzz', 'history'), await change('and /', 'history')]).toEqual([0, 3, 3])
   await change('', 'clear')
+  // Deleting back to the bare slash keeps a later command's menu up, and the band aside.
+  expect([await type('please /mo'), await type('', 9, 10), await type('', 8, 9)]).toEqual([0, 0, 0])
+  await change('', 'clear')
+  // A clear while the menu's write is still on its way: once it lands, the band is written back up.
+  let write: () => void = () => undefined
+  writing = new Promise(resolve => (write = resolve))
+  await editor.edit({ origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText: '@' })
+  await clock.advance(1)
+  expect(await change('', 'clear')).toBe(3)
+  writing = null
+  write()
+  await clock.advance(1)
+  expect(await clientHeight(ui)).toBe(3)
   // An edit that settles after a later clear leaves the band as the prompt then is: empty, the band up.
   let release: () => void = () => undefined
   held = new Promise(resolve => (release = resolve))

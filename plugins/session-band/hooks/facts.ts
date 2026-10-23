@@ -989,28 +989,35 @@ export function usingParts(target: string): { server: string; action: string } {
  * Whether one of the prompt's own menus is up for this draft, as Claude Code's typeahead reads it
  * when the draft changes, at the caret then:
  *
- * - The draft's own command: a draft that opens with "/" and names a command so far, in the letters,
- *   digits and `.:_-` a command's name is made of (a second slash makes it a path, "/tmp/foo"). Its
- *   menu is always up, "No commands match" at worst.
+ * - The draft's own command: a draft that is one word opening with "/", the caret past the slash,
+ *   in the letters, digits and `.:_-` a command's name is made of (a second slash makes it a path,
+ *   "/tmp/foo"). Its menu is up whatever it names, "No commands match" at worst. The whole draft
+ *   counts, wherever the caret is: "/model " shows the argument's hint instead, and a typo fixed in
+ *   "/mo|del opus" opens nothing.
  * - A command named later in the draft (`laterCommand`), after a space or the CJK marks `。、？！`:
  *   only while some command's name, or its part after a `:`, starts with what is typed and runs on
  *   past it, so "and / or", "please /zzz" and a path ("cd /Users") open nothing. `commands` are the
- *   names `$.command.list()` gives.
+ *   names `$.command.list()` gives. With nothing typed after the slash the menu stays up, listing
+ *   every command, if it was up for a later command before this change (`wasLater`), and a slash
+ *   typed afresh opens none.
  * - A file: a word that opens with "@", after a space or those marks, and names a file so far, in the
  *   letters, digits, marks and `_-./\()[]~:` a name is made of, or in quotes when it holds spaces
  *   ('@"My Fi', and '@"My File"' once the quote closes). Whether any file matches it the typeahead
  *   alone knows, so a word naming none ("@alice") counts too.
  */
-export function isTypeahead(text: string, cursor: number, commands: readonly string[] = []): boolean {
+export function isTypeahead(text: string, cursor: number, commands: readonly string[] = [], wasLater = false): boolean {
   const before = text.slice(0, Math.max(0, Math.min(text.length, cursor)))
-  if (/^\/[\w.:-]*$/u.test(before)) {
+  if (before !== '' && /^\/[\w.:-]*$/u.test(text)) {
     return true
   }
   const later = laterCommand(text, cursor)
   if (later !== null) {
     const typed = later.toLowerCase()
+    if (typed === '') {
+      return wasLater
+    }
 
-    return typed !== '' && commands.some(command => {
+    return commands.some(command => {
       const name = command.toLowerCase()
       const forms = [name, name.slice(name.lastIndexOf(':') + 1)]
 
