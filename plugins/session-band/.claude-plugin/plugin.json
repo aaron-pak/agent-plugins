@@ -25,7 +25,7 @@
     "size": {
       "type": "string",
       "title": "Band size",
-      "description": "On the terminal: full draws Clawd on three rows beside his words; compact keeps the band to one row (his head, what is happening, and the context). Either way it steps aside while a / or @ menu is up, and keeps to one row whenever the prompt leaves it less room.",
+      "description": "On the terminal: full draws Clawd on three rows beside his words; compact keeps the band to one row (his head, what is happening, and the context). Either way, in the fullscreen layout it gives up its rows while a / or @ menu is up, and keeps to one row whenever the prompt leaves it less room.",
       "options": [
         "full",
         "compact"

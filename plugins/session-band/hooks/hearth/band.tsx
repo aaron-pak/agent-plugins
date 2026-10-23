@@ -1,13 +1,13 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
 import type { BandProps, Doing } from './types'
-import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, cells, cut, dice } from '../clawd'
+import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, cells, dice } from '../clawd'
 import { NAP_AFTER_MS } from '../facts'
 import type { Arms, Eyes, Feet } from '../clawd'
-import { ACCENT, DIM, SPACE, firstFit, happeningForms, panelMost, squeezeCut, squeezeRoom, whereForms } from './words'
+import { ACCENT, CELLS, DIM, SPACE, cutAt, firstFit, happeningForms, panelMost, whereForms } from './words'
 import { hasRoom, isHeld, isSettled, newPace, spend, tick } from '../pace'
 import type { Pace } from '../pace'
-import type { Form, Line, Measure, Row, Seg } from './words'
+import type { Form, Line, Row, Seg } from './words'
 
 // Hearth, on the terminal: Claude Code's own Clawd on the left, three calm lines
 // beside him (where you are, how full things are, what is happening). Clawd's
@@ -811,9 +811,6 @@ function marks(pose: Pose, sweat: string | null): Row[] {
 // be cut at its end, in a box of its own, and never below the LEAST cells words.ts
 // keeps (seven characters and the ellipsis).
 
-/** Terminal cells: wide CJK characters and emoji count two (see `cells`). */
-const CELLS: Measure = { row: width, gap: 2 }
-
 function words(live: Live, panel: number): Line[] {
   const { props } = live
   const said = {
@@ -831,32 +828,7 @@ function words(live: Live, panel: number): Line[] {
 }
 
 function width(row: Row): number {
-  return row.reduce((sum, seg) => sum + cells(seg.text), 0)
-}
-
-/**
- * A squeezed part that must be cut is given a box exactly as wide as what
- * shows of it and Ink's ellipsis. A cut that would end inside a wide character
- * (CJK, an emoji) then lands on a cell boundary, so no stray blank cell opens
- * up before what follows it.
- */
-function cutAt(line: Line, panel: number): Line {
-  if (line.squeeze === undefined) {
-    return line
-  }
-  const room = squeezeRoom(line, panel, CELLS)
-  const text = line.squeeze.map(seg => seg.text).join('')
-  if (cells(text) <= room) {
-    return line
-  }
-
-  // Never an ellipsis straight after a hyphen, a slash, a dot or a space ("first-…", "register.…"):
-  // the cut steps back to the last letter, as the tide's does; words a person wrote, to the end of
-  // their last whole word ("Run the…").
-  const kept = cut(text, room - 1)
-  const neat = squeezeCut(line, text, kept)
-
-  return { ...line, squeezeWidth: Math.max(1, cells(neat === '' ? kept : neat) + 1) }
+  return CELLS.row(row)
 }
 
 // How full things are: context and the five-hour limit as soft meters, and the cost.

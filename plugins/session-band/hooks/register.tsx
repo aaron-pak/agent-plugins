@@ -692,14 +692,18 @@ export const register: Register = (on, options) => {
       timers.held?.cancel()
       timers.held = null
     }
-    // A menu of the prompt's is up on the terminal, or no row is left: step aside, still reading
-    // whether the menu is up, so its going draws the band again.
-    if (e.surface === 'terminal' && ((await orNothing(read($, menuOf))) === true || e.props.maxRows < 1)) {
+    // One of the prompt's menus is up just above it (the fullscreen layout: inline, they open below
+    // the prompt), or no row is left: the band takes no rows. Its terminal band stays mounted at no
+    // height, so Clawd carries on where he was once the menu goes; reading whether the menu is up
+    // draws the band again as it goes.
+    const isMenu = e.surface === 'terminal' && e.viewport?.isFullscreen !== false && (await orNothing(read($, menuOf))) === true
+    const isAside = e.surface === 'terminal' && (isMenu || e.props.maxRows < 1)
+    // One row on the terminal when the person keeps it there, or when Claude Code leaves fewer than
+    // three (a tall draft): never three rows scrolled in a smaller window. One row has nothing to keep.
+    const isOneRow = e.surface === 'terminal' && (isCompact || e.props.maxRows < 3)
+    if (isAside && isOneRow) {
       return next(e)
     }
-    // One row on the terminal when the person keeps it there, or when Claude Code leaves fewer than
-    // three (a tall draft): never three rows scrolled in a smaller window.
-    const isOneRow = e.surface === 'terminal' && (isCompact || e.props.maxRows < 3)
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
     const [now, { stored, isRead }, motion, pick, kept] = await Promise.all([
@@ -851,7 +855,7 @@ export const register: Register = (on, options) => {
       }
       const { Client } = $.ui.resolve(e)
 
-      return <Client key="hearth" module="./hearth/band.tsx" props={props} width={columns} height={3} />
+      return <Client key="hearth" module="./hearth/band.tsx" props={props} width={columns} height={isAside ? 0 : 3} />
     }
 
     // The hearth's frame is gone: its bead starts afresh when it comes back, and its nap frame
@@ -902,7 +906,7 @@ export const register: Register = (on, options) => {
     }
     const { Client } = $.ui.resolve(e)
 
-    return <Client key="band" module="./tide/band.tsx" props={{ ...drawn, isSwapped }} width={columns} height={3} />
+    return <Client key="band" module="./tide/band.tsx" props={{ ...drawn, isSwapped }} width={columns} height={isAside ? 0 : 3} />
   })
 }
 

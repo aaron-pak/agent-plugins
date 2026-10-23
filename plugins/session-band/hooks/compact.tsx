@@ -1,11 +1,9 @@
 import type { Elements, RenderElement } from 'claude-code'
 
-import { cells, cut } from './clawd'
-import { NAP_AFTER_MS } from './facts'
-import { CHEER_FOR_MS, FLINCH_MS } from './hearth/desk'
+import { moodOf } from './hearth/desk'
 import type { BandProps as HearthProps } from './hearth/types'
-import { ACCENT, DIM, SPACE, firstFit, happeningForms, squeezeCut, squeezeRoom } from './hearth/words'
-import type { Line, Measure, Row as Segs } from './hearth/words'
+import { ACCENT, CELLS as SEG_CELLS, DIM, SPACE, cutAt, firstFit, happeningForms } from './hearth/words'
+import type { Row as Segs } from './hearth/words'
 import { linesFor, style } from './tide/desk'
 import { CELLS, fitLine } from './tide/fit'
 import { applePose, pose } from './tide/sprite'
@@ -80,20 +78,15 @@ export function tideRow(el: Terminal, props: TideProps, bodyColumns: number): Re
 /** The hearth's one row: its third line (what is happening, and the tally), and the context's figure at the right. */
 export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number): RenderElement {
   const columns = Math.max(1, bodyColumns - SLACK)
-  const idle = props.idleMs ?? 0
-  const isNap = !props.isWorking && props.idleMs !== null && idle >= NAP_AFTER_MS
-  const isSeen = (ago: number | null) => props.shownForMs === null || (ago !== null && ago <= props.shownForMs)
-  const isLanding = !props.isWorking && !isNap && props.lastTurn?.ending === 'answer' && idle < CHEER_FOR_MS && isSeen(props.idleMs)
-  const isFlinch = props.isWorking && props.flinchAgoMs !== null && props.flinchAgoMs < FLINCH_MS && isSeen(props.flinchAgoMs)
-  const face: Face = isLanding ? 'cheer' : isNap ? 'nap' : isFlinch ? 'shut' : 'rest'
-  const figure: Segs = [
-    { text: 'context', color: DIM },
-    SPACE,
-    props.percent === null ? { text: '–' } : props.isHigh ? { text: `${Math.round(props.percent)}%`, color: ACCENT, bold: true } : { text: `${Math.round(props.percent)}%` },
-  ]
+  // His desktop's mood, read the same way: the cheer, the nap and the flinch as the desktop draws them.
+  const mood = moodOf(props)
+  const face: Face = mood.isCheer ? 'cheer' : mood.mode === 'nap' ? 'nap' : mood.isFlinch ? 'shut' : 'rest'
+  const percent: Segs[number] =
+    props.percent === null ? { text: '–' } : props.isHigh ? { text: `${Math.round(props.percent)}%`, color: ACCENT, bold: true } : { text: `${Math.round(props.percent)}%` }
   const room = columns - HEAD_CELLS - HEAD_GAP
-  const lineRoom = room - GAP - ROW_CELLS.row(figure)
-  const isFigured = lineRoom >= WORDS_LEAST
+  // The figure as long as the words leave room for: "context 42%", then the percent alone.
+  const figure = [[{ text: 'context', color: DIM }, SPACE, percent], [percent]].find(form => room - GAP - SEG_CELLS.row(form) >= WORDS_LEAST) ?? []
+  const lineRoom = figure.length === 0 ? room : room - GAP - SEG_CELLS.row(figure)
   const said = {
     isWorking: props.isWorking,
     activity: props.activity,
@@ -105,9 +98,9 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
     lastTurn: props.lastTurn,
     resetsAt: props.limit?.resetsAt ?? null,
     // While he cheers, the words say what finished; a warning waits for the cheer to end.
-    isLanding,
+    isLanding: mood.isCheer,
   }
-  const line = cutTo(firstFit(happeningForms(said), isFigured ? lineRoom : room, ROW_CELLS), isFigured ? lineRoom : room)
+  const line = cutAt(firstFit(happeningForms(said), lineRoom, SEG_CELLS), lineRoom)
   const { Box, Text } = el
   const draw = (segs: Segs) => segs.map(({ text, ...look }) => <Text {...look}>{text}</Text>)
 
@@ -131,7 +124,7 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
         </Box>
       )}
       <Box flexGrow={1} />
-      {isFigured ? <Text>{draw(figure)}</Text> : null}
+      {figure.length === 0 ? null : <Text>{draw(figure)}</Text>}
     </Box>
   )
 }
@@ -173,26 +166,4 @@ function runs(row: Row): Array<{ text: string; color?: string; bg?: string }> {
 
 function wordsCells(words: Words): number {
   return words.reduce((sum, piece) => sum + CELLS.text(piece.text, piece.bold === true || piece.fitsAsBold === true), 0)
-}
-
-/** The hearth's lines measured in terminal cells, as its terminal band measures them. */
-const ROW_CELLS: Measure = { row: segs => segs.reduce((sum, seg) => sum + cells(seg.text), 0), gap: GAP }
-
-/**
- * A squeezed part that must be cut gets a box exactly as wide as what shows of it and Ink's
- * ellipsis, ending where the hearth's terminal band ends it (see its cutAt).
- */
-function cutTo(line: Line, room: number): Line {
-  if (line.squeeze === undefined) {
-    return line
-  }
-  const left = squeezeRoom(line, room, ROW_CELLS)
-  const text = line.squeeze.map(seg => seg.text).join('')
-  if (cells(text) <= left) {
-    return line
-  }
-  const kept = cut(text, left - 1)
-  const neat = squeezeCut(line, text, kept)
-
-  return { ...line, squeezeWidth: Math.max(1, cells(neat === '' ? kept : neat) + 1) }
 }

@@ -366,7 +366,7 @@ type Mood = {
 const REST: Pose = { eyes: 'open', arms: 'down', feet: 'both' }
 
 // The moment, and nothing finer: every redraw within the same moment gives the same mood.
-function moodOf(view: DeskView): Mood {
+export function moodOf(view: DeskView): Mood {
   const isIdle = !view.isWorking
   // Waiting on you (a question, a plan to look over): he rests, as between turns, but never dozes.
   const isWaiting = view.isWorking && view.activity?.kind === 'ask'

@@ -986,15 +986,17 @@ export function usingParts(target: string): { server: string; action: string } {
 }
 
 /**
- * Whether one of the prompt's own menus is up for this draft, as Claude Code's typeahead opens them: a
- * command being named (a word at the caret that opens with "/", at the start of the draft or after a
- * space, until a space ends its name or a second slash makes it a path such as "/tmp/foo"), or a file
- * (a word at the caret that opens with "@", its name in quotes when it holds spaces: '@"My Fi').
+ * Whether one of the prompt's own menus is up for this draft, as Claude Code's typeahead reads it: a
+ * word at the caret that opens with "/" (at the start of the draft or after a space) and names a
+ * command so far, in the letters, digits and `.:_-` a command's name is made of (a second slash makes
+ * it a path, "/tmp/foo"); or one that opens with "@" and names a file so far, in the letters, digits,
+ * marks and `_-./\()[]~:` a name is made of, or in quotes when it holds spaces ('@"My Fi'). Whether
+ * anything matches it the typeahead alone knows, so a word naming nothing ("/zzz") counts too.
  */
 export function isTypeahead(text: string, cursor: number): boolean {
   const before = text.slice(0, Math.max(0, Math.min(text.length, cursor)))
 
-  return /(?:^|\s)\/[^\s/]*$/u.test(before) || /(?:^|\s)@(?:"[^"]*|\S*)$/u.test(before)
+  return /(?:^|\s)\/[\w.:-]*$/u.test(before) || /(?:^|\s)@(?:"[^"]*|[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*)$/u.test(before)
 }
 
 /** The first line of a text, its runs of spaces and tabs made single spaces. */

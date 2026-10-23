@@ -25,11 +25,13 @@ rule on purpose, change its test and this page with it.
 - **The motion.** `/band still` (or `calm`, `quiet`, `stop` or `pause`) stops the motion in either
   look while the words keep changing; `/band lively` lets it move again.
 - **Reduced motion wins.** With Claude Code's reduced-motion setting on, both looks stay still.
-- **Out of the menus' way.** On the terminal the prompt's own menus (a `/` command being named, an
-  `@` file) open just above the prompt, where the band sits, and it would push them up over Clawd's
-  beach; so while one is up the band steps aside, and it comes back as the draft moves on. It reads
-  the draft as Claude Code's typeahead does (`isTypeahead`), which cannot see whether a word matches
-  anything: a draft naming no command at all (`/zzz`) still sets the band aside until its name ends.
+- **Out of the menus' way.** In the terminal's fullscreen layout the prompt's own menus (a `/`
+  command being named, an `@` file) open just above the prompt, where the band sits, and it would
+  push them up over Clawd's beach; so while one is up the band takes no rows, and it comes back as
+  the draft moves on. Its terminal band stays mounted at no height meanwhile, so Clawd carries on
+  where he was. Inline, the menus open below the prompt, and the band stays. It reads the draft as
+  Claude Code's typeahead does (`isTypeahead`), but cannot see whether a word matches anything (see
+  "Known gaps").
 - **The size.** On the terminal, "Band size" in `/config` is `full` (three rows) or `compact`: one
   row, Clawd's head beside what is happening and how full the context is (see "One row"). Either
   way the band keeps to one row whenever Claude Code leaves it fewer than three (a tall draft).
@@ -193,7 +195,7 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over, and the next conversation builds its own sandcastle (`castleFrom`). |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
-| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. On the terminal it steps aside while a menu is up, and draws one row (`compact.tsx`) when the size is compact or `maxRows` is under three. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
+| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. On the terminal it draws one row (`compact.tsx`) when the size is compact or `maxRows` is under three, and takes no rows while a menu is up in the fullscreen layout or no row is left: the three-row band stays mounted at no height, and one row steps aside. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
 percent; the cost and the limit shown; when the session was last active; the tools running
@@ -518,9 +520,11 @@ his arms do (up for a cheer, his eyes shut for a nap or a failure), then the loo
 how full the context is (the beach's context line, the hearth's `context 42%`), as much as fits. The
 hooks module draws it, with no surface module, so it changes with the facts and the moments' own
 redraws (as the desktop does), and a band kept to one row never loads the terminal bands at all
-(about 13 MB less, measured). So it has no pet (nothing takes the click), and asleep he has a dim
-`z` by his head rather than the drifting z's; going back to three rows starts the terminal band
-afresh, Clawd at home and any pet over, as a band that appears does. It
+(about 13 MB less, measured). So it gives up what only the terminal bands draw: the pet and its
+heart (nothing takes the click), the hello's wave, the cheer's sparkles, the drifting z's (asleep,
+he has a dim `z` by his head instead), the beach itself with its starfish and night sky, and the
+hearth's meters and where-you-are line. Going back to three rows starts the terminal band afresh,
+Clawd at home, as a band that appears does. It
 is the band when "Band size" is `compact`, and whenever Claude Code leaves the band fewer than three
 rows (in the fullscreen layout the prompt and the band share half the screen, so a tall draft
 squeezes it), which would otherwise scroll three rows in a smaller window.
@@ -813,6 +817,13 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
 
 ## Known gaps
 
+- **A menu closed with Esc.** Claude Code's Esc closes the typeahead and leaves the draft as it is,
+  with no edit or change to say so, so the band stays aside until the draft next changes: an `@`
+  meant as itself, its menu closed with Esc, holds the band aside until the next keystroke.
+- **Menus the band cannot see.** It reads the draft as the typeahead does, but not what the
+  typeahead finds: a word that matches no command or file (`/zzz`, `@alice`) still sets the band
+  aside until it ends, and menus it does not read for (`:` emoji, `#` channels, a path in bash mode,
+  rows another plugin adds) still open above the band.
 - **Live reload is verified on the module side only.** The suite runs real new activations seeded
   with the last `$.state`, but cannot check whether Claude Code runs `session.start` again on an
   options-only reload, keeps `/band` registered, or lets the `/band` reply survive a reload.
@@ -940,8 +951,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   on, every terminal color against its 256-color rounding, with every other color a theme key, and
   the band stepping aside while something holds its place and coming back once it is free (beside
   another band drawn free too), which drafts have one of the prompt's menus up (`isTypeahead`) and
-  the terminal band stepping aside for one (the test kit cannot raise the editor's edits, so the
-  rule is held against drafts Claude Code's typeahead was seen to open menus for), the one-row band
+  the terminal band taking no rows for one, driven through the editor's own edits, changes and
+  submits (an edit settling after a later clear included; the rule itself is held against drafts
+  Claude Code's typeahead was seen to open menus for), the one-row band
   in both looks at widths from 34 to 200 columns, kept compact or left fewer than three rows, and one
   band going from three rows to one and back as its room changes.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34

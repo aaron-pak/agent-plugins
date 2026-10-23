@@ -5539,12 +5539,20 @@ test('a menu is up while a / command or an @ file is being named, and not once t
     ['mail me@x.com', 13, false],
     ['@"My Fi', 7, true],
     ['@"My File" and', 14, false],
+    // A comma or a question mark ends a file's name, and a path opens no command.
+    ['ask @alice, then', 11, false],
+    ['/usr/bin/foo', 12, false],
     ['two\n@lines', 11, true],
   ]
   expect(cases.map(([text, cursor]) => isTypeahead(text, cursor))).toEqual(cases.map(([, , isUp]) => isUp))
 })
 
-test('terminal: while one of the prompt\'s menus is up the band steps aside, and the desktop draws on', async ($, on) => {
+/** How tall the band's terminal band is drawn, or null with none in the tree. */
+async function clientHeight(ui: { findAll: (query: { type: string }) => Promise<Array<{ props: Record<string, unknown> }>> }): Promise<unknown> {
+  return (await ui.findAll({ type: 'Client' }))[0]?.props.height ?? null
+}
+
+test('terminal: while one of the prompt\'s menus is up the band takes no rows, its terminal band kept mounted; one row steps aside; inline and on the desktop it draws on', async ($, on) => {
   world(on)
   let isMenu = true
   on('state.get', async ($, e, next) => {
@@ -5555,13 +5563,81 @@ test('terminal: while one of the prompt\'s menus is up the band steps aside, and
   on('ui.render', () => ({ type: 'Text', children: [ENGINE_BAND] }))
   await start($)
   const terminal = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await clientHeight(terminal)).toBe(0)
+  // A tall draft and a menu: one row would be drawn, and it steps aside.
+  await terminal.redraw({ ...BAND, maxRows: 2 })
   expect(await terminal.find({ text: ENGINE_BAND })).toBeDefined()
-  const desk = await mount($, 'desktop')
-  expect((await desk.look()).look).toBe('tide')
   isMenu = false
   await terminal.redraw(BAND)
-  expect([await terminal.find({ text: ENGINE_BAND }), (await terminal.findAll({ type: 'Client' })).length]).toEqual([undefined, 1])
+  expect(await clientHeight(terminal)).toBe(3)
   await terminal.unmount()
+  // Inline, the menus open below the prompt, clear of the band.
+  isMenu = true
+  const inline = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND, viewport: { columns: 102, rows: 40, isFullscreen: false } })
+  expect(await clientHeight(inline)).toBe(3)
+  await inline.unmount()
+  const desk = await mount($, 'desktop')
+  expect((await desk.look()).look).toBe('tide')
+})
+
+/** The editor's own events, which the kit raises though its types list only the calls a plugin makes on `$`. */
+type Editor = {
+  edit: (e: { origin: { kind: 'composer' }; text: string; cursor: number; start: number; end: number; inputText: string }) => Promise<unknown>
+  change: (e: { text: string; cursor: number; origin: { kind: string } }) => Promise<unknown>
+}
+
+test('terminal: typing, deleting, recalling and clearing a draft take the band aside for the prompt\'s menus and back, from the prompt as it stands', async ($, on) => {
+  const { clock } = world(on)
+  let box = { text: '', cursor: 0 }
+  // The editor puts an edit in the box itself, and may hand it to the hooks a while later.
+  let held: Promise<void> | null = null
+  on('prompt.edit', async ($, e) => {
+    box = { text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }
+    const left = box
+    if (held !== null) await held
+
+    return left
+  })
+  on('prompt.change', ($, e) => {
+    box = { text: e.text, cursor: e.cursor }
+
+    return { text: e.text }
+  })
+  on('prompt.read', () => ({ value: box }))
+  await start($)
+  const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const editor = $.prompt as unknown as Editor
+  const type = async (inputText: string, from = box.text.length, to = from) => {
+    await editor.edit({ origin: { kind: 'composer' }, text: box.text, cursor: box.cursor, start: from, end: to, inputText })
+    await clock.advance(1)
+
+    return clientHeight(ui)
+  }
+  const change = async (text: string, kind: string) => {
+    await editor.change({ text, cursor: text.length, origin: { kind } })
+    await clock.advance(1)
+
+    return clientHeight(ui)
+  }
+  expect(await clientHeight(ui)).toBe(3)
+  expect([await type('/'), await type('mo'), await type('del '), await type('', 6, 7), await type('', 0, 6)]).toEqual([0, 0, 3, 0, 3])
+  expect([await type('look at @fa'), await type('cts.ts')]).toEqual([0, 0])
+  // A submit that is not the person's (a loop firing) leaves the draft, and its menu, as they are.
+  await $.prompt.submit({ text: 'a loop fires', wait: false, origin: { kind: 'scheduled-trigger' } } as Parameters<typeof $.prompt.submit>[0])
+  await clock.advance(1)
+  expect(await clientHeight(ui)).toBe(0)
+  expect([await change('', 'clear'), await change('/clear', 'history'), await change('', 'clear')]).toEqual([3, 0, 3])
+  // An edit that settles after a later clear leaves the band as the prompt then is: empty, the band up.
+  let release: () => void = () => undefined
+  held = new Promise(resolve => (release = resolve))
+  const late = editor.edit({ origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText: '@' })
+  expect(await change('', 'clear')).toBe(3)
+  held = null
+  release()
+  await late
+  await clock.advance(1)
+  expect(await clientHeight(ui)).toBe(3)
+  await ui.unmount()
 })
 
 const ONE_ROW_WIDTHS = [34, 40, 52, 56, 64, 80, 93, 100, 120, 140, 186, 200]
