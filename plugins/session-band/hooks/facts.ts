@@ -986,13 +986,15 @@ export function usingParts(target: string): { server: string; action: string } {
 }
 
 /**
- * Whether one of the prompt's own menus is up for this draft: a command being named (the draft opens
- * with "/" and the caret is still in its first word), or a file (the word at the caret opens with "@").
+ * Whether one of the prompt's own menus is up for this draft, as Claude Code's typeahead opens them: a
+ * command being named (a word at the caret that opens with "/", at the start of the draft or after a
+ * space, until a space ends its name or a second slash makes it a path such as "/tmp/foo"), or a file
+ * (a word at the caret that opens with "@", its name in quotes when it holds spaces: '@"My Fi').
  */
 export function isTypeahead(text: string, cursor: number): boolean {
   const before = text.slice(0, Math.max(0, Math.min(text.length, cursor)))
 
-  return /^\/\S*$/u.test(before) || /(?:^|\s)@\S*$/u.test(before)
+  return /(?:^|\s)\/[^\s/]*$/u.test(before) || /(?:^|\s)@(?:"[^"]*|\S*)$/u.test(before)
 }
 
 /** The first line of a text, its runs of spaces and tabs made single spaces. */

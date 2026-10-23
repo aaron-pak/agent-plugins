@@ -5514,8 +5514,8 @@ for (const beside of SURFACES) {
 
 const ENGINE_BAND = 'the engine draws nothing of the band'
 
-// Which drafts have a menu up: the engine's editor raises the edits, so the rule is held here, and the
-// band's stepping aside below.
+// Which drafts have a menu up, as Claude Code 2.1.309's typeahead showed them in a real session. The
+// test kit cannot raise the editor's edits, so the rule is held here, and the band's stepping aside below.
 test('a menu is up while a / command or an @ file is being named, and not once the draft moves on', () => {
   const cases: Array<[string, number, boolean]> = [
     ['', 0, false],
@@ -5525,15 +5525,20 @@ test('a menu is up while a / command or an @ file is being named, and not once t
     ['/model ', 7, false],
     ['/model ', 6, true],
     ['/model opus', 11, false],
-    // A slash that does not open the draft is no command.
-    ['look at /tmp', 12, false],
+    // A command named later in the draft has its menu too, and a second slash makes a path of it.
+    ['please /mo', 10, true],
+    ['/tmp/foo', 8, false],
+    ['look at /tmp/', 13, false],
+    ['a/b', 3, false],
     ['@', 1, true],
     ['look at @fa', 11, true],
     ['look at @facts.ts and', 21, false],
     // The caret back on the file's word puts its menu up again.
     ['look at @facts.ts and', 12, true],
-    // An address with an @ inside a word names no file.
+    // An address with an @ inside a word names no file; a name with spaces in it is quoted.
     ['mail me@x.com', 13, false],
+    ['@"My Fi', 7, true],
+    ['@"My File" and', 14, false],
     ['two\n@lines', 11, true],
   ]
   expect(cases.map(([text, cursor]) => isTypeahead(text, cursor))).toEqual(cases.map(([, , isUp]) => isUp))
@@ -5582,6 +5587,21 @@ for (const look of ['tide', 'hearth'] as const) {
     const roomy = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
     expect((await roomy.findAll({ type: 'Client' })).length).toBe(1)
     await roomy.unmount()
+  })
+}
+
+for (const look of ['tide', 'hearth'] as const) {
+  test(`${look}: one band on the terminal goes to one row as its room shrinks, and back to three as it grows`, { options: { look } }, async ($, on) => {
+    world(on)
+    await start($)
+    const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const shape = async () => [(await ui.findAll({ type: 'Client' })).length, ((await ui.drawn()) as Node).props?.height]
+    expect(await shape()).toEqual([1, 3])
+    await ui.redraw({ ...BAND, maxRows: 2 })
+    expect(await shape()).toEqual([0, 1])
+    await ui.redraw(BAND)
+    expect(await shape()).toEqual([1, 3])
+    await ui.unmount()
   })
 }
 

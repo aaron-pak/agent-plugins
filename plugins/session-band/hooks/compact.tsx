@@ -28,25 +28,32 @@ const GAP = 2
 /** Cells kept free at the band's right edge, as both looks keep them, should a host hold the last column back. */
 const SLACK = 2
 
-/** How he looks in the one row: at rest, arms up for a cheer, or eyes shut (asleep, or splashed). */
-type Face = 'rest' | 'cheer' | 'shut'
+/** How he looks in the one row: at rest, arms up for a cheer, eyes shut (splashed, or a hiccup), or asleep with a z. */
+type Face = 'rest' | 'cheer' | 'shut' | 'nap'
 
 const FACES: Record<Face, Pose> = {
   rest: { eyes: 'open', arms: 'down', feet: 'both' },
   cheer: { eyes: 'open', arms: 'up', feet: 'both' },
   shut: { eyes: 'closed', arms: 'down', feet: 'both' },
+  nap: { eyes: 'closed', arms: 'down', feet: 'both' },
 }
+
+/** The words below this many cells give the context's figure up, so the first line keeps its room. */
+const WORDS_LEAST = 12
 
 /** The beach's one row: its first line as the desktop picks it, and its context line at the right. */
 export function tideRow(el: Terminal, props: TideProps, bodyColumns: number): RenderElement {
   const columns = Math.max(1, bodyColumns - SLACK)
   const [first = [], tide = []] = linesFor(props)
-  const face: Face = first === props.words.cheer ? 'cheer' : first === props.words.splash || first === props.words.nap ? 'shut' : 'rest'
+  const face: Face = first === props.words.cheer ? 'cheer' : first === props.words.nap ? 'nap' : first === props.words.splash ? 'shut' : 'rest'
   const room = columns - HEAD_CELLS - HEAD_GAP
-  // The line says what is happening first; the context line takes the room that leaves, or none.
-  const said = fitLine(first, room, CELLS)
+  // How full the context is keeps at least its shortest form at the right: the first line fits the
+  // room that leaves, and the context line then takes all it can of what the first line left.
+  const least = wordsCells(tide[tide.length - 1] ?? [])
+  const isFigured = least > 0 && room - GAP - least >= WORDS_LEAST
+  const said = fitLine(first, isFigured ? room - GAP - least : room, CELLS)
   const rest = room - wordsCells(said) - GAP
-  const figures = tide.length > 0 && rest > 0 ? fitLine(tide, rest, CELLS) : []
+  const figures = isFigured ? fitLine(tide, rest, CELLS) : []
   const shown = wordsCells(figures) <= rest ? figures : []
   const { Box, Text } = el
 
@@ -78,7 +85,7 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
   const isSeen = (ago: number | null) => props.shownForMs === null || (ago !== null && ago <= props.shownForMs)
   const isLanding = !props.isWorking && !isNap && props.lastTurn?.ending === 'answer' && idle < CHEER_FOR_MS && isSeen(props.idleMs)
   const isFlinch = props.isWorking && props.flinchAgoMs !== null && props.flinchAgoMs < FLINCH_MS && isSeen(props.flinchAgoMs)
-  const face: Face = isLanding ? 'cheer' : isNap || isFlinch ? 'shut' : 'rest'
+  const face: Face = isLanding ? 'cheer' : isNap ? 'nap' : isFlinch ? 'shut' : 'rest'
   const figure: Segs = [
     { text: 'context', color: DIM },
     SPACE,
@@ -86,7 +93,7 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
   ]
   const room = columns - HEAD_CELLS - HEAD_GAP
   const lineRoom = room - GAP - ROW_CELLS.row(figure)
-  const isFigured = lineRoom >= 16
+  const isFigured = lineRoom >= WORDS_LEAST
   const said = {
     isWorking: props.isWorking,
     activity: props.activity,
@@ -129,16 +136,17 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
   )
 }
 
-/** His head row, from his own cells, as wide with his arms down as up. */
+/** His head row, from his own cells, as wide with his arms down as up; asleep, a dim z in the cell his arm would raise into. */
 function head(el: Terminal, face: Face, isApple: boolean): RenderElement {
-  const [row = []] = isApple ? applePose(FACES[face]) : pose(FACES[face])
+  const [sprite = []] = isApple ? applePose(FACES[face]) : pose(FACES[face])
+  const row = face === 'nap' ? [...sprite.slice(0, HEAD_CELLS - 1), { ch: 'z' }] : sprite
   const { Box, Text } = el
 
   return (
     <Box flexShrink={0} width={HEAD_CELLS + HEAD_GAP}>
       <Text>
         {runs(row).map(({ text, color, bg }) => (
-          <Text {...(color === undefined ? {} : { color })} {...(bg === undefined ? {} : { backgroundColor: bg })}>
+          <Text {...(color === undefined ? {} : { color })} {...(bg === undefined ? {} : { backgroundColor: bg })} {...(text === 'z' ? { dimColor: true } : {})}>
             {text}
           </Text>
         ))}

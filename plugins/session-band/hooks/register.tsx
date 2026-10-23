@@ -108,8 +108,11 @@ const ESC_MS = 1000
 /** What the band has seen of the work since the prompt: whether Claude Code said it was working, and since when it has said it is not. */
 type Landing = { sawWork: boolean; quietSince: number | null }
 
-/** Whether the band last wrote that a menu is up (null before it has written either). */
-type MenuSeen = { isUp: boolean | null }
+/**
+ * What the band knows of the prompt's menus: whether it last wrote that one is up (null before it has
+ * written either), and how many looks at the prompt it has taken, so only the newest one writes.
+ */
+type MenuSeen = { isUp: boolean | null; looks: number }
 
 type Saved = { kind: 'saved' } | { kind: 'denied'; reason: string } | { kind: 'unsaved' }
 type Row = { key: string }
@@ -119,7 +122,7 @@ export const register: Register = (on, options) => {
   const configured = options.look
   // On the terminal: three rows (Clawd on his beach or by the hearth), or one (see compact.tsx).
   const isCompact = options.size === 'compact'
-  const menu: MenuSeen = { isUp: null }
+  const menu: MenuSeen = { isUp: null, looks: 0 }
   // A pick /band makes counts only in this activation: any reload (a /config change among them) spends it.
   const activation = newActivation()
   // The look's /config row, found again through /config's own list where it is keyed otherwise.
@@ -182,8 +185,8 @@ export const register: Register = (on, options) => {
       const unsaved = whole(kept ?? {}).unsavedMotion
       const motion = unsaved ?? migrateMotion(storedMotion, storedStyle)
       await update($, motionOf, () => motion).catch(() => undefined)
-      // No menu is known to be up yet (one a reload left marked would keep the band aside).
-      await update($, menuOf, () => false).catch(() => undefined)
+      // Whether a menu is up as the prompt stands now (one a reload left marked would keep the band aside).
+      void lookAtPrompt($, menu)
       const isRemembered = storedMotion === motion || (await remember($, motion))
 
       // Each fact on its own: a lookup that fails leaves its own field as it was (or as the folder
@@ -290,16 +293,18 @@ export const register: Register = (on, options) => {
 
   // The prompt's own menus (a / command being named, an @ file) open just above the prompt, where the
   // band sits, which would push them up over Clawd's beach: on the terminal the band steps aside while
-  // one is up. Typing and deleting come as edits (read from the box each leaves, never holding the
-  // keystroke up), and a recalled entry, a clear or a submit as changes.
+  // one is up. Typing and deleting come as edits, and a recalled entry, a clear or a submit as
+  // changes; after each the band looks at the prompt as it then stands (a plugin above may have
+  // changed what an edit put in, and a clear may have come since), a moment later, once the edit has
+  // landed. Nothing here holds a keystroke up.
   on('prompt.edit', ($, e, next) => {
     const box = next(e)
-    void box.then(left => noteMenu($, menu, left)).catch(() => undefined)
+    void box.then(() => after($, 0, () => void lookAtPrompt($, menu))).catch(() => undefined)
 
     return box
   })
   on('prompt.change', async ($, e, next) => {
-    void noteMenu($, menu, e)
+    after($, 0, () => void lookAtPrompt($, menu))
 
     return next(e)
   })
@@ -313,8 +318,6 @@ export const register: Register = (on, options) => {
     // look a no-op anyway: this only keeps one timer at a time, see settle.)
     letGo(timers)
     settled()
-    // The draft is gone with the submit, and any menu with it.
-    void noteMenu($, menu, { text: '', cursor: 0 })
     // Read again with each prompt, so a change in /config takes hold without a restart (and a model
     // switch the hook above missed shows by the next Enter).
     const [now, isCalm, model] = await Promise.all([$.clock.now(), prefersReducedMotion($), modelNow($)])
@@ -1053,17 +1056,24 @@ async function remember($: EngineInterface, motion: string): Promise<boolean> {
 }
 
 /**
- * Writes whether a menu is up, only as it comes or goes (typing is many edits, and each write redraws
- * the band). Each write stores the latest edit's answer, never its own, so two writes that land out of
- * order still leave the band as the draft is; one that fails is tried again on the next edit.
+ * Looks at the prompt as it stands and writes whether one of its menus is up, only as one comes or
+ * goes (typing is many edits, and each write redraws the band). A look that a newer one has followed
+ * writes nothing, so looks that come back out of order still leave the band as the prompt is; a write
+ * that fails is tried again at the next look.
  */
-async function noteMenu($: EngineInterface, menu: MenuSeen, box: { text: string; cursor: number }): Promise<void> {
+async function lookAtPrompt($: EngineInterface, menu: MenuSeen): Promise<void> {
+  const look = ++menu.looks
+  const box = await $.prompt.read().catch(() => null)
+  if (box === null || look !== menu.looks) {
+    return
+  }
   const isUp = isTypeahead(box.text, box.cursor)
   if (isUp === menu.isUp) {
     return
   }
   menu.isUp = isUp
   try {
+    // The newest answer, not this look's: two writes that land out of order still leave it right.
     await update($, menuOf, () => menu.isUp === true)
   } catch {
     menu.isUp = null
