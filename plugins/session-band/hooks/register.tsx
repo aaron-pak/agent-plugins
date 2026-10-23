@@ -26,6 +26,7 @@ import {
   isInterrupted,
   isNewWave,
   isPhrase,
+  isTypeahead,
   nameIn,
   nextTodos,
   nounOf,
@@ -38,6 +39,7 @@ import {
   todosAfterTurn,
   whole,
 } from './facts'
+import { hearthRow, tideRow } from './compact'
 import { CHEER_FOR_MS, FLINCH_MS, desk } from './hearth/desk'
 import { bandProps as hearthProps, doing } from './hearth/props'
 import { hearthActivity, hearthInfo, slipAt } from './hearth/view'
@@ -58,6 +60,8 @@ const motionOf = atom({ plugin: 'session-band', key: 'motion' } as const, 'livel
 const pickOf = atom({ plugin: 'session-band', key: 'pick' } as const, null)
 /** The tide desktop's last scene, kept through a reload of this module (see sceneMemory). */
 const sceneKept = atom({ plugin: 'session-band', key: 'scene' } as const, null)
+/** One of the prompt's own menus is up on the terminal (see isTypeahead): the band steps aside for it. */
+const menuOf = atom({ plugin: 'session-band', key: 'menu' } as const, false)
 
 /** Each moment's redraws, in ms after it starts: a cheer's end (the hearth's, then the tide's), a splash's, a flinch's. */
 const MOMENT_ENDS = { cheer: [CHEER_FOR_MS + 10, CHEER_MS + 100], splash: [SPLASH_MS + 100], flinch: [FLINCH_MS + 10] } as const
@@ -104,12 +108,18 @@ const ESC_MS = 1000
 /** What the band has seen of the work since the prompt: whether Claude Code said it was working, and since when it has said it is not. */
 type Landing = { sawWork: boolean; quietSince: number | null }
 
+/** Whether the band last wrote that a menu is up (null before it has written either). */
+type MenuSeen = { isUp: boolean | null }
+
 type Saved = { kind: 'saved' } | { kind: 'denied'; reason: string } | { kind: 'unsaved' }
 type Row = { key: string }
 
 export const register: Register = (on, options) => {
   const warnAt = typeof options.warnAt === 'number' ? options.warnAt : DEFAULT_WARN_AT
   const configured = options.look
+  // On the terminal: three rows (Clawd on his beach or by the hearth), or one (see compact.tsx).
+  const isCompact = options.size === 'compact'
+  const menu: MenuSeen = { isUp: null }
   // A pick /band makes counts only in this activation: any reload (a /config change among them) spends it.
   const activation = newActivation()
   // The look's /config row, found again through /config's own list where it is keyed otherwise.
@@ -172,6 +182,8 @@ export const register: Register = (on, options) => {
       const unsaved = whole(kept ?? {}).unsavedMotion
       const motion = unsaved ?? migrateMotion(storedMotion, storedStyle)
       await update($, motionOf, () => motion).catch(() => undefined)
+      // No menu is known to be up yet (one a reload left marked would keep the band aside).
+      await update($, menuOf, () => false).catch(() => undefined)
       const isRemembered = storedMotion === motion || (await remember($, motion))
 
       // Each fact on its own: a lookup that fails leaves its own field as it was (or as the folder
@@ -276,6 +288,22 @@ export const register: Register = (on, options) => {
     return next(e)
   }).catch((_$, e, next) => next(e))
 
+  // The prompt's own menus (a / command being named, an @ file) open just above the prompt, where the
+  // band sits, which would push them up over Clawd's beach: on the terminal the band steps aside while
+  // one is up. Typing and deleting come as edits (read from the box each leaves, never holding the
+  // keystroke up), and a recalled entry, a clear or a submit as changes.
+  on('prompt.edit', ($, e, next) => {
+    const box = next(e)
+    void box.then(left => noteMenu($, menu, left)).catch(() => undefined)
+
+    return box
+  })
+  on('prompt.change', async ($, e, next) => {
+    void noteMenu($, menu, e)
+
+    return next(e)
+  })
+
   // The band only watches the prompt and the tools. Should its bookkeeping throw, the `.catch`
   // says outright what the engine would do anyway: hand the event on untouched, or keep what the
   // hook's own `next` already settled to (nothing runs twice). A failed state write never touches
@@ -285,6 +313,8 @@ export const register: Register = (on, options) => {
     // look a no-op anyway: this only keeps one timer at a time, see settle.)
     letGo(timers)
     settled()
+    // The draft is gone with the submit, and any menu with it.
+    void noteMenu($, menu, { text: '', cursor: 0 })
     // Read again with each prompt, so a change in /config takes hold without a restart (and a model
     // switch the hook above missed shows by the next Enter).
     const [now, isCalm, model] = await Promise.all([$.clock.now(), prefersReducedMotion($), modelNow($)])
@@ -659,6 +689,14 @@ export const register: Register = (on, options) => {
       timers.held?.cancel()
       timers.held = null
     }
+    // A menu of the prompt's is up on the terminal, or no row is left: step aside, still reading
+    // whether the menu is up, so its going draws the band again.
+    if (e.surface === 'terminal' && ((await orNothing(read($, menuOf))) === true || e.props.maxRows < 1)) {
+      return next(e)
+    }
+    // One row on the terminal when the person keeps it there, or when Claude Code leaves fewer than
+    // three (a tall draft): never three rows scrolled in a smaller window.
+    const isOneRow = e.surface === 'terminal' && (isCompact || e.props.maxRows < 3)
 
     // A store that cannot be read leaves the band as a fresh session draws it, never nothing at all.
     const [now, { stored, isRead }, motion, pick, kept] = await Promise.all([
@@ -805,6 +843,9 @@ export const register: Register = (on, options) => {
           dozedS,
         })
       }
+      if (isOneRow) {
+        return hearthRow($.ui.resolve(e), props, columns)
+      }
       const { Client } = $.ui.resolve(e)
 
       return <Client key="hearth" module="./hearth/band.tsx" props={props} width={columns} height={3} />
@@ -852,6 +893,9 @@ export const register: Register = (on, options) => {
       }
 
       return desktopBand($.ui.resolve(e), props, shown.scene)
+    }
+    if (isOneRow) {
+      return tideRow($.ui.resolve(e), drawn, columns)
     }
     const { Client } = $.ui.resolve(e)
 
@@ -1005,6 +1049,24 @@ async function remember($: EngineInterface, motion: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * Writes whether a menu is up, only as it comes or goes (typing is many edits, and each write redraws
+ * the band). Each write stores the latest edit's answer, never its own, so two writes that land out of
+ * order still leave the band as the draft is; one that fails is tried again on the next edit.
+ */
+async function noteMenu($: EngineInterface, menu: MenuSeen, box: { text: string; cursor: number }): Promise<void> {
+  const isUp = isTypeahead(box.text, box.cursor)
+  if (isUp === menu.isUp) {
+    return
+  }
+  menu.isUp = isUp
+  try {
+    await update($, menuOf, () => menu.isUp === true)
+  } catch {
+    menu.isUp = null
   }
 }
 

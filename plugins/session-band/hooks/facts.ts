@@ -985,6 +985,16 @@ export function usingParts(target: string): { server: string; action: string } {
   return at > 0 ? { server: target.slice(0, at), action: target.slice(at + 2) } : { server: '', action: target }
 }
 
+/**
+ * Whether one of the prompt's own menus is up for this draft: a command being named (the draft opens
+ * with "/" and the caret is still in its first word), or a file (the word at the caret opens with "@").
+ */
+export function isTypeahead(text: string, cursor: number): boolean {
+  const before = text.slice(0, Math.max(0, Math.min(text.length, cursor)))
+
+  return /^\/\S*$/u.test(before) || /(?:^|\s)@\S*$/u.test(before)
+}
+
 /** The first line of a text, its runs of spaces and tabs made single spaces. */
 function oneLine(text: string): string {
   return (text.split('\n')[0] ?? '').replace(/\s+/g, ' ').trim()

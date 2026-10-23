@@ -1,6 +1,6 @@
 {
   "name": "session-band",
-  "description": "Clawd above the prompt with your session at a glance. Two looks: tide (the default) puts him on a little beach where the tide rises as context fills; hearth sets him beside three calm lines. Switch with /band or in /config. /band still keeps either look calm, and /band lively brings the motion back. Works in the terminal and the desktop Code tab. Claude Code only.",
+  "description": "Clawd above the prompt with your session at a glance. Two looks: tide (the default) puts him on a little beach where the tide rises as context fills; hearth sets him beside three calm lines. Switch with /band or in /config. /band still keeps either look calm, and /band lively brings the motion back. On the terminal it steps aside while a / or @ menu is up, and the Band size row in /config keeps it to one row. Works in the terminal and the desktop Code tab. Claude Code only.",
   "author": {
     "name": "Aaron Pak"
   },
@@ -21,6 +21,16 @@
       "title": "Warn at",
       "description": "Context fill, in percent, where the band nudges toward /compact (high tide on the beach; an orange percent and a sweating Clawd by the hearth), with a toast each time the context crosses it.",
       "default": 80
+    },
+    "size": {
+      "type": "string",
+      "title": "Band size",
+      "description": "On the terminal: full draws Clawd on three rows beside his words; compact keeps the band to one row (his head, what is happening, and the context). Either way it steps aside while a / or @ menu is up, and keeps to one row whenever the prompt leaves it less room.",
+      "options": [
+        "full",
+        "compact"
+      ],
+      "default": "full"
     }
   }
 }

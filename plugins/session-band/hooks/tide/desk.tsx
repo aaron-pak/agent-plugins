@@ -755,7 +755,7 @@ function tideOf(props: BandProps, moment: Moment): number {
 }
 
 // The three lines, each as its forms, longest first (see fitLine).
-function linesFor(props: BandProps): Words[][] {
+export function linesFor(props: BandProps): Words[][] {
   const { words } = props
   const mood = moodOf(props)
   const moment = momentOf(props, mood)
@@ -766,7 +766,7 @@ function linesFor(props: BandProps): Words[][] {
   return [first, words.tide, words.place]
 }
 
-function style(piece: Piece): { color?: string; dimColor?: boolean; bold?: boolean } {
+export function style(piece: Piece): { color?: string; dimColor?: boolean; bold?: boolean } {
   const bold = piece.bold === true ? { bold: true } : {}
   switch (piece.tone) {
     case 'dim':

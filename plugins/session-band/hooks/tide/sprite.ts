@@ -2,8 +2,8 @@ import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN } from '../clawd'
 import type { Arms, Eyes, Feet } from '../clawd'
 
 // Clawd on the beach, exactly as Claude Code draws him, in terminal cells: the terminal band draws
-// these rows, and the desktop turns them into pixels. They live apart from the terminal band, which
-// the hooks module never needs to import.
+// these rows, the desktop turns them into pixels, and the one-row band keeps his head. They live
+// apart from the terminal band, which the hooks module never needs to import.
 
 /** A cell of the scene; `kind` marks the shell and the wave, which a mark keeps a cell of sky from. */
 export type Cell = { ch: string; color?: string; bg?: string; dim?: boolean; kind?: 'wave' | 'shell' }

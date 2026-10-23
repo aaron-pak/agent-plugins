@@ -25,6 +25,12 @@ rule on purpose, change its test and this page with it.
 - **The motion.** `/band still` (or `calm`, `quiet`, `stop` or `pause`) stops the motion in either
   look while the words keep changing; `/band lively` lets it move again.
 - **Reduced motion wins.** With Claude Code's reduced-motion setting on, both looks stay still.
+- **Out of the menus' way.** On the terminal the prompt's own menus (a `/` command being named, an
+  `@` file) open just above the prompt, where the band sits, and it would push them up over Clawd's
+  beach; so while one is up the band steps aside, and it comes back as the draft moves on.
+- **The size.** On the terminal, "Band size" in `/config` is `full` (three rows) or `compact`: one
+  row, Clawd's head beside what is happening and how full the context is (see "One row"). Either
+  way the band keeps to one row whenever Claude Code leaves it fewer than three (a tall draft).
 - **`warnAt`** (default 80): the context percent where the band nudges toward `/compact` (high tide
   on the beach, a clay percent and a sweating Clawd by the hearth, and a toast at each crossing).
   On the beach, a compaction that lets the tide out leaves a starfish on the sand where the water
@@ -36,6 +42,7 @@ rule on purpose, change its test and this page with it.
 |---|---|---|---|
 | Look | `tide` (default), `hearth` | the `look` field of `userConfig` (the "Band look" row of `/config`) | `/band tide`, `/band hearth`, `/config` |
 | Motion | `lively` (default), `still` | the plugin's store (`motion`), kept across sessions | `/band still`, `/band lively` |
+| Size | `full` (default), `compact` | the `size` field of `userConfig` (the "Band size" row of `/config`), terminal only | `/config` |
 
 - **One home for the look.** `/band` writes the `/config` row through `$.config.set`, and nothing
   else stores a look. That write reloads the plugin, so `/band` also records a pick (`LookPick` in
@@ -179,11 +186,12 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `session.compact` | A compaction of the conversation that went through (not a precompute, a subagent's, or one a hook skipped) leaves the beach a starfish at the high-water mark: the context as it stood before the compaction ran, read first, since a measure may land while it runs. |
 | `classic.PostModelSwitch` | The main loop's new model, on line 3 at once. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
+| `prompt.edit`, `prompt.change` | Whether one of the prompt's menus is up for the draft (`isTypeahead`), written to `$.state` (`menu`) only as it comes or goes. An edit is read from the box it leaves, never holding the keystroke up. |
 | `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over, and the next conversation builds its own sandcastle (`castleFrom`). |
 | `command.run` (`band`), `config.set` | `/band`, and looks changed elsewhere. |
-| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
+| `ui.render` (`AbovePrompt`) | Draws the look; steps aside while something else holds the band's place (`hasSurvey`), still reading the facts, and on the desktop asks to be drawn again until the place is free. On the terminal it steps aside while a menu is up, and draws one row (`compact.tsx`) when the size is compact or `maxRows` is under three. A fresh session's desktop beach waits up to `GIT_WAIT_MS` for git first. Arms the redraw at the sky's next step. |
 
 **The facts.** Both looks share the model, project, branch and uncommitted count; the context
 percent; the cost and the limit shown; when the session was last active; the tools running
@@ -500,6 +508,18 @@ page", "A listing"); then "A tool", left out under a word as short ("A task", "A
 server's tool is quoted with its server whole, then named in words, never as an order nobody gave
 ("A GitHub tool failed", "An Asana tool failed": `article`).
 
+### One row
+
+`hooks/compact.tsx` draws the band in one row on the terminal: Clawd's head, nine cells wide whatever
+his arms do (up for a cheer, his eyes shut for a nap or a failure), then the look's own first words
+(the beach's line 1 as its desktop picks it, the hearth's line 3 with its tally), and at the right
+how full the context is (the beach's context line, the hearth's `context 42%`), as much as fits. The
+hooks module draws it, with no surface module, so it changes with the facts and the moments' own
+redraws (as the desktop does), and a band kept to one row never loads the terminal bands at all. It
+is the band when "Band size" is `compact`, and whenever Claude Code leaves the band fewer than three
+rows (in the fullscreen layout the prompt and the band share half the screen, so a tall draft
+squeezes it), which would otherwise scroll three rows in a smaller window.
+
 ### Terminal and desktop
 
 On the terminal, `hooks/tide/band.tsx` is the beach's `Client` module: exactly three rows, none
@@ -778,10 +798,10 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   (`sourcesOf`), letting them go with the scene; in the test kit the footprint stays flat over
   20,000 turns. Caching the terminal's frames saved a few microseconds a tick and no memory, so they
   are built afresh each tick. A surface module loads the first time a `Client` is drawn, with every
-  other one the hooks module names, so the desktop never loads the terminal bands. The hooks module
-  is one import graph for every surface, so a terminal session carries the desktop's drawing (no
-  module loads later, and none loads per surface); Clawd's sprites live apart from the terminal
-  band, so that graph never takes the terminal band in.
+  other one the hooks module names, so the desktop never loads the terminal bands, nor does a band
+  kept to one row. The hooks module is one import graph for every surface, so a terminal session
+  carries the desktop's drawing (no module loads later, and none loads per surface); Clawd's
+  sprites live apart from the terminal band, so that graph never takes the terminal band in.
 - **The hearth's Svg classes start with `hh-`** only in case a host ever draws it inline: both
   looks' Svgs draw as images, whose classes never meet the page's. A prefix on the tide's would
   change every tide source for no gain.
@@ -887,7 +907,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
 - `hooks/tide/sprite.ts`: Clawd's cells on the beach (`pose`, `spin`, `curled`, and Apple's
-  Terminal's simpler Clawd), which the terminal band draws and the desktop turns into pixels.
+  Terminal's simpler Clawd), which the terminal band draws, the desktop turns into pixels and the one
+  row keeps his head from.
+- `hooks/compact.tsx`: the band in one row on the terminal, in either look (see "One row").
 - `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text, and where its
   heart parks (`HEART_PARKED`, `HEART_SHOWN`, `ROW_PX`).
 - `hooks/tide/props.ts`: the beach's props, `sceneMemory()` and `desktopScenes()`.
@@ -912,7 +934,9 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   answer after a start that failed partway, or one a turn's answer overtook), `/band off` by what is
   on, every terminal color against its 256-color rounding, with every other color a theme key, and
   the band stepping aside while something holds its place and coming back once it is free (beside
-  another band drawn free too).
+  another band drawn free too), which drafts have one of the prompt's menus up (`isTypeahead`) and
+  the terminal band stepping aside for one, and the one-row band in both looks at every width from
+  34 to 200 columns, kept compact or left fewer than three rows.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in

@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { ConfigRow, ConfigSetInput, On, RenderElement, RenderPropsOf, SessionMeasureInput, SessionUsage, TurnCompleteInput } from 'claude-code'
 
-import { EMPTY, GAP_MS, GIT_WAIT_MS, HOLD_MS, NO_DESK, NOTHING_HELD, RUNNING_MAX, SPLASH_MS, TALLY_MOST_MS, TALLY_WAIT_MS, TODOS_MAX, describe, durationForms, heldId, isInterrupted, limitLabel, limitShown, nextTodos, pendingWakes, phraseForms, prettyModel, runningAfter, stepDesk, stepHeld, todosAfterTurn, usingForms, whole } from '../hooks/facts'
+import { EMPTY, GAP_MS, GIT_WAIT_MS, HOLD_MS, NO_DESK, NOTHING_HELD, RUNNING_MAX, SPLASH_MS, TALLY_MOST_MS, TALLY_WAIT_MS, TODOS_MAX, describe, durationForms, heldId, isInterrupted, isTypeahead, limitLabel, limitShown, nextTodos, pendingWakes, phraseForms, prettyModel, runningAfter, stepDesk, stepHeld, todosAfterTurn, usingForms, whole } from '../hooks/facts'
 import { bandProps as hearthProps } from '../hooks/hearth/props'
 import { hearthInfo, slipAt } from '../hooks/hearth/view'
 import { REPLY_MOST, lookNow, migrateMotion, offReply, parseBand, replyFor, toastFor, troubleReply, upgradeToast } from '../hooks/look'
@@ -5505,4 +5505,96 @@ for (const beside of SURFACES) {
       await free.unmount()
     })
   }
+}
+
+// The prompt's own menus open just above it, where the band sits: on the terminal the band steps
+// aside while one is up. Claude Code may leave the band fewer rows than three (a tall draft in the
+// fullscreen layout), and a person may keep it to one ("Band size": compact): then it draws one row,
+// never three scrolled in a smaller window.
+
+const ENGINE_BAND = 'the engine draws nothing of the band'
+
+// Which drafts have a menu up: the engine's editor raises the edits, so the rule is held here, and the
+// band's stepping aside below.
+test('a menu is up while a / command or an @ file is being named, and not once the draft moves on', () => {
+  const cases: Array<[string, number, boolean]> = [
+    ['', 0, false],
+    ['/', 1, true],
+    ['/mo', 3, true],
+    // A space ends the command's name, and with it its menu; back in the name, the menu is up again.
+    ['/model ', 7, false],
+    ['/model ', 6, true],
+    ['/model opus', 11, false],
+    // A slash that does not open the draft is no command.
+    ['look at /tmp', 12, false],
+    ['@', 1, true],
+    ['look at @fa', 11, true],
+    ['look at @facts.ts and', 21, false],
+    // The caret back on the file's word puts its menu up again.
+    ['look at @facts.ts and', 12, true],
+    // An address with an @ inside a word names no file.
+    ['mail me@x.com', 13, false],
+    ['two\n@lines', 11, true],
+  ]
+  expect(cases.map(([text, cursor]) => isTypeahead(text, cursor))).toEqual(cases.map(([, , isUp]) => isUp))
+})
+
+test('terminal: while one of the prompt\'s menus is up the band steps aside, and the desktop draws on', async ($, on) => {
+  world(on)
+  let isMenu = true
+  on('state.get', async ($, e, next) => {
+    const real = await next(e)
+
+    return e.plugin === 'session-band' && e.key === 'menu' ? { value: { value: isMenu, version: 'value' in real ? (real.value?.version ?? 0) : 0 } } : real
+  })
+  on('ui.render', () => ({ type: 'Text', children: [ENGINE_BAND] }))
+  await start($)
+  const terminal = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await terminal.find({ text: ENGINE_BAND })).toBeDefined()
+  const desk = await mount($, 'desktop')
+  expect((await desk.look()).look).toBe('tide')
+  isMenu = false
+  await terminal.redraw(BAND)
+  expect([await terminal.find({ text: ENGINE_BAND }), (await terminal.findAll({ type: 'Client' })).length]).toEqual([undefined, 1])
+  await terminal.unmount()
+})
+
+const ONE_ROW_WIDTHS = [34, 40, 52, 56, 64, 80, 93, 100, 120, 140, 186, 200]
+
+for (const look of ['tide', 'hearth'] as const) {
+  test(`${look}: on the terminal the band keeps to one row when fewer than three are left, at every width, and takes three again once there is room`, { options: { look }, timeoutMs: 60_000 }, async ($, on) => {
+    world(on)
+    await start($)
+    await turn($)
+    for (const columns of ONE_ROW_WIDTHS) {
+      const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns, maxRows: 2 } })
+      const tree = await ui.drawn()
+      const text = textOf(tree)
+      expect([columns, (await ui.findAll({ type: 'Client' })).length, (tree as Node).props?.height]).toEqual([columns, 0, 1])
+      // His head, the cell after it, and the words (with the figures, when they fit) fill no more than the band.
+      expect([columns, cells(text) + 1 <= columns]).toEqual([columns, true])
+      if (columns >= 80) {
+        // The turn that just landed, and how full the context is, each in the look's own words.
+        expect([columns, text.includes('Done'), text.includes('42%')]).toEqual([columns, true, true])
+      }
+      await ui.unmount()
+    }
+    const roomy = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    expect((await roomy.findAll({ type: 'Client' })).length).toBe(1)
+    await roomy.unmount()
+  })
+}
+
+for (const look of ['tide', 'hearth'] as const) {
+  test(`${look}: Band size compact keeps the terminal band to one row with room for three; the desktop is as it was`, { options: { look, size: 'compact' } }, async ($, on) => {
+    world(on)
+    await start($)
+    const terminal = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+    const tree = await terminal.drawn()
+    expect([(await terminal.findAll({ type: 'Client' })).length, (tree as Node).props?.height]).toEqual([0, 1])
+    expect(textOf(tree)).toContain('42%')
+    await terminal.unmount()
+    const desk = await mount($, 'desktop')
+    expect((await desk.look()).look).toBe(look)
+  })
 }

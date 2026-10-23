@@ -206,6 +206,6 @@ export type KeptScene = { key: string; at: number; scene: unknown }
 
 declare module 'claude-code' {
   interface PluginState {
-    'session-band': { info: Info; motion: Motion; pick: LookPick | null; scene: KeptScene | null }
+    'session-band': { info: Info; motion: Motion; pick: LookPick | null; scene: KeptScene | null; menu: boolean }
   }
 }
