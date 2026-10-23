@@ -509,7 +509,7 @@ ellipsis. Clawd uses the theme keys `clawd_body` and `clawd_background`; the bea
 accents no theme key covers.
 
 On the desktop, `hooks/tide/desk.tsx` draws an `Svg` diorama beside Box and Text words, with Clawd
-converted quadrant by quadrant from the terminal's sprites. The frame is 64 px tall at every width,
+converted quadrant by quadrant from the terminal's sprites (`hooks/tide/sprite.ts`). The frame is 64 px tall at every width,
 its 54 px scene 5 px from the top, in a whole-pixel view (`viewBox="0 -5 192 64"`) at `scale(3)`.
 Below 48 columns the diorama narrows to `40 + 2 × (columns − 36)` units of 3 px, between 120 and
 192 px. On a wider band it widens into the room the words leave (`beachWidth`): 64 units until the
@@ -767,6 +767,21 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   cube has no tan between the sand's 180 and 137, nor a blue between the sea's 67 and 24, so the damp
   strip and the ripples are darker than a free choice would make them, in truecolor too. Clawd and
   the words use theme keys, which are the host's to round (see "Known gaps").
+- **Memory: what the band costs is its code, and nothing it keeps grows.** Claude Code 2.1.308
+  holds about 30 to 40 bytes for each character of JavaScript a mod loads, in each environment that
+  loads it (the hooks module's, and the surface modules'), and about 8 for each character of
+  comment. So the band, some 260,000 characters of JavaScript once compiled, holds about 10 MB more
+  than a minimal mod with a terminal `Client` (which Claude Code itself takes about 50 MB to host),
+  almost all of it from loading; running adds nothing measurable at idle. Everything kept has a
+  bound: the facts cap their lists (32 tools running, 256 todos, 256 files a turn), the scene memory
+  keeps 16 widths and the terminal 8 band ids, and the desktop draws each scene's two pictures once
+  (`sourcesOf`), letting them go with the scene; in the test kit the footprint stays flat over
+  20,000 turns. Caching the terminal's frames saved a few microseconds a tick and no memory, so they
+  are built afresh each tick. A surface module loads the first time a `Client` is drawn, with every
+  other one the hooks module names, so the desktop never loads the terminal bands. The hooks module
+  is one import graph for every surface, so a terminal session carries the desktop's drawing (no
+  module loads later, and none loads per surface); Clawd's sprites live apart from the terminal
+  band, so that graph never takes the terminal band in.
 - **The hearth's Svg classes start with `hh-`** only in case a host ever draws it inline: both
   looks' Svgs draw as images, whose classes never meet the page's. A prefix on the tide's would
   change every tide source for no gain.
@@ -871,6 +886,8 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   desktops' `CELL_PX`, the terminal bands' `dice`, and the cuts.
 - `hooks/pace.ts`: the terminal modules' one pace.
 - `hooks/tide/band.tsx`: the beach's terminal module.
+- `hooks/tide/sprite.ts`: Clawd's cells on the beach (`pose`, `spin`, `curled`, and Apple's
+  Terminal's simpler Clawd), which the terminal band draws and the desktop turns into pixels.
 - `hooks/tide/desk.tsx`: the beach's desktop diorama, the Scene and its alt text, and where its
   heart parks (`HEART_PARKED`, `HEART_SHOWN`, `ROW_PX`).
 - `hooks/tide/props.ts`: the beach's props, `sceneMemory()` and `desktopScenes()`.

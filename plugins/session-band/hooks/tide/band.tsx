@@ -1,11 +1,13 @@
 import type { ClientModule, ClientPointerEvent, ClientSurface } from 'claude-code'
 
-import { APPLE_EYES, APPLE_FEET, ARMS, EYES, FEET, SPIN, TERMINAL_HEART, dice } from '../clawd'
-import type { Arms, Eyes, Feet } from '../clawd'
+import { SPIN, TERMINAL_HEART, dice } from '../clawd'
+import type { Eyes, Feet } from '../clawd'
 import { CELLS, fitLine } from './fit'
 import { NAP_AFTER_MS, SPLASH_MS } from '../facts'
 import { hasRoom, isHeld, newPace, spend, switchedPace, tick } from '../pace'
 import type { Pace } from '../pace'
+import { BODY, EYE, SPRITE, appleCurled, applePose, curled, pose, spin } from './sprite'
+import type { Cell, Row } from './sprite'
 import type { BandProps, Piece, Words } from './types'
 
 // The beach on the terminal: a little beach on the left of the band, three
@@ -25,9 +27,6 @@ import type { BandProps, Piece, Words } from './types'
 // it. So a burst of quick reads is one calm stretch of reading, not a flicker of
 // file names, and the two surfaces name the same files at the same moments.
 
-/** A cell of the scene; `kind` marks the shell and the wave, which a mark keeps a cell of sky from. */
-type Cell = { ch: string; color?: string; bg?: string; dim?: boolean; kind?: 'wave' | 'shell' }
-export type Row = Cell[]
 type Run = { text: string; color?: string; backgroundColor?: string; dimColor?: boolean; bold?: boolean }
 
 type Live = {
@@ -124,14 +123,12 @@ type Drawn = ReturnType<typeof compose>
 const TICK_MS = 250
 const NEVER = -1_000_000
 
-// Clawd's colors are the theme's own. The beach's are accents no theme key covers, picked to read
-// on dark and light terminals alike and kept soft and warm beside Claude's clay: kraft sand, a
-// dusk-blue sea, a coral shell. Each sits on or just beside an entry of xterm's 256-color cube
+// Clawd's colors are the theme's own (see sprite.ts). The beach's are accents no theme key covers,
+// picked to read on dark and light terminals alike and kept soft and warm beside Claude's clay: kraft
+// sand, a dusk-blue sea, a coral shell. Each sits on or just beside an entry of xterm's 256-color cube
 // (the number after it), so a terminal that shows only 256 colors draws nearly the same beach.
 // Where a channel stops short of its entry, it is because chalk (which Claude Code rounds with)
 // shows the cube's 95 level only for a channel of 76 or less, and its 135 level only for 127 or less.
-export const BODY = 'clawd_body'
-export const EYE = 'clawd_background'
 export const SAND = '#DAB27F' // 180
 // Damp sand, and the specks in the dry sand, share one darker tan.
 export const WET = '#B27F4C' // 137
@@ -151,75 +148,6 @@ const HEART = TERMINAL_HEART
 // water comes up to his side at home, and the wave's lip still keeps a cell of sky from his arm.
 // A narrow beach (below 56 columns) has no shell, so the tide keeps room to move.
 const SHELL_WIDTH = 4
-const SPRITE = 9
-
-// ── Clawd, exactly as Claude Code draws him ────────────────────────────────────
-
-// His eyes, arms, feet and turning frames are clawd.ts's, the hearth's very own: one Clawd in both looks.
-export type Pose = { eyes: Eyes; arms: Arms; feet: Feet }
-
-function blank(): Row {
-  return Array.from({ length: SPRITE }, () => ({ ch: ' ' }))
-}
-
-/** A run of his glyphs as cells, those in columns [from, to) on his dark background. */
-function spriteRow(text: string, from: number, to: number): Row {
-  return [...text].map((ch, i) => (ch === ' ' ? { ch } : i >= from && i < to ? { ch, color: BODY, bg: EYE } : { ch, color: BODY }))
-}
-
-export function pose({ eyes, arms, feet }: Pose): [Row, Row, Row] {
-  const a = ARMS[arms]
-  const head: Row = [...spriteRow(a.r1L, 0, 0)]
-  for (const span of EYES[eyes]) {
-    for (const ch of span.text) {
-      head.push(span.isLid === true ? { ch, color: EYE, bg: BODY } : { ch, color: BODY, bg: EYE })
-    }
-  }
-  head.push(...spriteRow(a.r1R, 0, 0))
-  const body = [...spriteRow(a.r2L, 0, 0), ...spriteRow('█████', 0, 5).map(cell => ({ ...cell, bg: EYE })), ...spriteRow(a.r2R, 0, 0)]
-
-  return [pad(head), pad(body), pad(spriteRow(FEET[feet], 0, 0))]
-}
-
-export function spin(frame: number): [Row, Row, Row] {
-  const [r0, a0, b0, r1, a1, b1, r2] = SPIN[frame] ?? SPIN[0] ?? []
-  if (r0 === undefined || r1 === undefined || r2 === undefined) {
-    return pose({ eyes: 'open', arms: 'down', feet: 'both' })
-  }
-
-  return [spriteRow(r0, a0 ?? 0, b0 ?? 0), spriteRow(r1, a1 ?? 0, b1 ?? 0), spriteRow(r2, 0, 0)]
-}
-
-// Napping: his own head and body, settled down a row so he is nestled in the sand.
-export function curled(): [Row, Row, Row] {
-  const [head, body] = pose({ eyes: 'closed', arms: 'down', feet: 'both' })
-
-  return [blank(), head, body]
-}
-
-// Apple's Terminal draws block glyphs on colored backgrounds badly, so Claude Code gives it a
-// simpler Clawd: his eyes drawn dark into a solid head, a body of plain color, no arms, and no
-// spin. The beach draws him the same way there.
-function applePose({ eyes, feet }: Pose): [Row, Row, Row] {
-  const head: Row = [
-    { ch: '▗', color: BODY },
-    ...[...APPLE_EYES[eyes]].map((ch): Cell => ({ ch, color: EYE, bg: BODY })),
-    { ch: '▖', color: BODY },
-  ]
-  const body: Row = [{ ch: ' ' }, ...Array.from({ length: 7 }, (): Cell => ({ ch: ' ', bg: BODY })), { ch: ' ' }]
-
-  return [pad(head), pad(body), pad(spriteRow(APPLE_FEET[feet], 0, 0))]
-}
-
-function appleCurled(): [Row, Row, Row] {
-  const [head, body] = applePose({ eyes: 'closed', arms: 'down', feet: 'both' })
-
-  return [blank(), head, body]
-}
-
-function pad(row: Row): Row {
-  return [...row, ...blank()].slice(0, SPRITE)
-}
 
 // ── The module ─────────────────────────────────────────────────────────────────
 
