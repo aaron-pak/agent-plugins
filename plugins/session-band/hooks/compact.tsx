@@ -3,7 +3,7 @@ import type { Elements, RenderElement } from 'claude-code'
 import { moodOf } from './hearth/desk'
 import type { BandProps as HearthProps } from './hearth/types'
 import { ACCENT, CELLS as SEG_CELLS, DIM, SPACE, cutAt, firstFit, happeningForms } from './hearth/words'
-import type { Row as Segs } from './hearth/words'
+import type { Line, Row as Segs } from './hearth/words'
 import { linesFor, style } from './tide/desk'
 import { CELLS, fitLine } from './tide/fit'
 import { applePose, pose } from './tide/sprite'
@@ -17,7 +17,7 @@ import type { BandProps as TideProps, Words } from './tide/types'
 
 type Terminal = Elements['terminal']
 
-/** His head always takes the cells it takes with his arms up, so the words never move. */
+/** His head always takes the cells it takes with his arms up, so the words never move (but for Apple's nap; see headCells). */
 const HEAD_CELLS = 9
 /** The cell between his head and the words. */
 const HEAD_GAP = 1
@@ -44,7 +44,7 @@ export function tideRow(el: Terminal, props: TideProps, bodyColumns: number): Re
   const columns = Math.max(1, bodyColumns - SLACK)
   const [first = [], tide = []] = linesFor(props)
   const face: Face = first === props.words.cheer ? 'cheer' : first === props.words.nap ? 'nap' : first === props.words.splash ? 'shut' : 'rest'
-  const room = columns - HEAD_CELLS - HEAD_GAP
+  const room = columns - headCells(face, props.isAppleTerminal)
   // How full the context is keeps at least its shortest form at the right: the first line fits the
   // room that leaves, and the context line then takes all it can of what the first line left.
   const least = wordsCells(tide[tide.length - 1] ?? [])
@@ -83,10 +83,11 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
   const face: Face = mood.isCheer ? 'cheer' : mood.mode === 'nap' ? 'nap' : mood.isFlinch ? 'shut' : 'rest'
   const percent: Segs[number] =
     props.percent === null ? { text: '–' } : props.isHigh ? { text: `${Math.round(props.percent)}%`, color: ACCENT, bold: true } : { text: `${Math.round(props.percent)}%` }
-  const room = columns - HEAD_CELLS - HEAD_GAP
-  // The figure as long as the words leave room for: "context 42%", then the percent alone.
-  const figure = [[{ text: 'context', color: DIM }, SPACE, percent], [percent]].find(form => room - GAP - SEG_CELLS.row(form) >= WORDS_LEAST) ?? []
-  const lineRoom = figure.length === 0 ? room : room - GAP - SEG_CELLS.row(figure)
+  const room = columns - headCells(face, props.isAppleTerminal)
+  // The words fit the room the percent alone leaves them, and "context 42%" shows where what they
+  // leave holds it: a wider band never says less, as on the beach.
+  const isFigured = room - GAP - SEG_CELLS.row([percent]) >= WORDS_LEAST
+  const lineRoom = isFigured ? room - GAP - SEG_CELLS.row([percent]) : room
   const said = {
     isWorking: props.isWorking,
     activity: props.activity,
@@ -101,6 +102,8 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
     isLanding: mood.isCheer,
   }
   const line = cutAt(firstFit(happeningForms(said), lineRoom, SEG_CELLS), lineRoom)
+  const long: Segs = [{ text: 'context', color: DIM }, SPACE, percent]
+  const figure = !isFigured ? [] : room - lineCells(line) - GAP >= SEG_CELLS.row(long) ? long : [percent]
   const { Box, Text } = el
   const draw = (segs: Segs) => segs.map(({ text, ...look }) => <Text {...look}>{text}</Text>)
 
@@ -129,14 +132,29 @@ export function hearthRow(el: Terminal, props: HearthProps, bodyColumns: number)
   )
 }
 
+/** The cells a fitted line of the hearth's takes as the row draws it. */
+function lineCells(line: Line): number {
+  const squeezed = line.squeeze === undefined ? 0 : (line.squeezeWidth ?? SEG_CELLS.row(line.squeeze)) + SEG_CELLS.row(line.tail ?? [])
+
+  return SEG_CELLS.row(line.left) + squeezed + (line.right.length === 0 ? 0 : GAP + SEG_CELLS.row(line.right))
+}
+
+/**
+ * The cells his head and the gap after it take: one more for his nap in Apple's Terminal, whose
+ * head fills all nine cells, so the z gets a cell of its own.
+ */
+function headCells(face: Face, isApple: boolean): number {
+  return HEAD_CELLS + HEAD_GAP + (isApple && face === 'nap' ? 1 : 0)
+}
+
 /** His head row, from his own cells, as wide with his arms down as up; asleep, a dim z in the cell his arm would raise into. */
 function head(el: Terminal, face: Face, isApple: boolean): RenderElement {
   const [sprite = []] = isApple ? applePose(FACES[face]) : pose(FACES[face])
-  const row = face === 'nap' ? [...sprite.slice(0, HEAD_CELLS - 1), { ch: 'z' }] : sprite
+  const row = face !== 'nap' ? sprite : isApple ? [...sprite, { ch: 'z' }] : [...sprite.slice(0, HEAD_CELLS - 1), { ch: 'z' }]
   const { Box, Text } = el
 
   return (
-    <Box flexShrink={0} width={HEAD_CELLS + HEAD_GAP}>
+    <Box flexShrink={0} width={headCells(face, isApple)}>
       <Text>
         {runs(row).map(({ text, color, bg }) => (
           <Text {...(color === undefined ? {} : { color })} {...(bg === undefined ? {} : { backgroundColor: bg })} {...(text === 'z' ? { dimColor: true } : {})}>

@@ -30,8 +30,9 @@ rule on purpose, change its test and this page with it.
   push them up over Clawd's beach; so while one is up the band takes no rows, and it comes back as
   the draft moves on. Its terminal band stays mounted at no height meanwhile, so Clawd carries on
   where he was. Inline, the menus open below the prompt, and the band stays. It reads the draft as
-  Claude Code's typeahead does (`isTypeahead`), but cannot see whether a word matches anything (see
-  "Known gaps").
+  Claude Code's typeahead does (`isTypeahead`), from its own patterns: again only when the text
+  changes (a caret moved alone leaves the menu as it was), and a command named later in the draft
+  against the session's commands. It cannot see which files match an `@` word (see "Known gaps").
 - **The size.** On the terminal, "Band size" in `/config` is `full` (three rows) or `compact`: one
   row, Clawd's head beside what is happening and how full the context is (see "One row"). Either
   way the band keeps to one row whenever Claude Code leaves it fewer than three (a tall draft).
@@ -190,7 +191,7 @@ facts through a view that hands it exactly what its code reads, and nothing more
 | `session.compact` | A compaction of the conversation that went through (not a precompute, a subagent's, or one a hook skipped) leaves the beach a starfish at the high-water mark: the context as it stood before the compaction ran, read first, since a measure may land while it runs. |
 | `classic.PostModelSwitch` | The main loop's new model, on line 3 at once. |
 | `prompt.submit` | Opens a turn and reads the model and reduced motion again. |
-| `prompt.edit`, `prompt.change` | After each, a look at the prompt as it stands (`$.prompt.read`, a moment later, once an edit has landed, so a plugin's rewrite or a clear in the meantime counts): whether one of its menus is up (`isTypeahead`), written to `$.state` (`menu`) only as it comes or goes, the newest look winning. Nothing holds a keystroke up, though each edit now passes through the hooks worker (2 to 4 ms). `session.start` takes the same look, and a submit that is not the person's (a loop, a notification) changes nothing. |
+| `prompt.edit`, `prompt.change` | After each, a look at the prompt as it stands (`$.prompt.read`, a moment later, once an edit has landed, so a clear in the meantime counts, and so does a plugin's rewrite made by then): whether one of its menus is up (`isTypeahead`, read again only when the draft's text has changed, as the typeahead does, with the session's commands from `$.command.list` for one named later in the draft), written to `$.state` (`menu`) only when it differs from what the band last wrote, the newest look's answer winning (a write that fails is written again at the next look). Nothing holds a keystroke up, though each edit now passes through the hooks worker (2 to 4 ms). `session.start` takes the same look, and a submit that is not the person's (a loop, a notification) changes nothing. |
 | `tool.call` | Running tools, both held steps, todos, files changed, failures, and the turn's count of tools, with its todo bookkeeping counted apart (`TODO_TOOLS`). Subagents' calls are left alone. |
 | `turn.complete` | The last turn (its time, the tools it ran less its todo bookkeeping, the files it changed) and the cheer; then git's branch and count off the handoff, so a slow `git status` never holds up the cheer. A git answer older than one already landed is dropped. |
 | `session.end` (`clear`) | `/clear`: the facts and every moment start over, and the next conversation builds its own sandcastle (`castleFrom`). |
@@ -818,12 +819,21 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
 ## Known gaps
 
 - **A menu closed with Esc.** Claude Code's Esc closes the typeahead and leaves the draft as it is,
-  with no edit or change to say so, so the band stays aside until the draft next changes: an `@`
-  meant as itself, its menu closed with Esc, holds the band aside until the next keystroke.
-- **Menus the band cannot see.** It reads the draft as the typeahead does, but not what the
-  typeahead finds: a word that matches no command or file (`/zzz`, `@alice`) still sets the band
-  aside until it ends, and menus it does not read for (`:` emoji, `#` channels, a path in bash mode,
-  rows another plugin adds) still open above the band.
+  with no edit or change to say so, so the band stays aside until the draft's text next changes: an
+  `@` meant as itself, its menu closed with Esc, holds the band aside until the next letter.
+- **Menus the band cannot see.** It reads the draft as the typeahead does, but not which files it
+  finds: an `@` word that names none (`@alice`) still sets the band aside until it ends. The menus
+  it does not read for still open above the band: a command's own argument menu (`/config th`,
+  `/add-dir src`, `/resume fix`), `:` emoji, `#` channels, paths in bash mode, and rows another
+  plugin adds. In bash mode, where the typeahead offers paths instead, an `@` or `/` word still sets
+  the band aside.
+- **A collapsed band keeps its hint above a menu.** Stepping aside keeps the terminal band mounted
+  at no height, which Claude Code counts as drawn, so a band collapsed with ctrl+x ctrl+a still shows
+  its one-row "plugin panel hidden" hint above an open menu.
+- **A rewrite of an edit that lands late.** The band looks at the prompt a moment after its own part
+  of an edit settles. A plugin hooked above it that rewrites the edit after that moment (waiting on
+  something of its own first) leaves the band with the answer for the draft before the rewrite,
+  since no edit or change comes for it, until the draft next changes.
 - **Live reload is verified on the module side only.** The suite runs real new activations seeded
   with the last `$.state`, but cannot check whether Claude Code runs `session.start` again on an
   options-only reload, keeps `/band` registered, or lets the `/band` reply survive a reload.
@@ -952,10 +962,12 @@ moment: he still cheers, flinches and naps, without blinks, taps or hops.
   the band stepping aside while something holds its place and coming back once it is free (beside
   another band drawn free too), which drafts have one of the prompt's menus up (`isTypeahead`) and
   the terminal band taking no rows for one, driven through the editor's own edits, changes and
-  submits (an edit settling after a later clear included; the rule itself is held against drafts
-  Claude Code's typeahead was seen to open menus for), the one-row band
-  in both looks at widths from 34 to 200 columns, kept compact or left fewer than three rows, and one
-  band going from three rows to one and back as its room changes.
+  submits (a caret moved alone, a command named later in the draft, and an edit settling after a
+  later clear included; the rule itself is held against Claude Code's typeahead patterns and drafts
+  it was seen to open menus for), the one-row band in both looks at widths sampled from 34 to 200
+  columns, kept compact or left fewer than three rows, saying no less as it widens (every width from
+  34 to 120, a long command running), and asleep with his whole head beside the z in either sprite,
+  and one band going from three rows to one and back as its room changes.
 - `tests/tide.test.ts`: the beach on both surfaces: the scene and its marks at every width from 34
   to 160, every moment, still and reduced motion, the calm budgets, the narrow words and splash
   ladder, and the desktop's source rules, read through `seekDesk`, which seeks his pose and place in

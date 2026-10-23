@@ -986,17 +986,50 @@ export function usingParts(target: string): { server: string; action: string } {
 }
 
 /**
- * Whether one of the prompt's own menus is up for this draft, as Claude Code's typeahead reads it: a
- * word at the caret that opens with "/" (at the start of the draft or after a space) and names a
- * command so far, in the letters, digits and `.:_-` a command's name is made of (a second slash makes
- * it a path, "/tmp/foo"); or one that opens with "@" and names a file so far, in the letters, digits,
- * marks and `_-./\()[]~:` a name is made of, or in quotes when it holds spaces ('@"My Fi'). Whether
- * anything matches it the typeahead alone knows, so a word naming nothing ("/zzz") counts too.
+ * Whether one of the prompt's own menus is up for this draft, as Claude Code's typeahead reads it
+ * when the draft changes, at the caret then:
+ *
+ * - The draft's own command: a draft that opens with "/" and names a command so far, in the letters,
+ *   digits and `.:_-` a command's name is made of (a second slash makes it a path, "/tmp/foo"). Its
+ *   menu is always up, "No commands match" at worst.
+ * - A command named later in the draft (`laterCommand`), after a space or the CJK marks `。、？！`:
+ *   only while some command's name, or its part after a `:`, starts with what is typed and runs on
+ *   past it, so "and / or", "please /zzz" and a path ("cd /Users") open nothing. `commands` are the
+ *   names `$.command.list()` gives.
+ * - A file: a word that opens with "@", after a space or those marks, and names a file so far, in the
+ *   letters, digits, marks and `_-./\()[]~:` a name is made of, or in quotes when it holds spaces
+ *   ('@"My Fi', and '@"My File"' once the quote closes). Whether any file matches it the typeahead
+ *   alone knows, so a word naming none ("@alice") counts too.
  */
-export function isTypeahead(text: string, cursor: number): boolean {
+export function isTypeahead(text: string, cursor: number, commands: readonly string[] = []): boolean {
   const before = text.slice(0, Math.max(0, Math.min(text.length, cursor)))
+  if (/^\/[\w.:-]*$/u.test(before)) {
+    return true
+  }
+  const later = laterCommand(text, cursor)
+  if (later !== null) {
+    const typed = later.toLowerCase()
 
-  return /(?:^|\s)\/[\w.:-]*$/u.test(before) || /(?:^|\s)@(?:"[^"]*|[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*)$/u.test(before)
+    return typed !== '' && commands.some(command => {
+      const name = command.toLowerCase()
+      const forms = [name, name.slice(name.lastIndexOf(':') + 1)]
+
+      return forms.some(form => form.startsWith(typed)) && forms.some(form => form.length > typed.length)
+    })
+  }
+
+  return /(?:^|[\s。、？！])@(?:"[^"]*"?|[\p{L}\p{N}\p{M}_\-./\\()[\]~:]*)$/u.test(before)
+}
+
+/**
+ * The name of a command being named later in the draft, the whole word the caret is in or ends, as
+ * the typeahead matches it ("please /mo": "mo"; "please /mo|del": "model"), or null.
+ */
+export function laterCommand(text: string, cursor: number): string | null {
+  const before = text.slice(0, Math.max(0, Math.min(text.length, cursor)))
+  const typed = /[\s。、？！]\/([\w.:-]*)$/u.exec(before)?.[1]
+
+  return typed === undefined ? null : typed + (/^[\w.:-]*/u.exec(text.slice(before.length))?.[0] ?? '')
 }
 
 /** The first line of a text, its runs of spaces and tabs made single spaces. */

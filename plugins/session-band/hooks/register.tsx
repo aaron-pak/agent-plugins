@@ -27,6 +27,7 @@ import {
   isNewWave,
   isPhrase,
   isTypeahead,
+  laterCommand,
   nameIn,
   nextTodos,
   nounOf,
@@ -109,10 +110,11 @@ const ESC_MS = 1000
 type Landing = { sawWork: boolean; quietSince: number | null }
 
 /**
- * What the band knows of the prompt's menus: whether it last wrote that one is up (null before it has
- * written either), and how many looks at the prompt it has taken, so only the newest one writes.
+ * What the band knows of the prompt's menus: the draft it last read them from, whether one was up
+ * then, what `$.state` holds as far as it knows (null before its first write lands, or after one
+ * fails), and how many looks at the prompt it has taken, so only the newest one counts.
  */
-type MenuSeen = { isUp: boolean | null; looks: number }
+type MenuSeen = { text: string | null; isUp: boolean; written: boolean | null; looks: number }
 
 type Saved = { kind: 'saved' } | { kind: 'denied'; reason: string } | { kind: 'unsaved' }
 type Row = { key: string }
@@ -122,7 +124,7 @@ export const register: Register = (on, options) => {
   const configured = options.look
   // On the terminal: three rows (Clawd on his beach or by the hearth), or one (see compact.tsx).
   const isCompact = options.size === 'compact'
-  const menu: MenuSeen = { isUp: null, looks: 0 }
+  const menu: MenuSeen = { text: null, isUp: false, written: null, looks: 0 }
   // A pick /band makes counts only in this activation: any reload (a /config change among them) spends it.
   const activation = newActivation()
   // The look's /config row, found again through /config's own list where it is keyed otherwise.
@@ -296,10 +298,11 @@ export const register: Register = (on, options) => {
   // one is up. Typing and deleting come as edits, and a recalled entry, a clear or a submit as
   // changes; after each the band looks at the prompt as it then stands (a plugin above may have
   // changed what an edit put in, and a clear may have come since), a moment later, once the edit has
-  // landed. Nothing here holds a keystroke up.
+  // landed, or failed below it and left the editor's own. Nothing here holds a keystroke up.
   on('prompt.edit', ($, e, next) => {
     const box = next(e)
-    void box.then(() => after($, 0, () => void lookAtPrompt($, menu))).catch(() => undefined)
+    const look = () => after($, 0, () => void lookAtPrompt($, menu))
+    void box.then(look, look)
 
     return box
   })
@@ -1071,16 +1074,24 @@ async function lookAtPrompt($: EngineInterface, menu: MenuSeen): Promise<void> {
   if (box === null || look !== menu.looks) {
     return
   }
-  const isUp = isTypeahead(box.text, box.cursor)
-  if (isUp === menu.isUp) {
+  // The typeahead reads the draft again only when its text changes: the caret moved alone leaves its
+  // menu as it was, and so the band. A command named later in the draft needs the session's commands.
+  if (box.text !== menu.text) {
+    const commands = laterCommand(box.text, box.cursor) === null ? [] : await $.command.list().then(list => list.map(command => command.name), () => [])
+    if (look !== menu.looks) {
+      return
+    }
+    menu.text = box.text
+    menu.isUp = isTypeahead(box.text, box.cursor, commands)
+  }
+  if (menu.isUp === menu.written) {
     return
   }
-  menu.isUp = isUp
   try {
     // The newest answer, not this look's: two writes that land out of order still leave it right.
-    await update($, menuOf, () => menu.isUp === true)
+    menu.written = await update($, menuOf, () => menu.isUp)
   } catch {
-    menu.isUp = null
+    menu.written = null
   }
 }
 

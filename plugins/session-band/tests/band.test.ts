@@ -5514,37 +5514,52 @@ for (const beside of SURFACES) {
 
 const ENGINE_BAND = 'the engine draws nothing of the band'
 
-// Which drafts have a menu up, as Claude Code 2.1.309's typeahead showed them in a real session. The
-// test kit cannot raise the editor's edits, so the rule is held here, and the band's stepping aside below.
+// Which drafts have a menu up, as Claude Code 2.1.309's typeahead reads them (its own patterns, and
+// drafts seen opening a menu in a real session); the band's stepping aside for one is below.
 test('a menu is up while a / command or an @ file is being named, and not once the draft moves on', () => {
+  const commands = ['model', 'mcp', 'usage', 'plugin-authoring:make-mod']
   const cases: Array<[string, number, boolean]> = [
     ['', 0, false],
     ['/', 1, true],
     ['/mo', 3, true],
-    // A space ends the command's name, and with it its menu; back in the name, the menu is up again.
+    // The draft's own command has its menu whatever it names ("No commands match").
+    ['/zzz', 4, true],
+    // A space ends the command's name, and with it its menu; an edit that leaves the caret back in
+    // the name (an "l" typed into "/mode ") puts it up again.
     ['/model ', 7, false],
     ['/model ', 6, true],
     ['/model opus', 11, false],
-    // A command named later in the draft has its menu too, and a second slash makes a path of it.
+    // A command named later in the draft has its menu while a command's name runs on from it (the
+    // part after a plugin's colon too), and a second slash makes a path of it.
     ['please /mo', 10, true],
+    ['ask /make', 9, true],
+    ['please /zzz', 11, false],
+    ['please /model', 13, false],
+    ['and /', 5, false],
+    ['cd /Us', 6, true],
+    ['cd /Users', 9, false],
     ['/tmp/foo', 8, false],
     ['look at /tmp/', 13, false],
     ['a/b', 3, false],
     ['@', 1, true],
     ['look at @fa', 11, true],
     ['look at @facts.ts and', 21, false],
-    // The caret back on the file's word puts its menu up again.
+    // An edit that leaves the caret back on the file's word puts its menu up again.
     ['look at @facts.ts and', 12, true],
     // An address with an @ inside a word names no file; a name with spaces in it is quoted.
     ['mail me@x.com', 13, false],
     ['@"My Fi', 7, true],
+    ['@"My File"', 10, true],
     ['@"My File" and', 14, false],
+    // After the CJK marks that end a sentence or a clause, as after a space.
+    ['続き、/mo', 6, true],
+    ['查看。@READ', 8, true],
     // A comma or a question mark ends a file's name, and a path opens no command.
     ['ask @alice, then', 11, false],
     ['/usr/bin/foo', 12, false],
     ['two\n@lines', 11, true],
   ]
-  expect(cases.map(([text, cursor]) => isTypeahead(text, cursor))).toEqual(cases.map(([, , isUp]) => isUp))
+  expect(cases.map(([text, cursor]) => isTypeahead(text, cursor, commands))).toEqual(cases.map(([, , isUp]) => isUp))
 })
 
 /** How tall the band's terminal band is drawn, or null with none in the tree. */
@@ -5604,6 +5619,7 @@ test('terminal: typing, deleting, recalling and clearing a draft take the band a
     return { text: e.text }
   })
   on('prompt.read', () => ({ value: box }))
+  on('command.list', () => ({ value: [{ name: 'model', description: 'Set the model', source: 'builtin' }] }))
   await start($)
   const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   const editor = $.prompt as unknown as Editor
@@ -5622,11 +5638,16 @@ test('terminal: typing, deleting, recalling and clearing a draft take the band a
   expect(await clientHeight(ui)).toBe(3)
   expect([await type('/'), await type('mo'), await type('del '), await type('', 6, 7), await type('', 0, 6)]).toEqual([0, 0, 3, 0, 3])
   expect([await type('look at @fa'), await type('cts.ts')]).toEqual([0, 0])
+  // The caret moved alone leaves the typeahead's menu as it was, and so the band.
+  expect(await type('', 0)).toBe(0)
   // A submit that is not the person's (a loop firing) leaves the draft, and its menu, as they are.
   await $.prompt.submit({ text: 'a loop fires', wait: false, origin: { kind: 'scheduled-trigger' } } as Parameters<typeof $.prompt.submit>[0])
   await clock.advance(1)
   expect(await clientHeight(ui)).toBe(0)
   expect([await change('', 'clear'), await change('/clear', 'history'), await change('', 'clear')]).toEqual([3, 0, 3])
+  // Later in the draft, only a command's name running on from what is typed opens its menu.
+  expect([await change('please /mo', 'history'), await change('please /zzz', 'history'), await change('and /', 'history')]).toEqual([0, 3, 3])
+  await change('', 'clear')
   // An edit that settles after a later clear leaves the band as the prompt then is: empty, the band up.
   let release: () => void = () => undefined
   held = new Promise(resolve => (release = resolve))
@@ -5667,6 +5688,28 @@ for (const look of ['tide', 'hearth'] as const) {
 }
 
 for (const look of ['tide', 'hearth'] as const) {
+  test(`${look}: a wider one-row band never says less, while a long command runs`, { options: { look, size: 'compact' }, timeoutMs: 60_000 }, async ($, on) => {
+    let during: (() => Promise<void>) | undefined
+    world(on, { onCall: async () => during?.() })
+    await start($, 86)
+    await $.prompt.submit({ text: 'run the tests', wait: false, origin: { kind: 'composer' } })
+    const said: number[] = []
+    during = async () => {
+      for (let columns = 34; columns <= 120; columns++) {
+        const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns, isWorking: true } })
+        said.push(cells(textOf(await ui.drawn())))
+        await ui.unmount()
+      }
+    }
+    await $.tool.call({ tool: 'Bash', command: 'cd /very/long/path/to/the/project && bun run test --grep menus' })
+    during = undefined
+    expect(said.length).toBe(87)
+    // Each column more keeps what the one before said, the words and the figure together.
+    expect(said.flatMap((n, at) => (at > 0 && n < (said[at - 1] ?? 0) ? [34 + at] : []))).toEqual([])
+  })
+}
+
+for (const look of ['tide', 'hearth'] as const) {
   test(`${look}: one band on the terminal goes to one row as its room shrinks, and back to three as it grows`, { options: { look } }, async ($, on) => {
     world(on)
     await start($)
@@ -5693,4 +5736,20 @@ for (const look of ['tide', 'hearth'] as const) {
     const desk = await mount($, 'desktop')
     expect((await desk.look()).look).toBe(look)
   })
+
+  for (const isApple of [false, true]) {
+    test(`${look}: asleep in one row${isApple ? " in Apple's Terminal" : ''}, Clawd keeps his whole head beside the z`, { options: { look, size: 'compact' } }, async ($, on) => {
+      const { clock } = world(on, { env: isApple ? { TERM_PROGRAM: 'Apple_Terminal' } : {} })
+      await start($)
+      await turn($)
+      await clock.advance(4 * 60_000)
+      for (const columns of [34, 100]) {
+        const ui = await $.ui.mount({ plugin: 'session-band', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: columns } })
+        const text = textOf(await ui.drawn())
+        // Apple's head ends on its corner, the standard one on his body; the z comes after either.
+        expect([columns, text.includes(isApple ? '▖z' : '█z'), cells(text) + 1 <= columns]).toEqual([columns, true, true])
+        await ui.unmount()
+      }
+    })
+  }
 }

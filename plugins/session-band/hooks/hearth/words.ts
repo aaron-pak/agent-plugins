@@ -225,7 +225,6 @@ function neat(text: string): string {
   return text.replace(/[\s/._:;,-]+$/u, '')
 }
 
-/** The room left for a line's squeezed part once everything else has its place. */
 /** Terminal cells: wide CJK characters and emoji count two (see `cells`). */
 export const CELLS: Measure = { row: segs => segs.reduce((sum, seg) => sum + cells(seg.text), 0), gap: 2 }
 
@@ -253,6 +252,7 @@ export function cutAt(line: Line, panel: number): Line {
   return { ...line, squeezeWidth: Math.max(1, cells(neat === '' ? kept : neat) + 1) }
 }
 
+/** The room left for a line's squeezed part once everything else has its place. */
 export function squeezeRoom(line: Line, room: number, m: Measure): number {
   return room - m.row(line.left) - m.row(line.tail ?? []) - (line.right.length === 0 ? 0 : m.gap + m.row(line.right))
 }
