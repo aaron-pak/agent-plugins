@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "t3-coordinator",
+  "description": "Coordinate worker threads from a T3 Code thread: delegated child tasks that report back, or separate threads the user steers, each with a self-contained brief.",
+  "author": {
+    "name": "Aaron Pak"
+  }
+}
