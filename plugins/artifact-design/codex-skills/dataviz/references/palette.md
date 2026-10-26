@@ -175,6 +175,7 @@ actually renders on.
 | Primary ink | `#0b0b0b` | `#f0efec` |
 | Secondary ink | `#52514e` | `#c3c2b7` |
 | Muted (axis/labels) | `#898781` | `#898781` |
+| Label inside a categorical or status fill | `#ffffff`, except `#0b0b0b` on yellow and warning | `#ffffff`, except `#0b0b0b` on warning |
 | Gridline (hairline) | `#e1e0d9` | `#2c2c2a` |
 | Baseline / axis | `#c3c2b7` | `#383835` |
 | Delta up good (success text) | `#006300` | `#0ca30c` |
