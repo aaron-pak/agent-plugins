@@ -41,11 +41,6 @@
       }
     },
     {
-      "name": "pstack",
-      "source": "plugins/pstack",
-      "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels."
-    },
-    {
       "name": "show-me",
       "source": "plugins/show-me",
       "description": "Explain the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. From HumanLayer."
