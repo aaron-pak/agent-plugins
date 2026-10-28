@@ -10,7 +10,6 @@ Current plugins:
 - `frontend-skill`
 - `implement-with-notes`
 - `mac-computer-use` (Grok Bot only, see [Grok Bot](#grok-bot))
-- `pstack` (Lauren Tan's, adapted, see [Credits](#credits))
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `session-manager` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
@@ -110,8 +109,6 @@ The session reloads the mod when its files change, so edits show up without a re
 The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-design`, `artifact-diagramming`, and `dataviz` skills, its Markdown page template and its highlight.js runtime, captured from Claude Code 2.1.304. Its `artifact` MCP server stands in for Claude Code's Artifact tool and `ArtifactCheck`. `artifact-diagramming` and `dataviz` are unchanged except for one sentence each about claude.ai-only features, and only Codex gets `dataviz` (from `codex-skills/`), since Claude Code always has its own; [`UPSTREAM.md`](plugins/artifact-design/UPSTREAM.md) lists every change to `artifact-design` and every way the server differs from the Artifact tool. The server's bundles include [marked](https://github.com/markedjs/marked), [Zod](https://github.com/colinhacks/zod) and the [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), all under the MIT license, and the highlight.js runtime keeps its BSD license notice.
 
 `create-verification-skill` and `maintain-verification-skill` come from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d/pstack), revision `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d`, under the MIT licenses included in their directories. The hardcoded Cursor skill paths are generalized to the project's skills directory, and `disable-model-invocation` is set to `false`; the remaining skill text and feature-map examples match upstream.
-
-`pstack` is Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/11713c683fe4add4fd403ea880580abbc9e0875f/pstack), vendored at revision `11713c683fe4add4fd403ea880580abbc9e0875f` under the MIT license in its directory. Upstream targets Cursor. This copy runs in Cursor, Claude Code, and Codex: `plugins/pstack/scripts/pstack` handles per-role models (`~/.config/pstack/models`), cross-family seats through `claude -p` and `codex exec`, transcripts, and state, and `plugins/pstack/references/harness.md` maps the skills' neutral terms to each harness. The Cursor-only `make-bot-ui` skill and benny automations are removed. To port later upstream changes, diff upstream `pstack/` from that revision to its new head and apply the changes here.
 
 `deeper-task` is the depth prompt from Felix Rieseberg's post [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/), word for word as the skill's body. The post gives no license.
 

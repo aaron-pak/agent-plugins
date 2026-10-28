@@ -1,9 +1,0 @@
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "pstack",
-  "description": "Lauren Tan's pstack, adapted to run in Cursor, Claude Code, and Codex. Rigorous agent workflows: poteto-mode, engineering principles, and multi-model review panels.",
-  "author": {
-    "name": "Lauren Tan"
-  },
-  "license": "MIT"
-}
