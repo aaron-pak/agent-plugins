@@ -11,7 +11,6 @@ Current plugins:
 - `implement-with-notes`
 - `mac-computer-use` (Grok Bot only, see [Grok Bot](#grok-bot))
 - `session-band` (a Claude Code mod, see [Mods](#mods))
-- `session-manager` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
 
 Changing this repository? [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks CI runs.
@@ -38,7 +37,7 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### Grok Bot
 
-Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band` and `session-manager`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
+Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
 
 Team marketplaces are available on Teams and Enterprise plans. Add one from Dashboard → Plugins & MCPs → Team Marketplaces → Add Marketplace, using Import from Repo. Auto Refresh is a Marketplace Setting there: on a GitHub import it re-indexes when commits are pushed to the tracked branch, which requires the Cursor GitHub App, and Cursor re-indexes at most once every 10 minutes. On a marketplace created with Import from Repo, Auto Refresh re-reads the full manifest on each push. See [Plugins](https://cursor.com/docs/plugins). Aaron is on Pro, so this repository is a personal marketplace, and Cursor's docs describe no refresh for those.
 
@@ -84,21 +83,19 @@ A mod folder holds `.claude-plugin/plugin.json` (with `version` unset, as for ev
 Current mods:
 
 - `session-band`: Clawd and your session at a glance in the band above the prompt, in two looks. `tide`, the default, puts him on a little beach where the tide comes in as your context fills, beside three short lines: what Claude is doing, how full the context is (with the cost and whichever usage limit is closest to running out), and where you are (project, branch, uncommitted changes, model). `hearth` sets him beside three calm lines instead, with context and limit meters. Pick the look in the "Band look" row of `/config`, or with `/band tide` and `/band hearth`. On the terminal he is Claude Code's own Clawd in the theme's colors, and on the desktop a vector Clawd. He strolls the sand or blinks at rest, reads along while Claude works, cheers when a turn lands, gets splashed by a wave (or flinches, by the hearth) when a tool fails, sweats by the hearth as the context runs high, naps when you're away and shows a heart when you pet him. On the beach the stars come out at night, by your own clock, and a compaction leaves a starfish on the sand where the tide stood. A toast says when the context passes 80% (the `warnAt` option in `/config`). `/band still` keeps either look still, as reduced motion does, and `/band lively` brings the motion back. In the terminal's fullscreen layout the band gives up its rows while a `/` command or `@` file menu is up, so the menu sits right above the prompt, and takes one row whenever a tall draft leaves it less room; "Band size" in `/config` can keep it to one row, with no pet. `DESIGN.md` explains both looks.
-- `session-manager`: lets a session start separate, full Claude Code sessions and manage them. The model gets `spawn_session` (optionally in its own git worktree, or as a fork of the current conversation), `stop_session` and `list_sessions`. Each new session's final message of a turn comes back to the session that started it, a background session idle past `stopAfterMinutes` (15 by default, in `/config`) is stopped, and a message to a stopped one restarts it first. `/sessions` opens a pane with each session's status, last report, and Stop and Remove buttons.
 
-Install a mod for your user, so every session loads it. For `session-manager` that includes the sessions it starts, which then report back on their own:
+Install a mod for your user, so every session loads it:
 
 ```sh
 claude plugin install session-band@agent-plugins --scope user
-claude plugin install session-manager@agent-plugins --scope user
 ```
 
 To try a mod from a checkout in one session, check it, and run its tests:
 
 ```sh
-claude --plugin-dir ~/projects/agent-plugins/plugins/session-manager
-claude plugin validate plugins/session-manager
-claude plugin test plugins/session-manager
+claude --plugin-dir ~/projects/agent-plugins/plugins/session-band
+claude plugin validate plugins/session-band
+claude plugin test plugins/session-band
 ```
 
 The session reloads the mod when its files change, so edits show up without a restart.
