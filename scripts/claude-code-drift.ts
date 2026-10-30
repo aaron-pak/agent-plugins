@@ -475,7 +475,8 @@ function main(): number {
   if (!drift) console.log(`\nNothing to sync: the plugin matches Claude Code ${target}.`);
   else
     console.log(
-      `\nTo sync: commit the verbatim copies (--write), port the ported-text changes as AGENTS.md describes, ` +
+      `\nTo sync: commit the verbatim copies (--write), run \`bun run capture\` with Claude Code ${target} for the ` +
+        `Artifact tool's text and the artifact-design skill, port the other changes as AGENTS.md describes, ` +
         `then set the version in UPSTREAM.md and README.md to ${target}.`,
     );
   return drift ? 1 : 0;

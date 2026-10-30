@@ -18,7 +18,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { NATIVE_ONLY } from "./native-only.ts";
 
 const SERVER = join(import.meta.dir, "..", "mcp", "server.mjs");
 const TEMP = mkdtempSync(join(tmpdir(), "artifact-server-test-"));
@@ -30,7 +29,15 @@ type Reply = { id: number; result?: any; error?: { code: number; message: string
 
 const spawnServer = (store: string, env: Record<string, string> = {}) =>
   spawn("node", [SERVER], {
-    env: { ...process.env, ARTIFACTS_DIR: store, ARTIFACT_OPEN: "0", ARTIFACT_PREVIEW: "0", TMPDIR: TEMP, ...env },
+    env: {
+      ...process.env,
+      ARTIFACTS_DIR: store,
+      ARTIFACT_OPEN: "0",
+      ARTIFACT_PREVIEW: "0",
+      TMPDIR: TEMP,
+      CLAUDE_CODE_SESSION_ID: "",
+      ...env,
+    },
     stdio: ["pipe", "pipe", "inherit"],
   });
 
@@ -87,7 +94,7 @@ async function legacy(client: string, store = STORE, env: Record<string, string>
     clientInfo: { name: client, version: "1" },
   });
   expect(reply.result.serverInfo.name).toBe("artifact");
-  expect(reply.result.instructions).toContain("Artifact");
+  expect(reply.result.instructions).toBeUndefined(); // Claude Code's own Artifact tool has none
   server.notify("notifications/initialized");
   return server;
 }
@@ -282,19 +289,81 @@ describe("Artifact tool", () => {
     const server = await legacy("claude-code");
     const relative = await server.call({ file_path: "plan.html" });
     expect(relative.isError).toBe(true);
-    const unknown = await server.call({ action: "list", pin: true });
+    const unknown = await server.call({ action: "list", bogus: true });
     expect(unknown).toEqual({
       isError: true,
-      text: expect.stringContaining("Unknown parameter `pin`. This tool takes"),
+      text: expect.stringContaining("Unknown parameter `bogus`. This tool takes"),
       images: 0,
     });
     expect((await server.call({ action: "preview", file_path: join(TEMP, "x.html") })).text).toBe(
-      "Unknown action 'preview'.",
+      "There is no preview on this machine, so skip the look and publish.",
     );
     const noCheck = await server.request("tools/call", { name: "ArtifactCheck", arguments: {} });
     expect(noCheck.error?.code).toBe(-32602);
     const wrongTool = await server.request("tools/call", { name: "Other", arguments: {} });
     expect(wrongTool.error?.code).toBe(-32602);
+    await server.close();
+  });
+
+  test("keeps a session's artifacts across a resume, as Claude Code's map does", async () => {
+    const store = join(TEMP, "resumed");
+    const page = join(TEMP, "resumed.html");
+    writeFileSync(page, "<title>Resumed</title>\n<p>One</p>\n");
+    const first = await legacy("claude-code", store, { CLAUDE_CODE_SESSION_ID: "session-a" });
+    const made = await first.call({ file_path: page, icon: "page" });
+    expect(made.text).toContain("(Version 1)");
+    await first.close();
+    // A resumed session starts a new server with the same session id.
+    const resumed = await legacy("claude-code", store, { CLAUDE_CODE_SESSION_ID: "session-a" });
+    const again = await resumed.call({ file_path: page });
+    expect(again.text).toContain("resumed/index.html (Version 2)");
+    await resumed.close();
+    const other = await legacy("claude-code", store, { CLAUDE_CODE_SESSION_ID: "session-b" });
+    const fresh = await other.call({ file_path: page });
+    expect(fresh.text).toContain("resumed-2/index.html (Version 1)");
+    expect(fresh.text).toContain("in an earlier session; that artifact is unchanged");
+    await other.close();
+  });
+
+  test("takes Claude Code's parameters and answers the ones only claude.ai can act on", async () => {
+    const store = join(TEMP, "claude-ai-only");
+    const server = await legacy("claude-code", store);
+    const page = join(TEMP, "only.html");
+    writeFileSync(page, "<title>Only Here</title>\n<p>Hi</p>\n");
+    const typed = await server.call({ type_url: "https://claude.ai/artifact/abc", title: "Deck" });
+    expect(typed.isError).toBe(true);
+    expect(typed.text).toStartWith("There are no Artifact types here");
+    const granted = await server.call({ file_path: page, capabilities: { db: {} } });
+    expect(granted.isError).toBe(true);
+    expect(granted.text).toStartWith("Runtime capabilities need claude.ai");
+    const asset = await server.call({ file_path: page, url: "x", asset: true });
+    expect(asset.text).toStartWith("There is no asset store here.");
+    expect(existsSync(store) && readdirSync(store).filter((name) => !name.startsWith(".")).length).toBeFalsy();
+    const pinned = await server.call({ action: "pin", url: "x" });
+    expect(pinned).toEqual({ isError: true, text: expect.stringContaining("Pinning isn't available here"), images: 0 });
+    // Parameters that change nothing here are taken as they are.
+    const published = await server.call({
+      file_path: page,
+      icon: "page",
+      capabilities: {},
+      pin: true,
+      label: "First",
+      contract: "latest",
+    });
+    expect(published.isError).toBe(false);
+    expect(published.text).toContain("Pinning isn't available here, so the artifact wasn't pinned.");
+    expect(published.text).toContain("To update: publish the same file path here (keeps this URL)");
+    expect(published.text).toContain("with no Read and no Edit");
+    const link = published.text.match(/at (file:\S+)/)![1]!;
+    expect((await server.call({ action: "list", scope: "types" })).text).toStartWith(
+      "There are no Artifact types here",
+    );
+    expect((await server.call({ action: "list", scope: "all", limit: 1 })).text).toContain("Only Here");
+    expect((await server.call({ action: "list", scope: "files", url: link })).text).toBe("- index.html");
+    expect((await server.call({ action: "read", url: link, path: "index.html" })).text).toContain("<p>Hi</p>");
+    expect((await server.call({ action: "read", url: link, path: "nope.css" })).text).toBe(
+      "nope.css: not a published file of this artifact.",
+    );
     await server.close();
   });
 });
@@ -400,19 +469,16 @@ describe("preview", () => {
       expect(missing.text).toStartWith("preview failed: preview isn't available here");
     }
     const listed = (await server.call({ action: "quickstart", intent: "other" })).text;
-    expect(listed).toContain("one `ArtifactCheck` preview, or else one screenshot");
-    expect(listed).toContain("`artifact-design:artifact-diagramming` in the Skill tool");
-    expect(listed).not.toMatch(NATIVE_ONLY);
+    expect(listed).toStartWith("For a plain page, the page-design guidance follows.");
+    expect(listed).toContain("\n\n## On this machine\n\n");
+    expect(listed).toContain("one `ArtifactCheck` preview (or the Artifact tool's own");
+    expect(listed.indexOf("## On this machine")).toBeLessThan(listed.indexOf("## Page contract"));
     await server.close();
+    // Claude Code's text is the same for every intent and whether or not preview is listed: it skips
+    // the look where the session offers no way.
     const off = await legacy("codex-mcp-client", STORE, { ARTIFACT_PREVIEW: "0" });
     for (const intent of ["other", "document", "slides", "design"]) {
-      const text = (await off.call({ action: "quickstart", intent })).text;
-      expect(text).not.toContain("ArtifactCheck");
-      expect(text).not.toContain("The preview renders");
-      expect(text).toContain("one screenshot of the local file; if the session offers no way, skip the look.");
-      expect(text).not.toContain("Skill tool");
-      expect(text).toContain("In this text, Claude means you.");
-      expect(text).not.toMatch(NATIVE_ONLY);
+      expect((await off.call({ action: "quickstart", intent })).text).toBe(listed);
     }
     await off.close();
   }, 60_000);

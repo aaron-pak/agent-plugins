@@ -1,10 +1,13 @@
 // An MCP server that stands in for claude.ai's Artifact tool outside claude.ai.
 //
-// It exposes `Artifact`, with the claude.ai tool's actions that make sense on a local machine,
-// and, where preview can run, `ArtifactCheck`:
+// It exposes `Artifact`, listed for Claude Code as Claude Code's own Artifact tool with a local
+// paragraph before it (src/tool.ts), and, where preview can run, `ArtifactCheck`. It takes every
+// parameter Claude Code's tool does, acts on the ones that make sense on a local machine, and answers
+// the ones only claude.ai can act on (Artifact types, runtime capabilities, the asset store, pinning)
+// in a line:
 //
-// - quickstart: the page contract and design guidance, the same text the claude.ai tool's
-//   quickstart returns for a plain page (read from the bundled artifact-design skill).
+// - quickstart: the text Claude Code's quickstart returns for a plain page, with the bundled
+//   artifact-design skill's local section after its lead (read from the skill).
 // - publish: wraps the page in the claude.ai publish skeleton and writes it to an artifacts
 //   folder (ARTIFACTS_DIR, default ~/artifacts), one folder per artifact. Publishing the same
 //   file again in the same session (this server process) updates the same artifact, as the
@@ -92,7 +95,9 @@ import {
   withStoreLock,
   type Entry,
 } from "./store.ts";
-import { INSTRUCTIONS, checkTool, isCodex, tool, unknownParameter, type Setting } from "./tool.ts";
+import { checkTool, isCodex, tool, unknownParameter, type Setting } from "./tool.ts";
+
+import QUICKSTART_LEAD from "./text/native/quickstart-lead.md" with { type: "text" };
 
 // Anything printed goes to stderr: stdout carries only protocol messages.
 console.log = console.info = console.debug = console.error;
@@ -249,9 +254,26 @@ async function previewOffered(): Promise<boolean> {
 
 // ---------------------------------------------------------------- publishing
 
-// The source files this server process published, and their artifacts: like the Artifact tool's
-// per-session map, a path republished in this session updates its artifact, and nothing else does.
+// The source files this session published, and their artifacts: like the Artifact tool's per-session
+// map, a path republished in this session updates its artifact, and nothing else does. Claude Code
+// starts a new server for a resumed session but keeps its CLAUDE_CODE_SESSION_ID, which each artifact
+// records, so the map outlasts the server there; elsewhere it lasts one server process.
 const SESSION_SOURCES = new Map<string, string>();
+const SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID || null;
+
+/** This session's artifact for a source file: one this server published, or one the index records
+ * as published from it in this Claude Code session. */
+function sessionArtifact(source: string, index: Map<string, Entry>): string | undefined {
+  const known = SESSION_SOURCES.get(source);
+  if (known !== undefined) return known;
+  if (!SESSION_ID) return undefined;
+  let found: [string, Entry] | undefined;
+  for (const [slug, entry] of index) {
+    if (entry.source !== source || entry.session !== SESSION_ID) continue;
+    if (!found || (entry.updated || "") > (found[1].updated || "")) found = [slug, entry];
+  }
+  return found?.[0];
+}
 
 // The tab icon: a letter on a dark tile, with its angle brackets percent-encoded so that nothing
 // reading the page's head (the title rule stops at the first "<svg") takes it for markup.
@@ -290,44 +312,47 @@ const MISS_ROOM = 40_000;
 
 const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
-async function actQuickstart(args: Args, client?: string): Promise<string> {
+function actQuickstart(): string {
+  // Claude Code's result for a plain page is its lead paragraph and then the artifact-design skill's
+  // text; the skill file here carries that text after its local section, which goes in too.
   const text = readFileSync(GUIDANCE, "utf8");
-  const start = text.indexOf("## Page contract");
-  if (start === -1) throw new Error(`${GUIDANCE} has no "## Page contract" section`);
-  // Claude Code's quickstart leaves the empty dataviz callout's blank lines before "## Process".
-  let guidance = text
-    .slice(start)
-    .trim()
-    .replace("\n\n## Process", () => "\n\n\n\n## Process");
-  // Name ArtifactCheck only where it is listed.
-  if (!(PREVIEW_SWITCH && (await previewOffered()))) {
-    guidance = guidance.replace(
-      "one `ArtifactCheck` preview, or else one screenshot of the local file; if the session offers none of these, " +
-        "skip the look. The preview renders desktop and phone widths in light and dark and lists overflow, colors " +
-        "that ignore the theme, blocked loads and console errors, including a script that fails to parse, so nothing " +
-        "it covers needs a check of your own.",
-      () => "one screenshot of the local file; if the session offers no way, skip the look.",
-    );
-  }
-  const codex = isCodex(client);
-  const onlyPlain =
-    args.intent !== undefined && args.intent !== null && args.intent !== "other"
-      ? "Every artifact here is a plain HTML page, so make this one as a plain page.\n\n"
-      : "";
-  return (
-    onlyPlain +
-    "For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own " +
-    "text, so do not load that skill as well. Write the page to a file and publish it in the same " +
-    "message: the two calls run in order. Unless the person named a location, the file goes in " +
-    `${DRAFTS}, not in the project. In this text, Claude means you.\n\n` +
-    guidance +
-    "\n\nWhen the page includes a diagram, also load the `artifact-diagramming` skill" +
-    (codex ? "" : " (`artifact-design:artifact-diagramming` in the Skill tool)") +
-    " before writing it."
-  );
+  const start = text.indexOf("## On this machine");
+  if (start === -1) throw new Error(`${GUIDANCE} has no "## On this machine" section`);
+  return `${QUICKSTART_LEAD.trim()}\n\n${text.slice(start).trim()}`;
 }
 
-function publish(args: Args): string {
+// What the tool says when asked for what only claude.ai has.
+const NO_TYPES =
+  'There are no Artifact types here, so every artifact is a plain page: call quickstart (intent "other" is fine) ' +
+  "and publish an HTML file.";
+const ONLY_CLAUDE_AI: Record<string, string> = {
+  type_url: `${NO_TYPES} Nothing was published.`,
+  capabilities:
+    "Runtime capabilities need claude.ai, which isn't available here, so nothing was published. Build the page as " +
+    "static HTML without `window.claude`, keep per-viewer state in localStorage as the page contract describes, " +
+    "and publish it without `capabilities`.",
+  asset:
+    "There is no asset store here. Publish images and other files with the page through `files`, or embed them " +
+    "as data: URIs. Nothing was uploaded.",
+};
+const ASSET_KEYS = ["asset", "asset_ids", "from_url", "file_paths"];
+
+/** A refusal for a publish that asks for what only claude.ai has, or null. */
+function onlyClaudeAi(args: Args): string | null {
+  if (args.type_url !== undefined && args.type_url !== null) return ONLY_CLAUDE_AI.type_url!;
+  const capabilities = args.capabilities;
+  if (capabilities && typeof capabilities === "object" && Object.keys(capabilities).length) {
+    return ONLY_CLAUDE_AI.capabilities!;
+  }
+  if (ASSET_KEYS.some((key) => args[key] !== undefined && args[key] !== null && args[key] !== false)) {
+    return ONLY_CLAUDE_AI.asset!;
+  }
+  return null;
+}
+
+function publish(args: Args, client?: string): string {
+  const refused = onlyClaudeAi(args);
+  if (refused) throw new Refusal(refused);
   if (!args.file_path) throw new Error("publish needs file_path: write the page to a file first");
   const source = absolute(args.file_path, "file_path");
   if (!isFile(source)) throw new Error(`${source} doesn't exist; write the page there first`);
@@ -380,7 +405,7 @@ function publish(args: Args): string {
           `(${index.get(inside)!.source || "unknown"}) or copy the file out of ${STORE} first`,
       );
     }
-    const known = SESSION_SOURCES.get(source);
+    const known = sessionArtifact(source, index);
     if (inside) {
       slug = inside;
       entry = index.get(inside)!;
@@ -462,7 +487,8 @@ function publish(args: Args): string {
     entry = { source, version: 0, created: null, page: "index.html" };
   }
   const folder = join(STORE, slug);
-  const plan = planFiles(args.files, folder, dirname(source), "index.html");
+  const base = typeof args.root === "string" && args.root ? absolute(args.root, "root") : dirname(source);
+  const plan = planFiles(args.files, folder, base, "index.html");
 
   mkdirSync(folder, { recursive: true });
   applyFiles(plan);
@@ -481,6 +507,7 @@ function publish(args: Args): string {
     description,
     icon,
   });
+  if (SESSION_ID) entry.session = SESSION_ID;
   if (given === null && description !== null) entry.derived = true;
   else delete entry.derived;
   entry.created = entry.created || now;
@@ -494,9 +521,10 @@ function publish(args: Args): string {
   ];
   if (edits) lines.push(saveEdits(source, bytes, raw, edits.length));
   lines.push(...notes);
+  if (args.pin === true) lines.push("Pinning isn't available here, so the artifact wasn't pinned.");
   lines.push(
-    "To update: publish the same file path again in this session (keeps this link); pass `url` to " +
-      "update this artifact from another file or a later session.",
+    "To update: publish the same file path here (keeps this URL); from another conversation pass the URL as " +
+      "`url`, or that publish creates a separate artifact.",
   );
   lines.push(
     "The link is a file on this machine. If the page is meant for someone else, tell the user when you " +
@@ -504,13 +532,21 @@ function publish(args: Args): string {
       (hasOtherFiles(folder, pageFile) ? `the ${folder} folder, without its .versions folder` : pageFile) +
       ", not the source file, which lacks the page skeleton.",
   );
+  // Claude Code's words, which name its Read and Edit tools; Codex has neither by those names.
   lines.push(
-    "The files you sent are still on disk. For the next small change to this file, send it as `edits` on a " +
-      "publish of the same file_path (old_str/new_str pairs copied exactly from the file as it now stands): that " +
-      "one call changes the file and what is published together, with no separate read or edit. To change several " +
-      "files, or to rewrite most of the page, edit the files and publish them in the same response; if an edit " +
-      "did not apply, correct it and publish again. If the file's text is no longer in this conversation, read " +
-      "it first.",
+    isCodex(client)
+      ? "The files you sent are still on disk. For the next small change to this file, send it as `edits` on a " +
+          "publish of the same file_path (old_str/new_str pairs copied exactly from the file as it now stands): " +
+          "that one call changes the file and what is published together, with no separate read or edit. To change " +
+          "several files, or to rewrite most of the page, edit the files and publish them in the same response; if " +
+          "an edit did not apply, correct it and publish again. If the file's text is no longer in this " +
+          "conversation, read it first."
+      : "The files you sent are still on disk. For the next small change to this file, send it as `edits` on a " +
+          "publish of the same file_path (old_str/new_str pairs copied exactly from the file as it now stands): " +
+          "that one call changes the file and what is published together, with no Read and no Edit. To change " +
+          "several files, or to rewrite most of the page, Edit the files and publish them in the same response; if " +
+          "an Edit reports that it did not apply, correct it and publish again. If the file's text is no longer in " +
+          "this conversation, Read it first.",
   );
   if (first) {
     if (!OPEN_PAGES) lines.push("The page was not opened in a browser (ARTIFACT_OPEN=0); give the user the link.");
@@ -623,14 +659,28 @@ async function runPreview(
 
 const pyStr = (value: unknown) => (value === null || value === undefined ? "None" : String(value));
 
-function actList(): string {
+function actList(args: Args): string {
+  if (args.scope === "types" || args.type || args.type_query || args.type_url) return NO_TYPES;
+  if (args.scope === "assets")
+    return "There is no asset store here; an artifact's other files are its published files.";
   const [index] = loadIndex();
+  if (args.scope === "files") {
+    const [slug, entry] = find(args.url, index);
+    if (!slug) throw new Error('list with scope "files" needs the `url` of a published artifact');
+    return (
+      publishedFiles(slug)
+        .map((path) => `- ${path}`)
+        .join("\n") || `${linkOf(slug, entry)} has only its page.`
+    );
+  }
   if (!index.size) return `No artifacts published yet (folder: ${STORE}).`;
   const rows = [...index].sort(([, a], [, b]) => {
     const [x, y] = [a.updated || "", b.updated || ""];
     return x < y ? 1 : x > y ? -1 : 0;
   });
+  const limit = typeof args.limit === "number" && args.limit >= 1 ? Math.floor(args.limit) : 25;
   return rows
+    .slice(0, limit)
     .map(
       ([slug, entry]) =>
         `- ${entry.title || slug} \u2014 ${linkOf(slug, entry)} (updated ${pyStr(entry.updated)}, ` +
@@ -639,10 +689,40 @@ function actList(): string {
     .join("\n");
 }
 
+/** An artifact's published files, as paths inside its folder, without its versions. */
+function publishedFiles(slug: string): string[] {
+  const found: string[] = [];
+  const walk = (folder: string, prefix: string) => {
+    for (const name of readdirSync(folder).sort()) {
+      if (!prefix && name === ".versions") continue;
+      const path = join(folder, name);
+      if (lstatSync(path).isDirectory()) walk(path, `${prefix}${name}/`);
+      else found.push(`${prefix}${name}`);
+    }
+  };
+  walk(join(STORE, slug), "");
+  return found;
+}
+
 function actRead(args: Args): string {
+  if (args.type_url) return NO_TYPES;
   const [index] = loadIndex();
   const [slug, entry] = find(args.url, index);
   if (!slug) throw new Error('read needs the `url` of a published artifact; list them with action "list"');
+  const paths = typeof args.path === "string" ? [args.path] : Array.isArray(args.paths) ? args.paths : null;
+  if (paths && !(paths.length === 1 && paths[0] === "index.html")) {
+    const files = new Set(publishedFiles(slug));
+    return paths
+      .map((path) => {
+        const name = String(path);
+        if (!files.has(name)) return `${name}: not a published file of this artifact.`;
+        const file = join(STORE, slug, name);
+        const data = readFileSync(file);
+        const textual = !data.subarray(0, 8000).includes(0) && data.length <= 200_000;
+        return textual ? `${name} (${file}):\n${data.toString("utf8")}` : `${name}: ${file} (${data.length} bytes)`;
+      })
+      .join("\n\n");
+  }
   const text = readFileSync(join(STORE, slug, entry.page), "utf8");
   const content = entry.page.endsWith(".html") ? unwrap(text).content : text;
   return (
@@ -685,13 +765,17 @@ function actOpen(args: Args): string {
     : `There is no browser to open here; the page is ${link}.`;
 }
 
+const NO_PIN = "Pinning isn't available here: there is no claude.ai sidebar. Nothing was pinned.";
+
 const ACTIONS: Record<string, (args: Args, client?: string) => Result | Promise<Result>> = {
-  publish: (args) => withStoreLock(() => publish(args)),
-  quickstart: (args, client) => actQuickstart(args, client),
+  publish: (args, client) => withStoreLock(() => publish(args, client)),
+  quickstart: () => actQuickstart(),
   read: actRead,
   list: actList,
   open: actOpen,
   delete: actDelete,
+  pin: () => textResult(NO_PIN, true),
+  unpin: () => textResult(NO_PIN, true),
 };
 
 const textResult = (text: string, isError = false): CallToolResult => ({
@@ -703,8 +787,11 @@ async function call(args: Args, client?: string): Promise<CallToolResult> {
   const problem = unknownParameter(args);
   if (problem) return textResult(problem, true);
   const action = args.action || "publish";
-  if (action === "preview" && PREVIEW_SWITCH && (await previewOffered())) {
-    return textResult("preview is an action of the ArtifactCheck tool: call ArtifactCheck with `file_path`.", true);
+  if (action === "preview") {
+    if (PREVIEW_SWITCH && (await previewOffered())) {
+      return textResult("preview is an action of the ArtifactCheck tool: call ArtifactCheck with `file_path`.", true);
+    }
+    return textResult("There is no preview on this machine, so skip the look and publish.", true);
   }
   if (typeof action !== "string" || !Object.hasOwn(ACTIONS, action)) {
     return textResult(`Unknown action ${repr(action)}.`, true);
@@ -760,10 +847,7 @@ function clientName(server: Server, ctx: ServerContext): string | undefined {
 }
 
 serveStdio(() => {
-  const server = new Server(
-    { name: "artifact", version: "0.1.0" },
-    { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
-  );
+  const server = new Server({ name: "artifact", version: "0.1.0" }, { capabilities: { tools: {} } });
   server.setRequestHandler("tools/list", async (_request, ctx) => ({
     tools: [
       tool(clientName(server, ctx), SETTING),

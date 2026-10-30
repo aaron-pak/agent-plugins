@@ -5,6 +5,7 @@
   "packageManager": "bun@1.4.2",
   "scripts": {
     "build": "bun scripts/build.ts",
+    "capture": "bun scripts/capture-native.ts",
     "dev:artifact": "bun --cwd plugins/artifact-design/src --watch server.ts",
     "drift": "bun scripts/claude-code-drift.ts",
     "fmt": "oxfmt plugins/artifact-design/src plugins/artifact-design/tests scripts",

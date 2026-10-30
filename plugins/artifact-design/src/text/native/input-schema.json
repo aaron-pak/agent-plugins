@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "description": "One of 'publish', 'list', 'read', 'delete', 'open', 'pin', 'unpin', 'quickstart'. Omitting it means 'publish'. **Calls** in the description says what each one does and takes, except as noted here.",
+      "type": "string",
+      "enum": [
+        "publish",
+        "list",
+        "read",
+        "delete",
+        "open",
+        "pin",
+        "unpin",
+        "quickstart"
+      ]
+    },
+    "file_path": {
+      "description": "publish: the local page Claude publishes (.html, or .md only when a skill says so). For an Artifact created from an Artifact type, it is one of that Artifact's data files. With `asset: true`, it is the local file Claude uploads. A short, distinctive basename also serves as the title when nothing else gives one.",
+      "type": "string"
+    },
+    "asset": {
+      "description": "publish with `url`: true uploads `file_path` (or each of `file_paths`) to that artifact's asset store instead of publishing it as the page — or, with `from_url` and `asset_ids` in place of `file_path`, copies those assets of another artifact into it server side (see **Calls**).",
+      "type": "boolean"
+    },
+    "file_paths": {
+      "description": "publish with `asset: true` only: several local image, video, PDF, font, stylesheet or script files in place of `file_path`, up to 25 in one call, all into the artifact that `url` names; one approval covers the call, and the result lists each file's id and url, or why it was not uploaded. A CSV, Markdown, JSON or plain-text file, a symbolic or hard link, and a file outside the working directory each go in a call of their own with `file_path`.",
+      "minItems": 1,
+      "maxItems": 25,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^[^\\0]*$"
+      }
+    },
+    "from_url": {
+      "description": "publish with `asset: true`, in place of `file_path`: the SOURCE artifact's claude.ai URL — one the person can open.",
+      "type": "string",
+      "maxLength": 512
+    },
+    "asset_ids": {
+      "description": "publish with `asset: true` and `from_url` only: 1–10 distinct asset ids from the source artifact (from a `scope: \"assets\"` listing of it, or an upload result).",
+      "minItems": 1,
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{32}$"
+      }
+    },
+    "favicon": {
+      "description": "Deprecated; Claude omits it and uses `icon`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "icon": {
+      "description": "One short generic word for the artifact's browser-tab icon, such as chart, calendar, recipe, code or map: a plain signifier, never a product or brand name. Claude includes it on every page's first publish and omits it on a redeploy so the artifact keeps its icon, passing a new one only when the person asks. Ignored on an Artifact created from an Artifact type.",
+      "type": "string",
+      "maxLength": 40
+    },
+    "files": {
+      "description": "Supporting files to publish alongside the page, as a map {\"published/path\": \"source/path\" | {from, contentType} | {artifact, path, ver?} | null}. The key is what the HTML references. The source is a path on disk, or {from, contentType} when the type cannot be inferred from the published extension. An {artifact, path} source copies that Artifact's published file on the server: an Artifact the person can open, with its type carried over, never an HTML or XML document, and at most 4 source Artifact versions per publish. null removes that path on an update, and files left out are kept. A plain list publishes each file at its own spelling. Sources must be under the working directory or Claude's scratchpad directory. `preflight.js` at the artifact root is reserved: it runs against open pages when Claude publishes updates, and it must be a JavaScript module of at most 8 KiB whose default export is a function, or the publish is refused.",
+      "anyOf": [
+        {
+          "maxItems": 255,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "description": "Path relative to the working directory (or to `root`, which may be a folder in your scratchpad directory); the file is served at this same path next to the page.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "contentType": {
+                "description": "Servable media type; inferred from the extension for common types (css/js/json/png/…) — pass explicitly otherwise.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "description": "Source file path — relative to `root` (default: the working directory), or absolute under the working directory or your scratchpad directory.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "contentType": {
+                    "description": "Servable media type; inferred from the PUBLISHED extension for common types — pass explicitly otherwise.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "artifact": {
+                    "description": "Another artifact's claude.ai URL: the file is copied from ITS published files, server side — nothing is downloaded. You must be able to open that artifact.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "path": {
+                    "description": "The file's published path inside that Artifact, as a listing of its files prints it (not \"index.html\").",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "ver": {
+                    "description": "A version of that Artifact to copy from instead of its current one — only versions you are served (its history, if you can edit it); omit for the current version.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "artifact",
+                  "path"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "edits": {
+      "description": "publish: small changes Claude makes to the file at `file_path` in this same call, instead of editing the file with Edit and publishing after. Use it on a page (add `url` to update an artifact from another conversation) or on one data file of an artifact made from a type (its `url`, with that file as `file_path`). Not allowed with `type_url` or `files`. Each old_str is text copied exactly from the file as it now stands and must occur in it exactly once; new_str takes its place (empty deletes it). The edits apply in order, all or none: the file is published with them and then saved with them on disk, so it stays the source for later changes; on a miss nothing is changed or published, and the result says which edit failed and why.",
+      "minItems": 1,
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "old_str": {
+            "description": "Text copied exactly from the file; must occur once.",
+            "type": "string"
+          },
+          "new_str": {
+            "description": "Its replacement; empty deletes old_str.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_str",
+          "new_str"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "root": {
+      "description": "The base directory that relative `files` sources resolve against, like a bundler root. It never changes published paths. It is relative to the working directory, or absolute within it or within Claude's scratchpad directory. It requires `files`, except on an Artifact made from a type, where a data `file_path` under it is served at its path relative to it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "pin": {
+      "description": "publish only: true also pins the published artifact to the person's claude.ai sidebar once it is published. Claude passes it only when the person asked for that. A failed pin never fails the publish, and the result says so.",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "list only: the maximum number of artifacts to return (default 25).",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "scope": {
+      "description": "list: which listing to return. 'mine' is the default. The others are 'shared', 'all', 'types', 'files' (with `url`) and 'assets' (with `url`, continued with `after`). See **Calls**.",
+      "type": "string",
+      "enum": [
+        "mine",
+        "shared",
+        "all",
+        "types",
+        "files",
+        "assets"
+      ]
+    },
+    "type_query": {
+      "description": "list with scope 'types' only: limits the listing to the types whose title or description match this text best, ignoring case; a type that matches less well is left out, so a narrowed listing is not the whole catalog. Claude omits it when choosing a type for a request, unless a listing made without it says more types exist than it shows.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "type": {
+      "description": "list only: the name of a published Artifact type, as a 'types' listing shows it (case does not matter). The listing then shows the Artifacts made from that type instead of the person's gallery. Claude passes this or `type_url`, not both.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "intent": {
+      "description": "quickstart only (required): what is being made — 'document' (text to read or edit together), 'slides' (a deck or one slide), 'design' (a visual design or prototype on a canvas), 'other' (anything else, or unsure).",
+      "type": "string",
+      "enum": [
+        "document",
+        "slides",
+        "design",
+        "other"
+      ]
+    },
+    "design_systems": {
+      "description": "quickstart only: false when a design system's link is already in hand (it is then read with its own call) or one was declined. Omitted or true, the result lists the design systems (not for a document) and, for slides or a design, attaches the default one's README.",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "publish: the fallback title for an HTML page whose file has no <title>. It is a name, not a summary, and Claude keeps it the same across redeploys. On a `type_url` create, it is the new Artifact's name: what the person called it, or a short descriptive name. If it is left out, the Artifact is named after the type.",
+      "type": "string"
+    },
+    "description": {
+      "description": "publish: one sentence for the subtitle on the gallery card.",
+      "type": "string",
+      "maxLength": 1000
+    },
+    "label": {
+      "description": "A short name for this publish, at most 60 characters (e.g. \"Draft to legal\"). Optional. It is a few words, not a description.",
+      "type": "string",
+      "maxLength": 60
+    },
+    "overwrite_unread": {
+      "description": "publish with `files` or `root` to an existing artifact: published paths this call may replace or remove although you have not read or listed them in this session. Every other path the call touches must be one you read by its `path`, saw in a file listing, or published yourself, and must not have changed since — otherwise nothing is sent and the refusal names each path. Name a path here only when the user asked for it to be replaced without looking at what is there; it never excuses a path that changed after you read it.",
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "url": {
+      "description": "An existing artifact's claude.ai link (claude.ai/artifact/{id} or claude.ai/code/artifact/{uuid}); a chat, project or session link is not one, and `action: \"list\"` lists the person's artifacts. On a publish, it is the artifact to update in place, one the person owns or was given edit access to (a read of it says \"writer\"). Before publishing to an artifact this conversation has neither read nor published, Claude reads it (`action: \"read\"`) and builds on what comes back; a publish sent without that read is refused. A refusal that hands Claude the live version counts as that read: Claude merges its changes into that version and publishes the result, and never resends the refused content unchanged. Claude omits `url` for a new artifact or to redeploy a file this conversation already published. For read, delete and the other calls that take a URL, it is the artifact to act on.",
+      "type": "string"
+    },
+    "type_url": {
+      "description": "publish: the Artifact type to create this new, private Artifact from (a link from a 'types' listing). Claude omits `url`. Any `file_path`/`files` passed become the new Artifact's own files beside the type's fixed ones. read (no `url`): the type to describe. list: the type whose Artifacts to list, or Claude names the type with `type` instead.",
+      "type": "string",
+      "maxLength": 2048
+    },
+    "auto_open": {
+      "description": "Only with `type_url` and no `file_path`: when the new Artifact opens for the person. Claude passes \"after_first_write\" when it will fill the Artifact right after creating it with a files publish to its url, so the person does not first see it empty. The Artifact then opens on that first write. Otherwise Claude omits it, and the Artifact opens when created; Claude always omits it for a type whose content it writes through a connector, such as a Claude Docs document, since no publish or store write follows to open it.",
+      "type": "string",
+      "enum": [
+        "at_create",
+        "after_first_write"
+      ]
+    },
+    "prompt": {
+      "description": "read, for an artifact shared with the person: what Claude needs from it, which steers the isolated summary.",
+      "type": "string"
+    },
+    "force": {
+      "description": "publish: a last-resort overwrite that **discards** the newer published version. On a conflict, Claude merges its changes onto the newer content that the rejection hands it and publishes again. Claude passes true only when the person explicitly said to discard that specific version, and the server may still refuse it over a version saved from inside the page.",
+      "type": "boolean"
+    },
+    "out_dir": {
+      "description": "read with `path`: the directory to save into. The default is this artifact's folder in Claude's scratchpad directory, where saving needs no approval. A published file lands at <out_dir>/<published path>, and saving it outside that default folder asks the person first. An asset's file is named by its id plus its type's extension; saving it outside the default folder is an ordinary file save the person may be asked to approve.",
+      "type": "string",
+      "maxLength": 4096
+    },
+    "path": {
+      "description": "read: the file's published path inside the artifact, exactly as a 'files' listing printed it (\"index.html\" is the page itself). The file is saved locally, the result says where, and a small text file's contents are included. It can instead be an uploaded asset's id (32 hex characters, from an 'assets' listing or an upload result), and that asset is saved to a local file. delete: the id of the one asset to remove.",
+      "type": "string",
+      "maxLength": 512
+    },
+    "paths": {
+      "description": "read: several published paths in place of `path`, up to 256 in one call. Each file is saved as a single `path` would be, and the result lists where each one landed, or why it could not be read, with small text files' contents included while they fit.",
+      "minItems": 1,
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 512
+      }
+    },
+    "after": {
+      "description": "list with scope 'assets' only: the `next` value from a previous listing, passed to continue it.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_=-]{1,4096}$"
+    },
+    "page": {
+      "description": "read only: true returns the rendered page in cases where a read otherwise returns something else. A typed Artifact's read leaves out the type's own page.",
+      "type": "boolean"
+    },
+    "capabilities": {
+      "description": "publish: the runtime capabilities this page declares, as {name: config}. Claude loads the `artifact-capabilities` skill before passing it. On a redeploy Claude omits the field to keep what the page has, and {} clears it.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "additionalProperties": {}
+    },
+    "contract": {
+      "description": "publish: the artifact's runtime version. Leaving it out keeps the current version (the default), 'latest' upgrades, and an exact version pins or rolls back. It changes how the published page behaves, so Claude passes it only when the author explicitly intends that change.",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "latest"
+        },
+        {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d{0,3})\\.(0|[1-9]\\d{0,4})\\.(0|[1-9]\\d{0,5})$"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

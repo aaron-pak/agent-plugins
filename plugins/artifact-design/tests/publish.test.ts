@@ -18,7 +18,9 @@ import {
   usesMermaid,
   wrap,
 } from "../src/publish.ts";
-import { INSTRUCTIONS, checkTool, tool, unknownParameter } from "../src/tool.ts";
+import { checkTool, tool, unknownParameter } from "../src/tool.ts";
+import NATIVE_DESCRIPTION from "../src/text/native/description.md" with { type: "text" };
+import NATIVE_SCHEMA from "../src/text/native/input-schema.json";
 import { NATIVE_ONLY } from "./native-only.ts";
 
 describe("html", () => {
@@ -159,29 +161,36 @@ describe("tool", () => {
     }
   });
 
-  test("keeps Claude Code's description whole", () => {
+  test("lists Claude Code's own tool after the local paragraph", () => {
     const claude = tool("claude-code", setting);
     expect(claude.description!.length).toBeLessThanOrEqual(4096);
-    expect(claude.description).toContain("**Before writing the file, Claude must load the `artifact-design` skill**");
-    expect(claude.inputSchema.description).toContain("**Calls**");
+    expect(claude.description).toStartWith("**On this machine**: claude.ai isn't available here");
+    expect(claude.description).toContain(setting.drafts);
     expect(claude._meta).toEqual({ "anthropic/alwaysLoad": true });
+    // Every paragraph of Claude Code's description follows, in order, across the description and the
+    // input schema's description, and the schema is Claude Code's.
+    const listed = `${claude.description}\n\n${claude.inputSchema.description}`;
+    expect(listed).toContain(NATIVE_DESCRIPTION.trim().split("\n\n")[0]!);
+    expect(
+      listed.replace(/\n\nThe rest of this description is the `description` of the tool's input schema\.\n\n/, "\n\n"),
+    ).toEndWith(NATIVE_DESCRIPTION.trim());
+    const { description: _, ...schema } = claude.inputSchema;
+    expect(schema as unknown).toEqual(NATIVE_SCHEMA);
   });
 
-  test("names no tool, type or service the plugin lacks", () => {
-    const texts = [tool("claude-code", setting), tool("codex-mcp-client", setting), checkTool()].map((listed) =>
-      JSON.stringify(listed),
-    );
-    const skills = ["skills/artifact-design", "skills/artifact-diagramming", "codex-skills/dataviz"].map((skill) =>
+  test("keeps the plugin's own text to what the plugin has", () => {
+    // Claude Code's tool and skill text is copied as it is; what the plugin writes itself names no
+    // tool, type or service it lacks.
+    const texts = [tool("codex-mcp-client", setting), checkTool()].map((listed) => JSON.stringify(listed));
+    const skills = ["skills/artifact-diagramming", "codex-skills/dataviz"].map((skill) =>
       readFileSync(join(import.meta.dir, "..", skill, "SKILL.md"), "utf8"),
     );
-    for (const text of [...texts, INSTRUCTIONS, ...skills]) expect(text).not.toMatch(NATIVE_ONLY);
+    for (const text of [...texts, ...skills]) expect(text).not.toMatch(NATIVE_ONLY);
   });
 
-  test("refuses parameters it doesn't take, saying what to do instead", () => {
-    expect(unknownParameter({ action: "publish", capabilities: {} })).toStartWith(
-      "Unknown parameter `capabilities`: a page here is static HTML.",
-    );
-    expect(unknownParameter({ action: "list" })).toBeNull();
+  test("takes every parameter of Claude Code's tool", () => {
+    for (const name of Object.keys(NATIVE_SCHEMA.properties)) expect(unknownParameter({ [name]: 1 })).toBeNull();
+    expect(unknownParameter({ action: "list", bogus: 1 })).toStartWith("Unknown parameter `bogus`.");
     expect(unknownParameter({ file_path: "/a.html", files: {} }, true)).toStartWith("Unknown parameter `files`.");
   });
 });

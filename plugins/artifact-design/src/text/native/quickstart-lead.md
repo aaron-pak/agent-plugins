@@ -1,0 +1,1 @@
+For a plain page, the page-design guidance follows. It is the `artifact-design` skill's own text, so do not load that skill as well. Write the page to a file and publish it in the same message: the two calls run in order.

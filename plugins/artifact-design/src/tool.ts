@@ -4,18 +4,16 @@ import type { JSONObject, Tool } from "@modelcontextprotocol/server";
 
 import { MAX_EDITS } from "./edits.ts";
 
-import DESCRIPTION from "./text/description.md" with { type: "text" };
+import NATIVE_DESCRIPTION from "./text/native/description.md" with { type: "text" };
+import NATIVE_SCHEMA from "./text/native/input-schema.json";
+import LOCAL from "./text/local.md" with { type: "text" };
 import CODEX_LEAD_TEXT from "./text/codex-lead.md" with { type: "text" };
 import CODEX_REST_TEXT from "./text/codex-rest.md" with { type: "text" };
 
-export const INSTRUCTIONS =
-  "This server's Artifact tool publishes HTML pages (reports, explainers, plans, dashboards, tools, " +
-  'mockups) as local files; before writing a new one, call it with action "quickstart".';
-
-// text/description.md is Claude Code's Artifact tool description (2.1.300), less what only claude.ai
-// can do: runtime capabilities, the shared database, watching, pinning, the asset store, and Artifact
-// types beyond the rule that a new artifact starts with quickstart. Its {placeholders} are filled in
-// by describe().
+// For Claude Code the tool is Claude Code's own Artifact tool, word for word: text/native/ holds its
+// description and input schema as `bun run capture` copies them from a session with claude.ai
+// artifacts. text/local.md goes before them; it says what differs on this machine and wins where the
+// two disagree. Its {placeholders} are filled in by describe().
 const text = (file: string) => file.replace(/\n$/, "");
 
 // Claude Code's ArtifactCheck tool (2.1.300) with its preview on: an add-on to the Artifact tool that
@@ -47,25 +45,11 @@ const CODEX_REST = text(CODEX_REST_TEXT);
 
 // Claude Code cuts an MCP tool's description at 4,096 characters (2,048 before 2.1.296;
 // CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH) but passes its input schema whole, so the description keeps
-// the paragraphs that fit and the rest follows, in order, as the input schema's description. The
-// first-call rule follows the first paragraph, so that it fits within 2,048 characters too. Claude
+// the paragraphs that fit and the rest follows, in order, as the input schema's description. The local
+// paragraph comes first, with the first-call rule, so that it fits within 2,048 characters too. Claude
 // Code also defers MCP tools behind tool search unless they ask to load up front; its own Artifact
 // tool is always loaded.
 const DESCRIPTION_ROOM = 4096;
-const FIRST_CALL =
-  ' When the person wants something new made, Claude\'s first call is `action: "quickstart"`, before' +
-  " loading a skill or writing a file (see **New artifacts**).";
-
-// Parameters of Claude Code's Artifact tool that this one doesn't take, with what to do here instead.
-// The rest get a bare "Unknown parameter", like any other.
-const INSTEAD: Record<string, string> = {
-  capabilities: "a page here is static HTML",
-  type_url: 'every artifact here is a plain page: call action "quickstart", then publish an HTML file',
-  asset: "pass images and other files with `files`",
-  asset_ids: "pass images and other files with `files`",
-  from_url: "pass images and other files with `files`",
-  file_paths: "pass images and other files with `files`",
-};
 
 /** What the tool's text says about this machine. */
 export type Setting = {
@@ -75,30 +59,33 @@ export type Setting = {
   opens: boolean;
 };
 
-/** The tool's description, filled in for this machine. */
+/** The tool's description: the local paragraph, filled in for this machine, and Claude Code's. */
 export function describe(setting: Setting): string {
-  return text(DESCRIPTION)
-    .replaceAll("{opened}", () => (setting.opens ? ", and opened in the browser" : ""))
-    .replaceAll("{open_note}", () => (setting.opens ? " A first publish opens the page in the browser." : ""))
+  const local = text(LOCAL)
+    .replaceAll("{opened}", () => (setting.opens ? ", which a first publish opens in the browser" : ""))
     .replaceAll("{drafts}", () => setting.drafts)
     .replaceAll("{store}", () => setting.store);
+  return `${local}\n\n${text(NATIVE_DESCRIPTION)}`;
 }
 
 type Schema = JSONObject;
 type ObjectSchema = { type: "object"; properties: Record<string, Schema>; additionalProperties: false };
 
-export function schema(compact = false): ObjectSchema {
-  const actions = ["publish", "quickstart", "read", "list", "open", "delete"];
-  const listed = actions.map((action) => `'${action}'`).join(", ");
-  const source: Schema = { type: "string", description: "An absolute path to the source file." };
-  const fromSource: Schema = {
-    type: "object",
-    properties: { from: source, contentType: { type: "string" } },
-    required: ["from"],
-  };
-  const mapItems: Schema[] = [source, fromSource, { type: "null" }];
-  const filesMap: Schema = { type: "object", additionalProperties: { anyOf: mapItems } };
-  const filesList: Schema = {
+/** Claude Code's Artifact tool's input schema, as it is. */
+export function schema(): ObjectSchema {
+  return structuredClone(NATIVE_SCHEMA) as unknown as ObjectSchema;
+}
+
+/** Codex's compact schema: the parameters a page here uses, with short descriptions. The server
+ * still takes every parameter of Claude Code's schema. */
+function compactSchema(): ObjectSchema {
+  const string = (description: string): Schema => ({ type: "string", description });
+  const pathOrFrom: Schema[] = [
+    { type: "string" },
+    { type: "object", properties: { from: { type: "string" }, contentType: { type: "string" } }, required: ["from"] },
+    { type: "null" },
+  ];
+  const listed: Schema = {
     type: "array",
     items: {
       anyOf: [
@@ -111,79 +98,31 @@ export function schema(compact = false): ObjectSchema {
       ],
     },
   };
+  const pair = { old_str: { type: "string" }, new_str: { type: "string" } };
   const properties: Record<string, Schema> = {
     action: {
       type: "string",
-      enum: actions,
-      description: `One of ${listed}. Omitting it means 'publish'. **Calls** in the description says what each one does and takes, except as noted here.`,
+      enum: ["publish", "quickstart", "read", "list", "open", "delete"],
+      description: "Publish when omitted.",
     },
-    file_path: {
-      type: "string",
-      description:
-        "publish: the absolute path of the page file (.html, or .md only when a skill says so). A short, distinctive basename also serves as the title when nothing else gives one.",
-    },
-    description: { type: "string", description: "publish: one sentence explaining the page." },
-    title: {
-      type: "string",
-      description:
-        "publish: the fallback title for an HTML page whose file has no <title>. It is a name, not a summary, and Claude keeps it the same across redeploys.",
-    },
-    icon: {
-      type: "string",
-      description:
-        "publish: one short generic word for the page's tab icon, such as chart, calendar, recipe, code or map: a plain signifier, never a product or brand name. Include it on every page's first publish and omit it on a redeploy so the artifact keeps its icon, passing a new one only when the person asks.",
-    },
+    file_path: string("Absolute path of the page file."),
+    description: string("One sentence explaining the page."),
+    title: string("Fallback name when the page has no <title>."),
+    icon: string("One generic word for the tab icon, on a first publish."),
     files: {
-      anyOf: [filesMap, filesList],
-      description:
-        'publish: supporting files, as {"published/path": "/absolute/source/path"} (or {"from": "/absolute/source/path", "contentType": "..."}); null removes one. A list of paths relative to the page\'s folder publishes each file at that same path.',
+      anyOf: [{ type: "object", additionalProperties: { anyOf: pathOrFrom } }, listed],
+      description: '{"published/path": "/absolute/source"}; null removes one.',
     },
     edits: {
       type: "array",
       minItems: 1,
       maxItems: MAX_EDITS,
-      items: {
-        type: "object",
-        properties: {
-          old_str: { type: "string", description: "Text copied exactly from the file; must occur once." },
-          new_str: { type: "string", description: "Its replacement; empty deletes old_str." },
-        },
-        required: ["old_str", "new_str"],
-        additionalProperties: false,
-      },
-      description:
-        "publish: small changes Claude makes to the file at `file_path` in this same call, instead of editing the file with Edit and publishing after. Use it on a page (add `url` to update an artifact from another file or a later session). Not allowed with `files`. Each old_str is text copied exactly from the file as it now stands and must occur in it exactly once; new_str takes its place (empty deletes it). The edits apply in order, all or none: the file is published with them and then saved with them on disk, so it stays the source for later changes; on a miss nothing is changed or published, and the result says which edit failed and why.",
+      items: { type: "object", properties: pair, required: ["old_str", "new_str"], additionalProperties: false },
+      description: "Exact old_str/new_str pairs applied to file_path, then published and saved.",
     },
-    url: {
-      type: "string",
-      description: "publish: an existing artifact's link to update. read, open and delete: the artifact's link.",
-    },
-    intent: {
-      type: "string",
-      enum: ["document", "slides", "design", "other"],
-      description:
-        "quickstart: what is being made: 'document' (a report, memo or other text to read), 'slides' (a deck or one slide), 'design' (a visual design or prototype), 'other' (anything else, or unsure). Each is made as a plain page.",
-    },
+    url: string("An artifact's link (from list)."),
+    intent: { type: "string", enum: ["document", "slides", "design", "other"], description: "What is being made." },
   };
-  if (compact) {
-    const short: Record<string, string> = {
-      action: "Publish when omitted.",
-      file_path: "Absolute path of the page file.",
-      description: "One sentence explaining the page.",
-      title: "Fallback name when the page has no <title>.",
-      icon: "One generic word for the tab icon, on a first publish.",
-      files: '{"published/path": "/absolute/source"}; null removes one.',
-      edits: "Exact old_str/new_str pairs applied to file_path, then published and saved.",
-      url: "An artifact's link (from list).",
-      intent: "What is being made.",
-    };
-    for (const [name, description] of Object.entries(short)) properties[name]!.description = description;
-    const pair = (properties.edits!.items as { properties: Record<string, Schema> }).properties;
-    pair.old_str = { type: "string" };
-    pair.new_str = { type: "string" };
-    mapItems[0] = { type: "string" };
-    fromSource.properties = { from: { type: "string" }, contentType: { type: "string" } };
-  }
   return { type: "object", properties, additionalProperties: false };
 }
 
@@ -200,7 +139,7 @@ export function tool(client: string | undefined, setting: Setting): Tool {
     return {
       name: "Artifact",
       description: fill(CODEX_LEAD),
-      inputSchema: { description: fill(CODEX_REST), ...schema(true) },
+      inputSchema: { description: fill(CODEX_REST), ...compactSchema() },
     };
   }
   const paragraphs = describe(setting).split("\n\n");
@@ -214,9 +153,8 @@ export function tool(client: string | undefined, setting: Setting): Tool {
   };
 }
 
-const upFront = ([first, ...more]: string[]) =>
-  [first + FIRST_CALL, ...more].join("\n\n") +
-  "\n\nThe rest of this description is the `description` of the tool's input schema.";
+const upFront = (paragraphs: string[]) =>
+  paragraphs.join("\n\n") + "\n\nThe rest of this description is the `description` of the tool's input schema.";
 
 export const isCodex = (client: string | undefined) => (client ?? "").toLowerCase().includes("codex");
 
@@ -261,16 +199,14 @@ export function checkTool(): Tool {
   };
 }
 
-/** A short error for a parameter this tool doesn't take, or null. */
+/** A short error for a parameter this tool doesn't take, or null. The Artifact tool takes every
+ * parameter of Claude Code's; the server answers the ones only claude.ai can act on. */
 export function unknownParameter(args: Record<string, unknown>, check = false): string | null {
   const known = Object.keys((check ? checkSchema() : schema()).properties);
   for (const key of Object.keys(args)) {
     if (known.includes(key)) continue;
-    const instead = check ? undefined : INSTEAD[key];
     const takes = known.map((name) => `\`${name}\``).join(", ");
-    return (
-      `Unknown parameter \`${key}\`` + (instead ? `: ${instead}` : "") + `. This tool takes ${takes}. Nothing was done.`
-    );
+    return `Unknown parameter \`${key}\`. This tool takes ${takes}. Nothing was done.`;
   }
   return null;
 }
