@@ -21,13 +21,12 @@ PREFS = tomllib.loads((SKILL_DIR / "preferences.toml").read_text())
 CONFIG_PATH = Path(os.environ.get("DJ_FETCH_CONFIG", "~/.config/dj-fetch/config.toml")).expanduser()
 PACE_DB = Path("~/.local/share/dj-fetch/pace.sqlite").expanduser()
 AUDIO_EXTS = {"mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "alac", "ogg", "opus"}
-TERMINAL = ("done", "have", "review", "missing", "gate")
+TERMINAL = ("done", "have", "review", "missing", "gate", "skipped")
 ACTIVE = ("pending", "sc", "search", "searching", "transfer")
 
 STOP = {"the", "a", "an", "and", "of", "feat", "ft", "featuring", "with", "vs", "x"}
 VERSION_WORDS = re.compile(r"\b(remix|bootleg|mashup|edit|flip|vip|remake|rework|refix|dub|mix|version|rerub|redrum|cover|extended|acapella|acappella|instrumental)\b", re.I)
 VERSION_SET = {"extended", "remix", "bootleg", "mashup", "edit", "flip", "vip", "remake", "rework", "refix", "dub", "mix", "version", "rerub", "redrum", "cover"}
-NOT_NAMES = {"acapella", "acappella", "instrumental", "vocal", "dub", "intro", "outro", "clean", "dirty", "live"}
 GENERIC_MIX = {"extended", "original", "mix", "club", "main", "version", "full", "length", "radio", "edit", "remix", "vocal"}
 TRAILING_FEAT = re.compile(r"\s+(?:feat\.?|ft\.?|featuring)\s+.*$", re.I)
 FEAT = re.compile(r"\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+[^\)\]]*[\)\]]", re.I)
@@ -814,34 +813,13 @@ class Runner:
                 self.browses += 1
             peer = self.peer_info.get(user) or {"username": user, "hasFreeUploadSlot": None, "queueLength": None, "uploadSpeed": None}
             new = []
-            for dobj in dirs if isinstance(dirs, list) else [dirs]:
+            if isinstance(dirs, dict):  # browse returns {"directories": [...], "lockedDirectories": [...]}
+                dirs = dirs.get("directories") or [dirs]
+            for dobj in dirs:
                 new += self.pool_add(peer, dobj.get("files") or [], dobj.get("name"))
             gained = self.match_entries(new)
             if gained or kind == "browse":
                 self.log(f"harvest   {kind} {user}: {len(new)} files, {len(gained)} tracks gained candidates")
-
-    def plan_seeds(self):
-        """Artists or remixers with several tracks in the list get one broad search that serves them all."""
-        counts = collections.Counter()
-        for r in self.q("select artist, title from tracks where status in ('pending','search','sc')"):
-            req = Request(r["artist"], r["title"])
-            for k in {" ".join(tokens(req.primary)), " ".join(req.remixer_tokens)}:
-                if len(k) >= 4 and not set(k.split()) <= NOT_NAMES:
-                    counts[k] += 1
-        done = {r["query"] for r in self.q("select query from seeds")}
-        return collections.deque(k for k, n in counts.most_common() if n >= 3 and k not in done)
-
-    def handle_seed(self, query, sid):
-        responses = self.slsk.responses(sid)
-        self.slsk.delete_search(sid)
-        new = []
-        for resp in responses:
-            peer = {k: resp.get(k) for k in ("username", "hasFreeUploadSlot", "queueLength", "uploadSpeed")}
-            self.peer_info[resp["username"]] = peer
-            new += self.pool_add(peer, resp.get("files") or [])
-        gained = self.match_entries(new)
-        self.q("insert or replace into seeds values (?,?,?,?)", (query, len(new), len(gained), time.time()))
-        self.log(f"seeded    [{query}]: {len(new)} files, {len(gained)} tracks gained candidates")
 
     def place_rejected(self, src):
         dest = self.dir / "_rejected" / src.name
@@ -862,6 +840,11 @@ class Runner:
                 return
             for row in rows:
                 req = self.req_of(row)
+                ignored = next((w for w in PREFS["versions"].get("ignore", []) if has_phrase(norm(row["title"]), w)), None)
+                if ignored:
+                    self.status(row["id"], "skipped", note=f"{ignored}: ignored by preferences")
+                    self.log(f"skipped   {row['artist']} - {row['title']} ({ignored})")
+                    continue
                 try:
                     target = resolve_beatport(req, json.loads(row["row_json"]))
                 except Exception as e:
@@ -1114,9 +1097,6 @@ class Runner:
             sc_thread = threading.Thread(target=self.soundcloud_worker, args=(resolver,), daemon=True)
             sc_thread.start()
         pace, inflight = Pace(), {}
-        self.seeds = self.plan_seeds() if not getattr(self.args, "no_seed", False) else collections.deque()
-        if self.seeds:
-            self.log(f"seed searches planned: {', '.join(self.seeds)}")
         threading.Thread(target=self.harvester, daemon=True).start()
         last_report = 0
         while True:
@@ -1146,14 +1126,7 @@ class Runner:
             st = self.slsk.search_state(sid) or {}
             if st.get("isComplete") or "Completed" in (st.get("state") or "") or time.time() - t0 > 90:
                 del inflight[sid]
-                if tid is None:
-                    self.handle_seed(query, sid)
-                else:
-                    self.handle_results(self.q("select * from tracks where id=?", (tid,))[0], query, sid)
-        while self.seeds and len(inflight) < self.prefs["max_inflight_searches"] and pace.take():
-            query = self.seeds.popleft()
-            inflight[self.slsk.start_search(query)] = (None, query, time.time())
-            self.log(f"seeding   [{query}]")
+                self.handle_results(self.q("select * from tracks where id=?", (tid,))[0], query, sid)
         while len(inflight) < self.prefs["max_inflight_searches"]:
             rows = self.q("select * from tracks where status='search' order by pos limit 1")
             if not rows:
@@ -1199,7 +1172,7 @@ def write_report(db, list_dir):
              ", ".join(f"**{counts.get(s, 0)}** {s}" for s in ("done", "have", "review", "gate", "missing") if counts.get(s)) +
              (f", {sum(counts.get(s, 0) for s in ACTIVE)} still in progress" if any(counts.get(s) for s in ACTIVE) else ""), ""]
     sections = [("review", "Needs a listen (in _review/)"), ("gate", "Free downloads behind a gate"),
-                ("missing", "Not found"), ("done", "Downloaded"), ("have", "Already in your library")]
+                ("missing", "Not found"), ("done", "Downloaded"), ("have", "Already in your library"), ("skipped", "Skipped")]
     for status, heading in sections:
         sel = [r for r in rows if r["status"] == status]
         if not sel:
@@ -1382,7 +1355,6 @@ def main():
     r.add_argument("--adopt", action="append", help="folder of earlier downloads: files matching a track (right name and length) are moved into the list; repeatable")
     r.add_argument("--no-have", action="store_true", help="don't skip tracks found in library folders")
     r.add_argument("--no-soundcloud", action="store_true")
-    r.add_argument("--no-seed", action="store_true", help="skip the broad artist searches")
     r.add_argument("--limit-minutes", type=float, default=0, help="stop after this long; rerun to resume")
     r.set_defaults(fn=cmd_run)
     s = sub.add_parser("status", help="counts and active transfers; refreshes report.md")

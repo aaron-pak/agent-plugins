@@ -16,6 +16,8 @@ length_tolerance_seconds = 4
 # Files off by more than the tolerance but within this window are kept in
 # _review/ as a fallback while other copies are tried.
 review_tolerance_seconds = 12
+# Tracks whose title has one of these are skipped entirely.
+ignore = ["acapella", "acappella"]
 # Words that mark a different version than the one asked for. A file whose name
 # has one of these, when the request doesn't, is rejected.
 unrequested_markers = [
