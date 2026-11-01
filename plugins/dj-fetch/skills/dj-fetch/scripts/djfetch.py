@@ -599,7 +599,52 @@ def sc_matches(req, info):
     return any(set(tokens(a)) <= words for a in req.artists) or bool(req.remixer_tokens)
 
 
-GATE_HOSTS = re.compile(r"https?://(?:www\.)?(?:hypeddit\.com|toneden\.io|fanlink\.to|ffm\.to|lnk\.to|bit\.ly|gate\.fm|edmdisc\.com|smarturl\.it|feature\.fm|pumpyoursound|show\.co|dl\.)[^\s\"')]*", re.I)
+GATE_HOSTS = re.compile(r"https?://(?:[\w-]+\.)?(?:hypeddit\.com|toneden\.io|droploud\.com|fanlink\.(?:to|tv)|ffm\.to|lnk\.to|bit\.ly|gate\.fm|edmdisc\.com|smarturl\.it|feature\.fm|pumpyoursound\.com|show\.co|push\.fm|hive\.co|bandcamp\.com|linktr\.ee|unlock\.\w+)[^\s\"')]*", re.I)
+FILE_HOSTS = re.compile(r"https?://(?:www\.)?(?:dropbox\.com|dl\.dropboxusercontent\.com|drive\.google\.com|docs\.google\.com)/", re.I)
+
+
+def sc_buy_link(page_url):
+    """The track's Buy button (purchase_url, purchase_title). yt-dlp doesn't expose it; the page data does."""
+    from curl_cffi import requests
+    html = requests.get(page_url, impersonate="chrome", timeout=20).text
+    m = re.search(r"window\.__sc_hydration\s*=\s*(\[.*?\]);</script>", html, re.S)
+    if not m:
+        return None, None
+    sound = next((x.get("data") or {} for x in json.loads(m.group(1)) if x.get("hydratable") == "sound"), {})
+    return sound.get("purchase_url"), sound.get("purchase_title")
+
+
+def fetch_file_host(url, dest_dir):
+    """Download a free file shared on Dropbox or Google Drive; unzip if needed. Returns an audio path or None."""
+    import zipfile
+    from curl_cffi import requests
+    if "dropbox" in url:
+        url = re.sub(r"([?&])dl=0", r"\1dl=1", url) if "dl=0" in url else url + ("&" if "?" in url else "?") + "dl=1"
+    elif "google.com" in url:
+        m = re.search(r"/d/([\w-]+)|[?&]id=([\w-]+)", url)
+        if not m:
+            return None
+        url = f"https://drive.usercontent.google.com/download?id={m.group(1) or m.group(2)}&export=download&confirm=t"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    r = requests.get(url, impersonate="chrome", timeout=300, allow_redirects=True)
+    if r.status_code != 200 or len(r.content) < 500_000:
+        return None
+    cd = r.headers.get("content-disposition", "")
+    name = (re.search(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", cd) or [None, "download.bin"])[1]
+    path = dest_dir / safe_name(urllib.parse.unquote(name))
+    path.write_bytes(r.content)
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as z:
+            audio = [i for i in z.infolist() if i.filename.rpartition(".")[2].lower() in AUDIO_EXTS and not i.filename.startswith("__MACOSX")]
+            if not audio:
+                path.unlink()
+                return None
+            best = max(audio, key=lambda i: i.file_size)
+            out = dest_dir / safe_name(file_basename(best.filename))
+            out.write_bytes(z.read(best))
+        path.unlink()
+        path = out
+    return path if probe(path) else None
 
 
 def soundcloud_fetch(req, row, dest_dir, cfg):
@@ -646,6 +691,20 @@ def soundcloud_fetch(req, row, dest_dir, cfg):
             except OSError:
                 pass
             return "done", files[0], {"title": info.get("title"), "url": info.get("webpage_url"), **pinfo}
+    gate = None
+    for info in candidates:
+        try:
+            buy_url, buy_title = sc_buy_link(info["webpage_url"])
+        except Exception:
+            buy_url, buy_title = None, None
+        if buy_url and FILE_HOSTS.match(buy_url):
+            path = fetch_file_host(buy_url, dest_dir / ".incoming-sc")
+            if path and (pinfo := probe(path)):
+                return "done", path, {"title": info.get("title"), "url": buy_url, **pinfo}
+        if buy_url and not gate and (GATE_HOSTS.match(buy_url) or re.search(r"free|download|\bdl\b", buy_title or "", re.I)):
+            gate = buy_url
+    if gate:
+        return "gate", gate, None
     for info in candidates:
         m = GATE_HOSTS.search(info.get("description") or "")
         if m:
