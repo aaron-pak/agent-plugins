@@ -10,6 +10,7 @@ Current plugins:
 - `eli5`
 - `frontend-skill`
 - `implement-with-notes`
+- `learn-how-i-write` (Claude Duet's skill, adapted, see [Credits](#credits))
 - `mac-computer-use` (Grok Bot only, see [Grok Bot](#grok-bot))
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
