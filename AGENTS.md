@@ -14,7 +14,7 @@ This repository is a plugin marketplace that Claude Code and Codex both install 
 ## Adding or changing a plugin
 
 1. Create `plugins/<name>/plugin.json` and `skills/<skill>/SKILL.md`. Each skill's frontmatter `name` matches its directory, and every skill has a `description`.
-2. Add an entry to `.claude-plugin/marketplace.json` with the same name and description as `plugin.json`, and source `./plugins/<name>`.
+2. Add an entry to `.claude-plugin/marketplace.json` with the same name and description as `plugin.json`, source `./plugins/<name>`, and `"strict": false`. A plugin without `.claude-plugin/plugin.json` gets its Claude Code manifest from that entry: the CLI loads it either way, but the Claude desktop app's marketplace sync skips it unless `strict` is false. A mod with its own `.claude-plugin/plugin.json` leaves `strict` out.
 3. Add the same name and description to `.cursor-plugin/marketplace.json` with source `plugins/<name>` (no leading `./`), unless the description says Claude Code only. See Layout.
 4. Add the plugin to the "Current plugins" list in README.md, one line each in alphabetical order.
 5. Leave `version` unset in every manifest. Claude Code uses the Git commit as the version, and Codex pulls new commits when the marketplace is upgraded.
