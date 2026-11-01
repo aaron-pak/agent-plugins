@@ -1,0 +1,47 @@
+# Aaron's DJ track preferences. djfetch.py reads this file; SKILL.md describes
+# the behavior around it. Edit here to change how tracks are chosen.
+
+[formats]
+# Best first. Anything not listed is rejected.
+order = ["aiff", "aif", "wav", "flac", "mp3", "m4a"]
+lossless = ["aiff", "aif", "wav", "flac"]
+# Lossy files below this bitrate are rejected.
+min_lossy_kbps = 256
+
+[versions]
+# A file counts as the right version when its length is within this many
+# seconds of the Beatport target (the extended mix, else the original, else the
+# only release).
+length_tolerance_seconds = 4
+# Files off by more than the tolerance but within this window are kept in
+# _review/ as a fallback while other copies are tried.
+review_tolerance_seconds = 12
+# Words that mark a different version than the one asked for. A file whose name
+# has one of these, when the request doesn't, is rejected.
+unrequested_markers = [
+  "remix", "bootleg", "mashup", "flip", "vip", "rework", "remake", "refix",
+  "dub", "instrumental", "acapella", "acappella", "radio", "intro", "outro",
+  "clean", "dirty", "short", "quick hit", "live", "edit", "redrum", "cover",
+]
+# Names that look like set recordings, radio shows or stream rips.
+rip_markers = [
+  "asot", "a state of trance", "radio rip", "webrip", "web rip", "live set",
+  "dj set", "set rip", "ripped", "siriusxm", "tracklist", "premiere rip",
+  "mix cut", "radio show", "tune of the week", "essential new tune",
+  "hottest record", "track of the week", "essential mix", "boiler room",
+]
+
+[soulseek]
+# Search pacing shared by every djfetch process on this Mac.
+searches_per_window = 25
+window_seconds = 220
+max_inflight_searches = 2
+max_active_transfers = 8
+max_peers_per_track = 10
+# Give up on a peer whose queue hasn't started our file in this long.
+remote_queue_timeout_minutes = 6
+# Give up on a transfer that stopped moving.
+stalled_timeout_minutes = 3
+
+[beatport]
+request_interval_seconds = 1.0

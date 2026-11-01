@@ -6,6 +6,7 @@ Current plugins:
 
 - `artifact-design` (`artifact-design`, `artifact-diagramming` and, in Codex, `dataviz`, plus an `artifact` MCP server)
 - `deeper-task` (Felix Rieseberg's prompt, see [Credits](#credits))
+- `dj-fetch` (needs `uv` and `ffprobe`; `setup_slskd.py` installs slskd)
 - `eli5`
 - `frontend-skill`
 - `implement-with-notes`

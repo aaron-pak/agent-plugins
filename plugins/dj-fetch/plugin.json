@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "dj-fetch",
+  "description": "Get DJ-ready tracks from a tracklist: Beatport decides the right version and length, free SoundCloud downloads cover bootlegs and edits, and slskd fetches the rest from Soulseek with paced searches and peer fallback.",
+  "author": {
+    "name": "Aaron Pak"
+  }
+}
