@@ -374,6 +374,10 @@ def probe(path):
 
 # ---------------------------------------------------------------- slskd
 
+class SlskdUnavailable(RuntimeError):
+    pass
+
+
 class Slskd:
     def __init__(self, url, key):
         self.url, self.key = url.rstrip("/"), key
@@ -382,14 +386,24 @@ class Slskd:
         req = urllib.request.Request(self.url + "/api/v0" + path, method=method,
                                      data=None if body is None else json.dumps(body).encode(),
                                      headers={"X-API-Key": self.key, "Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                data = r.read()
-                return json.loads(data) if data else None
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return None
-            raise RuntimeError(f"slskd {method} {path}: {e.code} {e.read().decode(errors='replace')[:300]}") from None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    data = r.read()
+                    return json.loads(data) if data else None
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return None
+                if e.code >= 500 and attempt < 3 and method == "GET":
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"slskd {method} {path}: {e.code} {e.read().decode(errors='replace')[:300]}") from None
+            except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+                # Connection resets happen when slskd is busy; GETs are safe to repeat, writes are not.
+                if attempt < 3 and method == "GET":
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise SlskdUnavailable(f"slskd {method} {path}: {e}") from None
 
     def server(self):
         return self.call("GET", "/server")
@@ -965,41 +979,12 @@ class Runner:
         pace, inflight = Pace(), {}
         last_report = 0
         while True:
-            # searches: finish completed ones, start new ones within the pacing budget
-            for sid, (tid, query, t0) in list(inflight.items()):
-                st = self.slsk.search_state(sid) or {}
-                if st.get("isComplete") or "Completed" in (st.get("state") or "") or time.time() - t0 > 90:
-                    del inflight[sid]
-                    self.handle_results(self.q("select * from tracks where id=?", (tid,))[0], query, sid)
-            while len(inflight) < self.prefs["max_inflight_searches"]:
-                rows = self.q("select * from tracks where status='search' order by pos limit 1")
-                if not rows:
-                    break
-                row = rows[0]
-                queries = self.req_of(row).queries()
-                if row["qidx"] >= len(queries):
-                    if self.q("select 1 from candidates where track=? and ok=1 limit 1", (row["id"],)) and self.next_candidate(row["id"]):
-                        self.status(row["id"], "transfer")
-                    else:
-                        self.finish_unfound(row, f"no usable copy in {len(queries)} searches")
-                    continue
-                if not pace.take():
-                    break
-                query = queries[row["qidx"]]
-                try:
-                    sid = self.slsk.start_search(query)
-                except Exception as e:
-                    self.log(f"search error: {e}")
-                    break
-                inflight[sid] = (row["id"], query, time.time())
-                self.status(row["id"], "searching")
-            # transfers
-            self.poll_transfers(active)
-            for row in self.q("select * from tracks where status='transfer' order by pos"):
-                if len(active) >= self.prefs["max_active_transfers"]:
-                    break
-                if row["id"] not in active:
-                    self.start_transfer(row, active)
+            try:
+                self.step(pace, inflight, active)
+            except SlskdUnavailable as e:
+                self.log(f"slskd unavailable, retrying in 15s: {e}")
+                time.sleep(15)
+                continue
             if time.time() - last_report > 60:
                 write_report(self.db, self.dir)
                 last_report = time.time()
@@ -1012,6 +997,43 @@ class Runner:
             time.sleep(2)
         write_report(self.db, self.dir)
         self.log(f"finished. report: {self.dir / 'report.md'}")
+
+    def step(self, pace, inflight, active):
+        # searches: finish completed ones, start new ones within the pacing budget
+        for sid, (tid, query, t0) in list(inflight.items()):
+            st = self.slsk.search_state(sid) or {}
+            if st.get("isComplete") or "Completed" in (st.get("state") or "") or time.time() - t0 > 90:
+                del inflight[sid]
+                self.handle_results(self.q("select * from tracks where id=?", (tid,))[0], query, sid)
+        while len(inflight) < self.prefs["max_inflight_searches"]:
+            rows = self.q("select * from tracks where status='search' order by pos limit 1")
+            if not rows:
+                break
+            row = rows[0]
+            queries = self.req_of(row).queries()
+            if row["qidx"] >= len(queries):
+                if self.q("select 1 from candidates where track=? and ok=1 limit 1", (row["id"],)) and self.next_candidate(row["id"]):
+                    self.status(row["id"], "transfer")
+                else:
+                    self.finish_unfound(row, f"no usable copy in {len(queries)} searches")
+                continue
+            if not pace.take():
+                break
+            query = queries[row["qidx"]]
+            try:
+                sid = self.slsk.start_search(query)
+            except Exception as e:
+                self.log(f"search error: {e}")
+                break
+            inflight[sid] = (row["id"], query, time.time())
+            self.status(row["id"], "searching")
+        # transfers
+        self.poll_transfers(active)
+        for row in self.q("select * from tracks where status='transfer' order by pos"):
+            if len(active) >= self.prefs["max_active_transfers"]:
+                break
+            if row["id"] not in active:
+                self.start_transfer(row, active)
 
 
 # ---------------------------------------------------------------- reporting
