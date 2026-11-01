@@ -125,8 +125,14 @@ def check_plugin(entry):
         if (plugin_dir / "plugin.json").exists():
             error(where, "has .claude-plugin/plugin.json; plugins carry only the root plugin.json")
         else:
+            if "strict" in entry:
+                error(".claude-plugin/marketplace.json", f"entry {name!r} sets strict; its .claude-plugin/plugin.json is the manifest")
             check_mod(entry, plugin_dir, where)
             return
+    # Without a .claude-plugin/plugin.json the entry is the Claude Code manifest. The Claude CLI loads
+    # such a plugin either way, but the desktop app's marketplace sync skips it unless strict is false.
+    if entry.get("strict") is not False:
+        error(".claude-plugin/marketplace.json", f"entry {name!r} needs \"strict\": false (it has no .claude-plugin/plugin.json)")
     hooks = plugin_dir / "hooks" / "hooks.json"
     if hooks.is_file():
         config = load_json(hooks)
