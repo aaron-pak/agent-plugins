@@ -111,3 +111,5 @@ The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-
 `frontend-skill` is OpenAI's frontend design skill, originally installed through Codex's skill installer, under the Apache 2.0 license in its directory.
 
 `show-me` is HumanLayer's visual explanation skill, under the MIT license in its directory.
+
+`learn-how-i-write` starts from the `learn-how-i-write` skill in Anthropic's Claude Duet (its default skills plugin, version 0.8.63), copied verbatim in the commit that adds the plugin. It's adapted to work outside Claude Duet, to learn from files and pasted text as well as connected mail, Slack and Drive, to handle long-form writing such as papers, and to restyle a piece in a learned voice; [`UPSTREAM.md`](plugins/learn-how-i-write/UPSTREAM.md) lists every change.

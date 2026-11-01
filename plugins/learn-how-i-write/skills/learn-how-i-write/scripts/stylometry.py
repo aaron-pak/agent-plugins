@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
-"""Stylometry for /setup-writing-style: filter writing samples, compute per-register
-style stats, and pick representative-but-diverse exemplars.
+"""Stylometry for learn-how-i-write: filter writing samples, compute per-register
+style stats, pick representative-but-diverse exemplars, compare two analyses,
+and check that a restyled text kept its content.
 
-Pure standard library — no numpy, no sklearn (the Cowork VM ships neither
-reliably). Input is a directory with one subdirectory per register
-(external_email/ internal_msg/ dm/ doc/), one sample per .txt file.
+Pure standard library — no numpy, no sklearn, no network. Input is a directory
+with one subdirectory per register (email/ slack/ dm/ doc/ paper/ post/ ...),
+one sample per .txt file.
 
 Usage:
     python3 stylometry.py SAMPLES_DIR [--out analysis.json]
         [--exemplars exemplars.md] [--min-words 30] [--chat-min-words 10]
         [--per-register 5]
+    python3 stylometry.py --compare REFERENCE.json TARGET.json
+        [--ref-register R] [--target-register T]
+    python3 stylometry.py --fidelity ORIGINAL.txt REWRITE.txt
+    python3 stylometry.py --selftest
+
+Every register gets the base stats; registers that aren't chat also get a
+"longform" block (paragraph shape, hedging and stance, first person, passive
+voice, sentence openers and connectors, citations, quotation, vocabulary
+density), which is what papers, reports and long docs are judged on.
+--compare prints the reference and the target side by side and marks the
+metrics that differ most. --fidelity lists numbers, citations, quotations,
+links and acronyms that a rewrite dropped or added, and exits 1 when any
+number, citation, quotation, link or equation changed.
 
 Registers named dm / internal_msg / slack* / chat* use --chat-min-words, and
 pool files that share a "<bundle>__" filename prefix (the
@@ -61,6 +75,13 @@ EMOJI = re.compile(
     "[\U0001f300-\U0001faff\U00002600-\U000027bf]|:[a-z_]+:|[:;]-?[)(DPp]"
 )
 SENT_SPLIT = re.compile(r"(?<=[.!?])\s+|\n{2,}")
+# Abbreviations whose period isn't a sentence end ("et al. (2020)", "e.g. this").
+# Their final period is masked before splitting and restored after.
+ABBREV = re.compile(
+    r"\b(?:e\.g|i\.e|et al|etc|cf|vs|viz|approx|figs?|eqs?|sec|ch|vol|pp|dr|mr|mrs|ms|prof|jr|sr)\.",
+    re.I,
+)
+ABBREV_MASK = "\u2024"
 # Unicode letters (no digits/underscore) with optional internal apostrophes —
 # works for non-Latin scripts, not just ASCII.
 WORD = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)*")
@@ -96,7 +117,12 @@ def tokenize(text):
 
 
 def sentences(text):
-    return [s.strip() for s in SENT_SPLIT.split(text) if WORD.search(s or "")]
+    masked = ABBREV.sub(lambda m: m.group(0)[:-1] + ABBREV_MASK, text)
+    return [
+        s.strip().replace(ABBREV_MASK, ".")
+        for s in SENT_SPLIT.split(masked)
+        if WORD.search(s or "")
+    ]
 
 
 def clean_sample(raw):
@@ -249,6 +275,256 @@ def register_stats(samples):
         },
         "frequent_phrases": common_grams,
     }
+
+
+# Long-form measures. Each is a rate, so a short reference and a long target
+# compare fairly. Lists are deliberately small and English: they find habits,
+# not a full taxonomy, and non-English corpora get non_english_suspected.
+HEDGES = re.compile(
+    r"\b(?:may|might|could|perhaps|possibly|probably|likely|unlikely|apparently|"
+    r"arguably|seemingly|somewhat|relatively|potentially|presumably|"
+    r"suggests?|suggested|indicates?|indicated|appears?|appeared|seems?|seemed|"
+    r"tends? to|to some (?:extent|degree)|in part|it is possible)\b",
+    re.I,
+)
+BOOSTERS = re.compile(
+    r"\b(?:clearly|obviously|certainly|undoubtedly|definitely|indeed|of course|"
+    r"surely|plainly|evidently|demonstrates?|demonstrated|proves?|proved|"
+    r"must|always|without doubt|it is clear)\b",
+    re.I,
+)
+FIRST_SING = {"i", "me", "my", "mine", "myself"}
+FIRST_PLUR = {"we", "us", "our", "ours", "ourselves"}
+SECOND = {"you", "your", "yours", "yourself", "yourselves"}
+# "was/were/is ... + participle", allowing one adverb between. An approximation:
+# it misses irregular participles and catches a few adjectives.
+PASSIVE = re.compile(
+    r"\b(?:am|is|are|was|were|be|been|being)(?:\s+not)?\s+(?:\w+ly\s+)?"
+    r"(?!(?:often|even|open|when|then|seven|eleven|garden|hidden)\b)\w{2,}(?:ed|en|wn)\b",
+    re.I,
+)
+NOMINAL = re.compile(r"^\w{3,}(?:tion|sion|ment|ness|ity|ance|ence|ism)s?$")
+CONNECTORS = (
+    "however moreover furthermore additionally thus therefore hence consequently "
+    "indeed notably importantly overall ultimately finally first second third "
+    "similarly likewise conversely instead meanwhile nevertheless nonetheless "
+    "still yet also accordingly specifically"
+).split() + [
+    "in addition", "in contrast", "for example", "for instance", "as a result",
+    "in other words", "that said", "on the other hand", "in particular",
+    "taken together", "in short", "to be sure", "at the same time",
+]
+CONNECTOR_START = re.compile(
+    r"^(" + "|".join(sorted((re.escape(c) for c in CONNECTORS), key=len, reverse=True)) + r")\b",
+    re.I,
+)
+# Citation shapes: (Smith, 2020), (Smith & Lee 2020; Wu et al., 2019a, p. 4),
+# Smith (2020), Smith et al. (2020), [3], [3, 7], [3–5].
+CITE_PAREN = re.compile(
+    r"\((?:see |e\.g\.,? |cf\. )?[A-Z][\w'’-]+(?:\s+(?:et al\.|and|&)\s*[A-Z]?[\w'’-]*)?,?\s+\d{4}[a-z]?"
+    r"(?:[^()]{0,80}?)\)"
+)
+CITE_NARR = re.compile(r"\b[A-Z][\w'’-]+(?:\s+(?:et al\.|and|&)\s+[A-Z][\w'’-]+|\s+et al\.)?\s+\(\d{4}[a-z]?(?:,[^()]{0,20})?\)")
+CITE_NUM = re.compile(r"\[\d+(?:\s*[,–-]\s*\d+)*\]")
+QUOTE = re.compile(r"[\"“]([^\"“”\n]{3,400})[\"”]")
+
+
+def _pct(values, q):
+    if not values:
+        return 0
+    vals = sorted(values)
+    return vals[min(len(vals) - 1, int(round(q * (len(vals) - 1))))]
+
+
+def mattr(words, window=100):
+    """Moving-average type-token ratio: vocabulary variety that doesn't fall
+    just because a text is longer, unlike a plain type-token ratio."""
+    if not words:
+        return 0.0
+    if len(words) <= window:
+        return round(len(set(words)) / len(words), 3)
+    counts = Counter(words[:window])
+    total = len(counts) / window
+    for i in range(window, len(words)):
+        counts[words[i]] += 1
+        old = words[i - window]
+        counts[old] -= 1
+        if not counts[old]:
+            del counts[old]
+        total += len(counts) / window
+    return round(total / (len(words) - window + 1), 3)
+
+
+def paragraphs(text):
+    return [p.strip() for p in re.split(r"\n\s*\n", text) if WORD.search(p)]
+
+
+def longform_stats(samples):
+    """Measures that matter most in long, considered writing: papers, essays,
+    reports, docs. Computed over the register's pooled text."""
+    all_text = "\n\n".join(s["text"] for s in samples)
+    words = [w for s in samples for w in s["words"]]
+    n_words = len(words)
+    sents = [x for s in samples for x in s["sents"]]
+    n_sents = len(sents)
+    sent_lens = [len(tokenize(x)) for x in sents] or [0]
+    paras = [p for s in samples for p in paragraphs(s["text"])]
+    para_words = [len(tokenize(p)) for p in paras] or [0]
+    para_sents = [len(sentences(p)) for p in paras] or [0]
+    starts = Counter()
+    first_words = Counter()
+    for x in sents:
+        m = CONNECTOR_START.match(x)
+        if m:
+            starts[m.group(1).lower()] += 1
+        toks = tokenize(x)
+        if toks:
+            first_words[toks[0]] += 1
+    wc = Counter(words)
+    return {
+        "paragraph_words_median": statistics.median(para_words),
+        "paragraph_sentences_median": statistics.median(para_sents),
+        "pct_one_sentence_paragraphs": rate(sum(1 for n in para_sents if n == 1), len(paras), 100),
+        "sentence_len_p10": _pct(sent_lens, 0.1),
+        "sentence_len_p90": _pct(sent_lens, 0.9),
+        "pct_sentences_over_30_words": rate(sum(1 for n in sent_lens if n > 30), n_sents, 100),
+        "pct_sentences_under_10_words": rate(sum(1 for n in sent_lens if n < 10), n_sents, 100),
+        "mean_word_length": round(sum(len(w) for w in words) / n_words, 2) if n_words else 0.0,
+        "vocabulary_variety_mattr": mattr(words),
+        "nominalizations_per_1000_words": rate(sum(1 for w in words if NOMINAL.match(w)), n_words),
+        "hedges_per_1000_words": rate(len(HEDGES.findall(all_text)), n_words),
+        "boosters_per_1000_words": rate(len(BOOSTERS.findall(all_text)), n_words),
+        "first_person_singular_per_1000_words": rate(sum(wc[w] for w in FIRST_SING), n_words),
+        "first_person_plural_per_1000_words": rate(sum(wc[w] for w in FIRST_PLUR), n_words),
+        "second_person_per_1000_words": rate(sum(wc[w] for w in SECOND), n_words),
+        "passive_per_100_sentences_approx": rate(len(PASSIVE.findall(all_text)), n_sents, 100),
+        "connector_starts_per_100_sentences": rate(sum(starts.values()), n_sents, 100),
+        "top_sentence_connectors": {c: rate(n, n_sents, 100) for c, n in starts.most_common(8)},
+        "top_sentence_first_words": {w: rate(n, n_sents, 100) for w, n in first_words.most_common(8)},
+        "citations_per_1000_words": {
+            "parenthetical_author_year": rate(len(CITE_PAREN.findall(all_text)), n_words),
+            "narrative_author_year": rate(len(CITE_NARR.findall(all_text)), n_words),
+            "numeric_brackets": rate(len(CITE_NUM.findall(all_text)), n_words),
+        },
+        "quotations_per_1000_words": rate(
+            sum(1 for q in QUOTE.findall(all_text) if len(tokenize(q)) >= 4), n_words
+        ),
+    }
+
+
+# --compare: which numbers to line up. Counts and identifiers are left out,
+# since a reference and a target differ in size by design.
+COMPARE_SKIP = re.compile(r"(^|\.)(n_samples|n_messages|n_words|audiences|english_stopword_fraction|non_english_suspected|words_per_sample_median)$")
+
+
+def flatten(d, prefix=""):
+    out = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(flatten(v, key + "."))
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            out[key] = v
+    return out
+
+
+def compare_registers(ref, tgt):
+    """Rows of (metric, reference, target, marked) for two registers' stats.
+    A row is marked when the two differ by more than a third of the larger
+    value and by more than a small absolute floor, so rare habits at near-zero
+    rates don't flood the list."""
+    fr = {k: v for k, v in flatten(ref).items() if not COMPARE_SKIP.search(k)}
+    ft = {k: v for k, v in flatten(tgt).items() if not COMPARE_SKIP.search(k)}
+    rows = []
+    for k in sorted(set(fr) | set(ft)):
+        a, b = fr.get(k, 0), ft.get(k, 0)
+        big = max(abs(a), abs(b))
+        marked = big > 0.5 and abs(a - b) > big / 3
+        rows.append((k, a, b, marked))
+    return rows
+
+
+def compare_main(ref_path, tgt_path, ref_reg=None, tgt_reg=None):
+    ref = json.loads(Path(ref_path).read_text())["registers"]
+    tgt = json.loads(Path(tgt_path).read_text())["registers"]
+    if ref_reg or tgt_reg:
+        pairs = [(ref_reg or next(iter(ref)), tgt_reg or next(iter(tgt)))]
+    elif len(ref) == 1 and len(tgt) == 1:
+        pairs = [(next(iter(ref)), next(iter(tgt)))]
+    else:
+        pairs = [(r, r) for r in ref if r in tgt]
+    if not pairs:
+        sys.exit(f"No register to compare: reference has {sorted(ref)}, target {sorted(tgt)}. Pass --ref-register and --target-register.")
+    for r, t in pairs:
+        if r not in ref or t not in tgt:
+            sys.exit(f"Unknown register: reference has {sorted(ref)}, target {sorted(tgt)}.")
+        rows = compare_registers(ref[r], tgt[t])
+        marked = [x for x in rows if x[3]]
+        print(f"## Reference `{r}` vs target `{t}`\n")
+        print(f"{len(marked)} of {len(rows)} measures differ by more than a third (marked ◆, biggest gap first).\n")
+        print("| measure | reference | target | |")
+        print("|---|---|---|---|")
+
+        def gap(row):
+            a, b = row[1], row[2]
+            return abs(a - b) / max(abs(a), abs(b), 1e-9)
+
+        for k, a, b, m in sorted(rows, key=lambda x: (not x[3], -gap(x) if x[3] else 0, x[0])):
+            print(f"| {k} | {a} | {b} | {'◆' if m else ''} |")
+        print()
+
+
+# --fidelity: what a restyle must carry over unchanged.
+FIDELITY = {
+    "numbers": (re.compile(r"(?<![\w.])[-−]?\d[\d,]*(?:\.\d+)?%?"), True),
+    "citations": (re.compile("|".join([p.pattern for p in (CITE_PAREN, CITE_NARR, CITE_NUM)] + [r"\\\w*cite\w*\*?(?:\[[^\]]*\])*\{[^}]+\}"])), True),
+    "quotations": (QUOTE, True),
+    "links": (re.compile(r"https?://[^\s)>\]]+|\bdoi:\s*\S+|\b10\.\d{4,9}/[^\s)>\]]+"), True),
+    "equations_and_code": (re.compile(r"\$[^$\n]+\$|`[^`\n]+`"), True),
+    "acronyms": (re.compile(r"\b[A-Z][A-Z0-9]{1,}[a-z]?s?\b"), False),
+}
+
+
+def _norm(x):
+    x = x.replace("−", "-").replace("’", "'").replace("“", '"').replace("”", '"')
+    return re.sub(r"\s+", " ", x).strip().rstrip(".,;:")
+
+
+def fidelity_report(original, rewrite):
+    """Per category: (strict, missing Counter, added Counter)."""
+    out = {}
+    for name, (pat, strict) in FIDELITY.items():
+        def grab(t):
+            found = pat.findall(t) if pat.groups == 0 else [m.group(0) for m in pat.finditer(t)]
+            vals = [_norm(v) for v in found]
+            if name == "numbers":
+                vals = [v.replace(",", "") for v in vals]
+            return Counter(v for v in vals if v)
+        a, b = grab(original), grab(rewrite)
+        out[name] = (strict, a - b, b - a)
+    return out
+
+
+def fidelity_main(orig_path, new_path):
+    original = Path(orig_path).read_text(errors="replace")
+    rewrite = Path(new_path).read_text(errors="replace")
+    report = fidelity_report(original, rewrite)
+    failed = False
+    for name, (strict, missing, added) in report.items():
+        if not missing and not added:
+            print(f"{name}: unchanged")
+            continue
+        label = "CHANGED" if strict else "changed (check by hand)"
+        failed |= strict
+        print(f"{name}: {label}")
+        for v, n in sorted(missing.items()):
+            print(f"  - missing{f' x{n}' if n > 1 else ''}: {v}")
+        for v, n in sorted(added.items()):
+            print(f"  + added{f' x{n}' if n > 1 else ''}: {v}")
+    ow, nw = len(tokenize(original)), len(tokenize(rewrite))
+    print(f"words: {ow} -> {nw} ({rate(nw - ow, ow, 100):+}%)")
+    print("fidelity FAILED" if failed else "fidelity OK")
+    return 1 if failed else 0
 
 
 def tfidf_vectors(samples):
@@ -463,6 +739,31 @@ def selftest():
         (email_dir / "solo.txt").write_text("word " * 40)
         with_solo = load_register(email_dir, False, 30, Counter())
         assert any(s["audience"] is None for s in with_solo), "untagged file should carry None"
+    # Abbreviations don't end sentences; citations and hedges are found.
+    paper = (
+        "Prior work suggests the effect is small (Smith & Lee, 2020). "
+        "Wu et al. (2019) found otherwise, e.g. in larger samples [3, 4].\n\n"
+        "We argue that the data were collected too early. However, the trend may hold."
+    )
+    assert len(sentences(paper)) == 4, f"abbreviation guard broken: {sentences(paper)}"
+    lf = longform_stats([sample_stats(paper)])
+    assert lf["citations_per_1000_words"]["parenthetical_author_year"] > 0, "parenthetical citation missed"
+    assert lf["citations_per_1000_words"]["narrative_author_year"] > 0, "narrative citation missed"
+    assert lf["citations_per_1000_words"]["numeric_brackets"] > 0, "numeric citation missed"
+    assert lf["hedges_per_1000_words"] > 0 and lf["passive_per_100_sentences_approx"] > 0, "stance measures broken"
+    assert lf["first_person_plural_per_1000_words"] > 0, "first person missed"
+    assert "however" in lf["top_sentence_connectors"], "connector start missed"
+    assert lf["paragraph_sentences_median"] == 2, "paragraph split broken"
+    assert 0 < mattr(tokenize(paper)) <= 1, "mattr out of range"
+    rows = compare_registers({"a": 10, "b": 1.0, "n_words": 5}, {"a": 30, "b": 1.1, "n_words": 900})
+    assert [r[0] for r in rows] == ["a", "b"] and rows[0][3] and not rows[1][3], "compare marks broken"
+    rewrite = paper.replace("(Smith & Lee, 2020)", "(Smith & Lee, 2021)").replace("We argue", "I'd say")
+    rep = fidelity_report(paper, rewrite)
+    assert rep["citations"][1] and rep["citations"][2], "fidelity missed a changed citation"
+    assert rep["numbers"][1]["2020"] == 1 and rep["numbers"][2]["2021"] == 1, "fidelity missed a changed number"
+    assert not any(v[1] or v[2] for v in fidelity_report(paper, paper).values()), "fidelity false positive"
+    tex = "As shown before \\citep[p.~4]{smith2020}, the effect holds."
+    assert fidelity_report(tex, tex.replace("smith2020", "smith2021"))["citations"][1], "LaTeX citation missed"
     print("selftest OK")
 
 
@@ -475,10 +776,19 @@ def main():
     ap.add_argument("--chat-min-words", type=int, default=10)
     ap.add_argument("--per-register", type=int, default=5)
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--compare", nargs=2, metavar=("REFERENCE_JSON", "TARGET_JSON"))
+    ap.add_argument("--ref-register")
+    ap.add_argument("--target-register")
+    ap.add_argument("--fidelity", nargs=2, metavar=("ORIGINAL", "REWRITE"))
     args = ap.parse_args()
     if args.selftest:
         selftest()
         return
+    if args.compare:
+        compare_main(*args.compare, args.ref_register, args.target_register)
+        return
+    if args.fidelity:
+        sys.exit(fidelity_main(*args.fidelity))
     if args.samples_dir is None:
         ap.error("samples_dir is required unless --selftest")
 
@@ -491,6 +801,8 @@ def main():
         if not samples:
             continue
         analysis[reg] = register_stats(samples)
+        if not is_chat:
+            analysis[reg]["longform"] = longform_stats(samples)
         ef = english_fraction([w for s in samples for w in s["words"]])
         analysis[reg]["english_stopword_fraction"] = ef
         analysis[reg]["non_english_suspected"] = ef < 0.15
