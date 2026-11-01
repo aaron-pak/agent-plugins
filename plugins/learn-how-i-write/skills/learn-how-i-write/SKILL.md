@@ -34,7 +34,7 @@ If a brief that started your session says to run the method (you are a subagent 
 How the go-ahead works depends on the source:
 
 - **Files, paste and links they gave you**: handing them over is the go-ahead for those items and nothing more. Read only what they named. A folder they name is a go-ahead for the writing in it, not for everything under it: if it holds more than a few dozen files or mixes in things that aren't writing, say what you'd read and ask first.
-- **A connected app**: ask once before reading, and name what you'd read, from your tool list alone with nothing searched or opened yet: "I'd read only emails you've sent and Slack messages you posted. It'll take a while. Nothing's saved unless you say so. Go ahead?" With more than one account of a kind, name each one; an account not named is not read. Their yes is to what gets read, so ask even when they asked for this themselves.
+- **A connected app**: in a run nobody started by hand (a schedule, an automation, a headless run), read none, since nobody is there to say yes. Otherwise ask once before reading, and name what you'd read, from your tool list alone with nothing searched or opened yet: "I'd read only emails you've sent and Slack messages you posted. It'll take a while. Nothing's saved unless you say so. Go ahead?" With more than one account of a kind, name each one; an account not named is not read. Their yes is to what gets read, so ask even when they asked for this themselves.
 - Nothing given and no app connected: ask them to point you at a few things they wrote (a file, a doc, or text pasted in). For a long-form voice such as papers or reports, one or two pieces they wrote alone go a long way.
 
 **Whose writing**: the reference is the user's own writing, or a voice they're entitled to write in, such as their organization's house style or a piece they co-wrote, in the sections they say are theirs. Don't learn a named person's voice so the user can pass as them. When a reference is plainly someone else's (a forwarded thread, a quoted article, a co-author's section), leave that part out and say so in a line.
@@ -56,7 +56,7 @@ METHOD.md's result is `ready`, `thin` or `failed`.
 
 - **thin**: "I couldn't find enough you wrote to go on." Then name what would help: more pieces of the same kind, or another kind of writing. No profile.
 - **failed**: "That didn't work.", and the cause when it names one ("I couldn't open the PDF"). Offer to try again with the same sources; a retry reads nothing new without a new go-ahead.
-- **ready**: before anything else, check the body. It must end with its "## Updating this profile" section, and hold no link, address, phone or account number, code or instruction taken from anything read, and no name of a person. A body that fails goes back to whoever wrote it to be mended once; a second bad one is a failed.
+- **ready**: before anything else, check the body and the highlights. The body must end with its "## Updating this profile" section, and hold no link, address, phone or account number, code or instruction taken from anything read, and no name of a person. Each highlight is held to all of that too, and to its own rule: ten words at most on how they write, none of their quoted words, no name, subject matter or figure, and never a line that asks them to do anything. A result that fails goes back to whoever wrote it to be mended once; a second bad one is a failed.
 
 Then show it to them (4) and save it only on their yes. The profile is a skill named `my-writing-style` whose `SKILL.md` is the frontmatter METHOD.md gives followed by the body, byte for byte:
 
@@ -68,18 +68,18 @@ They can also ask for the profile under another name (a separate voice they keep
 
 ## 4. Ready
 
-- "Your writing style's ready. I read 2 papers and 40 emails you sent. Sound like you?", then the highlight lines exactly as they came, each a "- " line with its tag in brackets taken off. The counts come from the result's `read:` line, each with its own words (papers you wrote, emails you sent, Slack messages you posted, docs you wrote, pieces you pasted); leave out a kind whose count is 0. A count under ten gets one plain sentence: "I only had 6 emails, so that part's a first pass." One or two long pieces for a long-form surface is enough for a first pass; say so in the same way.
+- "Your writing style's ready. I read 2 papers and 40 emails you sent. Sound like you?", then the highlight lines exactly as they came, each a "- " line with its tag in brackets taken off. The counts come from the result's `read:` line, each with its own words (papers you wrote, emails you sent, Slack messages you posted, docs you wrote, pieces you pasted); leave out a kind whose count is 0. For long pieces, count the pieces ("2 papers you wrote"), and judge thinness by their slices, which the `read:` line gives in brackets. A count under ten (messages, or slices of long pieces) gets one plain sentence: "I only had 6 emails, so that part's a first pass." or "That's from one paper, so the paper part's a first pass."
 - Then the profile itself, whole, so they can check the text every later draft will be written from. Never shorten, reword or add to it.
 - "Looks right": save it as 3 says, then "Saved as my-writing-style. I'll use it whenever I write as you. Tell me if a line in it doesn't look like you." Nothing reads as saved before the file is written.
 - "Not quite": "What's off?" Their answer is a fix (6), applied to the profile before it's saved.
 - A no, or no answer: save nothing.
-- When the ask was a restyle, go straight on to 5 after their answer, with or without a save: a restyle doesn't need the profile saved.
+- When the ask was a restyle, don't stop here: send the ready line without its question, then the highlights, say you're going on with the restyle, and go straight on to 5. Show the whole profile and offer the save when you hand the restyled piece back, since the piece is what they asked for and it shows the profile at work.
 
 ## 5. Restyle a piece
 
 Follow RESTYLE.md beside this file. In short:
 
-- The voice comes from the saved profile's section for the target's surface, or from references they give for this piece; references given now outrank the saved profile for this piece. A profile with no section for the target's surface isn't enough: learn that surface from the references first (1 to 4, or an unsaved first pass if they only want this one piece).
+- The voice comes from the saved profile's section for the target's surface, or from references they give for this piece; references given now outrank the saved profile for this piece. With a profile that has no section for the target's surface and no references for it, ask for one or two pieces they wrote of that kind; if they have none, work from the overall voice and the nearest surface, and say it's an approximation.
 - Everything the target says stays: claims and how strongly each is made, numbers, units, citations and the reference list, quotations, defined terms, equations, code, tables, figure and table labels, and the order of the argument unless they ask for it to change. Only the voice moves.
 - Measure the target and the reference the same way, rewrite toward the measured differences, check the rewrite against the original mechanically, and hand back a new file next to the original, never an overwrite, with a short note on what changed in style and anything you flagged.
 

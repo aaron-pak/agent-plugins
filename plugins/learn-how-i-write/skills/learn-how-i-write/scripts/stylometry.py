@@ -78,7 +78,7 @@ SENT_SPLIT = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 # Abbreviations whose period isn't a sentence end ("et al. (2020)", "e.g. this").
 # Their final period is masked before splitting and restored after.
 ABBREV = re.compile(
-    r"\b(?:e\.g|i\.e|et al|etc|cf|vs|viz|approx|figs?|eqs?|sec|ch|vol|pp|dr|mr|mrs|ms|prof|jr|sr)\.",
+    r"\b(?:e\.g|i\.e|et al|cf|vs|viz|approx|figs?|eqs?|sec|ch|vol|pp|dr|mr|mrs|prof|jr|sr)\.",
     re.I,
 )
 ABBREV_MASK = "\u2024"
@@ -281,7 +281,7 @@ def register_stats(samples):
 # compare fairly. Lists are deliberately small and English: they find habits,
 # not a full taxonomy, and non-English corpora get non_english_suspected.
 HEDGES = re.compile(
-    r"\b(?:may|might|could|perhaps|possibly|probably|likely|unlikely|apparently|"
+    r"\b(?:(?-i:may)|might|could|perhaps|possibly|probably|likely|unlikely|apparently|"
     r"arguably|seemingly|somewhat|relatively|potentially|presumably|"
     r"suggests?|suggested|indicates?|indicated|appears?|appeared|seems?|seemed|"
     r"tends? to|to some (?:extent|degree)|in part|it is possible)\b",
@@ -296,11 +296,25 @@ BOOSTERS = re.compile(
 FIRST_SING = {"i", "me", "my", "mine", "myself"}
 FIRST_PLUR = {"we", "us", "our", "ours", "ourselves"}
 SECOND = {"you", "your", "yours", "yourself", "yourselves"}
-# "was/were/is ... + participle", allowing one adverb between. An approximation:
-# it misses irregular participles and catches a few adjectives.
+# "was/were/is ... + participle", allowing a couple of adverbs between. An
+# approximation: regular -ed/-en/-wn participles plus the common irregular
+# ones, less the -ed/-en/-wn words that are seldom participles.
+IRREGULAR_PARTICIPLES = (
+    "found made done given taken seen shown known held kept left told thought "
+    "brought built bought caught chosen drawn driven felt heard led lost meant met "
+    "paid put read run said sent set sold spent stood taught understood won written "
+    "cut hit laid begun become"
+)
+NOT_PARTICIPLES = (
+    "often even open when then seven eleven garden between children indeed need "
+    "needed speed seed feed red bed hundred kindred sacred naked wicked down town "
+    "own brown crown gown"
+)
+PASSIVE_ADVERBS = r"(?:\w+ly|also|then|first|not|already|still|further|thus|therefore|often|never|always|now|later|subsequently)"
 PASSIVE = re.compile(
-    r"\b(?:am|is|are|was|were|be|been|being)(?:\s+not)?\s+(?:\w+ly\s+)?"
-    r"(?!(?:often|even|open|when|then|seven|eleven|garden|hidden)\b)\w{2,}(?:ed|en|wn)\b",
+    r"\b(?:am|is|are|was|were|be|been|being)(?:\s+" + PASSIVE_ADVERBS + r"){0,2}\s+"
+    r"(?!(?:" + "|".join(NOT_PARTICIPLES.split()) + r")\b)"
+    r"(?:\w{2,}(?:ed|en|wn)|" + "|".join(IRREGULAR_PARTICIPLES.split()) + r")\b",
     re.I,
 )
 NOMINAL = re.compile(r"^\w{3,}(?:tion|sion|ment|ness|ity|ance|ence|ism)s?$")
@@ -320,13 +334,21 @@ CONNECTOR_START = re.compile(
 )
 # Citation shapes: (Smith, 2020), (Smith & Lee 2020; Wu et al., 2019a, p. 4),
 # Smith (2020), Smith et al. (2020), [3], [3, 7], [3–5].
+MONTHS = (
+    "January|February|March|April|May|June|July|August|September|October|November|December|"
+    "Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Spring|Summer|Fall|Autumn|Winter"
+)
 CITE_PAREN = re.compile(
-    r"\((?:see |e\.g\.,? |cf\. )?[A-Z][\w'’-]+(?:\s+(?:et al\.|and|&)\s*[A-Z]?[\w'’-]*)?,?\s+\d{4}[a-z]?"
+    r"\((?:see |e\.g\.,? |cf\. )?(?!(?:" + MONTHS + r")\b)[A-Z][\w'’-]+"
+    r"(?:(?:,\s*|\s+)(?:and\s+|&\s*)?[A-Z][\w'’-]+)*(?:\s+et al\.)?,?\s+\d{4}[a-z]?"
     r"(?:[^()]{0,80}?)\)"
 )
 CITE_NARR = re.compile(r"\b[A-Z][\w'’-]+(?:\s+(?:et al\.|and|&)\s+[A-Z][\w'’-]+|\s+et al\.)?\s+\(\d{4}[a-z]?(?:,[^()]{0,20})?\)")
 CITE_NUM = re.compile(r"\[\d+(?:\s*[,–-]\s*\d+)*\]")
-QUOTE = re.compile(r"[\"“]([^\"“”\n]{3,400})[\"”]")
+# An opening quote follows the start, a space or an opening bracket, and a
+# closing one isn't followed by a letter, so '"1" to "7"' isn't read as the
+# quotation ' to '.
+QUOTE = re.compile(r"(?<![^\s(\[—])[\"“]([^\"“”\n]{3,400}?)[\"”](?!\w)")
 
 
 def _pct(values, q):
@@ -414,7 +436,14 @@ def longform_stats(samples):
 
 # --compare: which numbers to line up. Counts and identifiers are left out,
 # since a reference and a target differ in size by design.
-COMPARE_SKIP = re.compile(r"(^|\.)(n_samples|n_messages|n_words|audiences|english_stopword_fraction|non_english_suspected|words_per_sample_median)$")
+COMPARE_SKIP = re.compile(
+    r"(^|\.)(n_samples|n_messages|n_words|english_stopword_fraction|non_english_suspected|"
+    r"words_per_sample_median|words_per_message_median)$|(^|\.)audiences(\.|$)"
+)
+# Dicts that hold only each side's top few entries: a word missing from one
+# side means "not in its top few", not zero, so such a row is shown but never
+# marked.
+TOP_N = re.compile(r"(^|\.)(function_word_rates_per_1000|top_sentence_connectors|top_sentence_first_words)\.")
 
 
 def flatten(d, prefix=""):
@@ -437,6 +466,10 @@ def compare_registers(ref, tgt):
     ft = {k: v for k, v in flatten(tgt).items() if not COMPARE_SKIP.search(k)}
     rows = []
     for k in sorted(set(fr) | set(ft)):
+        top_n = bool(TOP_N.search(k))
+        if top_n and (k not in fr or k not in ft):
+            rows.append((k, fr.get(k, "—"), ft.get(k, "—"), False))
+            continue
         a, b = fr.get(k, 0), ft.get(k, 0)
         big = max(abs(a), abs(b))
         marked = big > 0.5 and abs(a - b) > big / 3
@@ -467,20 +500,29 @@ def compare_main(ref_path, tgt_path, ref_reg=None, tgt_reg=None):
 
         def gap(row):
             a, b = row[1], row[2]
+            if isinstance(a, str) or isinstance(b, str):
+                return 0
             return abs(a - b) / max(abs(a), abs(b), 1e-9)
 
-        for k, a, b, m in sorted(rows, key=lambda x: (not x[3], -gap(x) if x[3] else 0, x[0])):
+        def is_entry(row):
+            # Entries of a word-by-word dict come after the single measures
+            # (sentence length, passive voice...), which say more.
+            return bool(TOP_N.search(row[0])) or ".tell_words_per_1000." in row[0]
+
+        for k, a, b, m in sorted(rows, key=lambda x: (not x[3], is_entry(x), -gap(x) if x[3] else 0, x[0])):
             print(f"| {k} | {a} | {b} | {'◆' if m else ''} |")
         print()
 
 
 # --fidelity: what a restyle must carry over unchanged.
 FIDELITY = {
-    "numbers": (re.compile(r"(?<![\w.])[-−]?\d[\d,]*(?:\.\d+)?%?"), True),
+    "numbers": (re.compile(r"(?<![\w.])[-−]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)%?"), True),
     "citations": (re.compile("|".join([p.pattern for p in (CITE_PAREN, CITE_NARR, CITE_NUM)] + [r"\\\w*cite\w*\*?(?:\[[^\]]*\])*\{[^}]+\}"])), True),
     "quotations": (QUOTE, True),
     "links": (re.compile(r"https?://[^\s)>\]]+|\bdoi:\s*\S+|\b10\.\d{4,9}/[^\s)>\]]+"), True),
-    "equations_and_code": (re.compile(r"\$[^$\n]+\$|`[^`\n]+`"), True),
+    # $x^2$ but not "$5 and $10": no space just inside the dollars, no digit after.
+    "equations_and_code": (re.compile(r"\$(?=\S)[^$\n]+?(?<=\S)\$(?!\d)|`[^`\n]+`"), True),
+    "cross_references": (re.compile(r"\\(?:eq|auto|page|c|C|name)?ref\{[^}]+\}|\\label\{[^}]+\}"), True),
     "acronyms": (re.compile(r"\b[A-Z][A-Z0-9]{1,}[a-z]?s?\b"), False),
 }
 
@@ -762,6 +804,26 @@ def selftest():
     assert rep["citations"][1] and rep["citations"][2], "fidelity missed a changed citation"
     assert rep["numbers"][1]["2020"] == 1 and rep["numbers"][2]["2021"] == 1, "fidelity missed a changed number"
     assert not any(v[1] or v[2] for v in fidelity_report(paper, paper).values()), "fidelity false positive"
+    stats_txt = "The effect was small (p = .03, r = .32), as in (Smith, Lee, & Wu, 2020)."
+    rep2 = fidelity_report(stats_txt, stats_txt.replace(".03", ".30"))
+    assert rep2["numbers"][1][".03"] == 1, "fidelity missed a leading-dot number"
+    assert CITE_PAREN.search(stats_txt), "multi-author citation missed"
+    assert not CITE_PAREN.search("It shipped (March 2020) late."), "a date read as a citation"
+    scale = 'Rated from "1" to "7" on a scale.'
+    assert not any(v[1] or v[2] for v in fidelity_report(scale, scale.replace(" to ", " through ")).values()), "quote pairing broken"
+    money = "It cost $5 and $10 later."
+    assert not fidelity_report(money, money)["equations_and_code"][1] and not FIDELITY["equations_and_code"][0].search(money), "dollar amounts read as an equation"
+    refs = "See Figure \\ref{fig:x} and \\eqref{eq:1}."
+    assert fidelity_report(refs, refs.replace("fig:x", "fig:y"))["cross_references"][1], "LaTeX cross-reference missed"
+    for t in ("The value is indeed high.", "It is between them.", "They are children.", "Sales are down."):
+        assert not PASSIVE.search(t), f"passive false positive: {t}"
+    for t in ("Effects were found.", "A choice was made.", "Samples were then analyzed.", "It was also shown."):
+        assert PASSIVE.search(t), f"passive missed: {t}"
+    assert not HEDGES.search("It began in May."), "the month read as a hedge"
+    tops = compare_registers({"top_sentence_first_words": {"smith": 9.0}, "x": 1.0},
+                             {"top_sentence_first_words": {"the": 9.0}, "x": 1.0})
+    assert not any(r[3] for r in tops), "a top-N miss was marked"
+    assert not any("audiences" in r[0] for r in compare_registers({"audiences": {"a": 3}}, {"audiences": {"a": 9}})), "audiences not skipped"
     tex = "As shown before \\citep[p.~4]{smith2020}, the effect holds."
     assert fidelity_report(tex, tex.replace("smith2020", "smith2021"))["citations"][1], "LaTeX citation missed"
     print("selftest OK")
