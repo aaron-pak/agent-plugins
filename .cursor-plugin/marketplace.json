@@ -38,6 +38,11 @@
       "description": "Implement a spec while keeping a running implementation-notes.html of design decisions, deviations, tradeoffs, and open questions."
     },
     {
+      "name": "learn-how-i-write",
+      "source": "plugins/learn-how-i-write",
+      "description": "Learn how you write from writing you point at (files, pasted text, docs, sent mail or messages) and save it as a reusable style profile, then restyle another piece, from a paper to an email, to sound like you without changing what it says. From Anthropic's Claude Duet."
+    },
+    {
       "name": "mac-computer-use",
       "source": "plugins/mac-computer-use",
       "description": "Run Cua's cua-driver on Aaron's Mac mini from Grok Bot: an adapter that loads the driver's own skill on the Mac and covers only what differs when the Mac is another computer, plus a few facts about how this Mac is set up. Grok Bot only.",

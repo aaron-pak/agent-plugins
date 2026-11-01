@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "learn-how-i-write",
+  "description": "Learn how you write from writing you point at (files, pasted text, docs, sent mail or messages) and save it as a reusable style profile, then restyle another piece, from a paper to an email, to sound like you without changing what it says. From Anthropic's Claude Duet.",
+  "author": {
+    "name": "Anthropic"
+  }
+}
