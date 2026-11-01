@@ -6,14 +6,14 @@
 """dj-fetch: get DJ-ready tracks from a track list.
 
 For each track: look up the release on Beatport to learn the target version and
-length (extended mix, else original, else the only release), skip it if it's
+length of its extended version (however it is labeled), skip it if it's
 already in a library folder, take SoundCloud-native tracks from the uploader's
 free download, and otherwise search Soulseek through slskd, rank every file it
 returns, and download from the best peers until a copy of the right length
 arrives. State lives in <library_root>/<list>/_state/state.sqlite, so a run can
 be stopped and resumed.
 """
-import argparse, csv, hashlib, json, os, re, shutil, sqlite3, subprocess, sys, threading, time, tomllib, unicodedata, urllib.error, urllib.parse, urllib.request, uuid
+import argparse, collections, csv, hashlib, json, os, re, shutil, sqlite3, subprocess, sys, threading, time, tomllib, unicodedata, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -27,6 +27,7 @@ ACTIVE = ("pending", "sc", "search", "searching", "transfer")
 STOP = {"the", "a", "an", "and", "of", "feat", "ft", "featuring", "with", "vs", "x"}
 VERSION_WORDS = re.compile(r"\b(remix|bootleg|mashup|edit|flip|vip|remake|rework|refix|dub|mix|version|rerub|redrum|cover|extended|acapella|acappella|instrumental)\b", re.I)
 VERSION_SET = {"extended", "remix", "bootleg", "mashup", "edit", "flip", "vip", "remake", "rework", "refix", "dub", "mix", "version", "rerub", "redrum", "cover"}
+NOT_NAMES = {"acapella", "acappella", "instrumental", "vocal", "dub", "intro", "outro", "clean", "dirty", "live"}
 GENERIC_MIX = {"extended", "original", "mix", "club", "main", "version", "full", "length", "radio", "edit", "remix", "vocal"}
 TRAILING_FEAT = re.compile(r"\s+(?:feat\.?|ft\.?|featuring)\s+.*$", re.I)
 FEAT = re.compile(r"\s*[\(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+[^\)\]]*[\)\]]", re.I)
@@ -185,14 +186,11 @@ def evaluate(req, f, target_len, peer=None):
     else:
         if length and length < 120:
             return False, 0, [f"too short ({length}s)"]
+        # No Beatport length to check against: the longest copy is most likely the extended one.
         if length:
             score += min(length, 600) / 6
         if "extended" in name_set:
             score += 100
-    if "extended" in name_set:
-        score += 40
-    elif "original" in name_set:
-        score += 15
     order = prefs_f["order"]
     score += (len(order) - order.index(ext)) * 25
     if br and not lossless:
@@ -284,15 +282,10 @@ def bp_length(h):
     return None
 
 
-def bp_rank(mix):
+def is_short_version(mix, req):
+    """Radio edits and other cut-downs. Whatever else Beatport calls a version, the label doesn't matter."""
     m = norm(mix)
-    if "extended" in m:
-        return 0
-    if re.search(r"\b(radio|short)\b", m) or m.endswith("edit"):
-        return 3
-    if re.search(r"\b(original|club|main|full)\b", m):
-        return 1
-    return 2
+    return bool(re.search(r"\b(radio|short)\b", m)) or (m.endswith("edit") and req.kind != "edit")
 
 
 def beatport_match(req, hits):
@@ -322,10 +315,11 @@ def beatport_match(req, hits):
             continue
         out.append({"track_id": h.get("track_id") or h.get("id"), "name": name, "mix_name": mix, "length": length,
                     "bpm": h.get("bpm"), "key": h.get("key_name"), "artists": names,
-                    "rank": bp_rank(mix), "release_date": h.get("release_date")})
+                    "short": is_short_version(mix, req), "release_date": h.get("release_date")})
     if not out:
         return None
-    out.sort(key=lambda x: (x["rank"], -x["length"]))
+    # The extended version is the full-length one, labeled Extended, Original or nothing.
+    out.sort(key=lambda x: (x["short"], -x["length"]))
     best = out[0]
     best["url"] = f"https://www.beatport.com/track/{re.sub(r'[^a-z0-9]+', '-', norm(best['name']))}/{best['track_id']}"
     best["other_versions"] = sorted({(o["mix_name"], round(o["length"])) for o in out[1:]})
@@ -347,14 +341,11 @@ def resolve_beatport(req, row=None):
     if req.remixer_tokens:
         queries.append(" ".join([*req.core_tokens, *req.remixer_tokens]))
     queries.append(" ".join([*tokens(req.primary), *req.core_tokens]))
-    best = None
     for qy in dict.fromkeys(queries):
         best = beatport_match(req, linked + beatport_search(qy))
-        if best and best["rank"] == 0:
-            return best
         if best:
-            break
-    return best or beatport_match(req, linked)
+            return best
+    return beatport_match(req, linked)
 
 
 # ---------------------------------------------------------------- audio
@@ -442,6 +433,14 @@ class Slskd:
         res = self.call("GET", f"/transfers/downloads/{u}") or {}
         return {f["id"]: f for d in res.get("directories", []) for f in d.get("files", [])}
 
+    def directory(self, username, directory):
+        u = urllib.parse.quote(username, safe="")
+        return self.call("POST", f"/users/{u}/directory", {"directory": directory}, timeout=60) or []
+
+    def browse(self, username):
+        u = urllib.parse.quote(username, safe="")
+        return self.call("GET", f"/users/{u}/browse", timeout=240) or []
+
     def cancel(self, username, tid):
         u = urllib.parse.quote(username, safe="")
         try:
@@ -487,6 +486,7 @@ create table if not exists tracks (id text primary key, artist text, title text,
 create table if not exists searches (track text, query text, search_id text, files integer, ok integer, created real);
 create table if not exists candidates (track text, username text, filename text, size integer, length integer,
   bitrate integer, ext text, ok integer, score real, notes text, peer_json text, primary key (track, username, filename));
+create table if not exists seeds (query text primary key, files integer, matched integer, created real);
 create table if not exists attempts (track text, username text, filename text, transfer_id text, state text,
   started real, ended real, detail text, primary key (track, username, filename));
 """
@@ -671,6 +671,12 @@ class Runner:
         self.prefs = PREFS["soulseek"]
         self.log_file = (self.dir / "_state/run.log").open("a")
         self.bad_peers = {}
+        # Every file seen this run, indexed by filename token, so any search, folder listing or
+        # browse can serve every track in the list. Searches are the scarce resource; this saves them.
+        self.pool_index, self.pool_keys, self.pool_lock = {}, set(), threading.Lock()
+        self.peer_info, self.peer_hits = {}, collections.defaultdict(set)
+        self.harvest_q, self.harvested, self.browses = collections.deque(), set(), 0
+        self.stop = threading.Event()
 
     def log(self, msg):
         line = time.strftime("%H:%M:%S ") + msg
@@ -717,6 +723,125 @@ class Runner:
             parent.rmdir()
             parent = parent.parent
         return dest
+
+    # ---- shared candidate pool
+    def pool_add(self, peer, files, base_dir=None):
+        new = []
+        for f in files:
+            fn = f.get("filename") or ""
+            if base_dir and not re.search(r"[\\/]", fn):
+                fn = base_dir.rstrip("\\/") + "\\" + fn
+            key = (peer["username"], fn)
+            ext = (f.get("extension") or fn.rpartition(".")[2]).lower().lstrip(".")
+            if key in self.pool_keys or ext not in AUDIO_EXTS:
+                continue
+            self.pool_keys.add(key)
+            stem = file_basename(fn).rpartition(".")[0] or file_basename(fn)
+            new.append({"username": peer["username"], "filename": fn, "size": f.get("size"), "length": f.get("length"),
+                        "bitRate": f.get("bitRate"), "extension": ext, "peer": peer, "name_set": set(norm(stem).split())})
+        with self.pool_lock:
+            for e in new:
+                for tok in e["name_set"]:
+                    self.pool_index.setdefault(tok, []).append(e)
+        return new
+
+    def record_matches(self, matches):
+        """matches: [(row, entry, score, notes)]. Returns the set of track ids that gained candidates."""
+        gained = set()
+        with self.lock:
+            for row, e, score, notes in matches:
+                cur = self.db.execute("insert or ignore into candidates values (?,?,?,?,?,?,?,?,?,?,?)",
+                                      (row["id"], e["username"], e["filename"], e["size"], e["length"], e["bitRate"], e["extension"],
+                                       1, score, "; ".join(notes + ["found via pool"]), json.dumps(e["peer"])))
+                if cur.rowcount:
+                    gained.add(row["id"])
+                    self.peer_hits[e["username"]].add(row["id"])
+            self.db.commit()
+        for tid in gained:
+            self.q("update tracks set status='transfer', updated=? where id=? and status in ('search','missing')", (time.time(), tid))
+        for user, hits in list(self.peer_hits.items()):
+            if len(hits) >= 3 and ("browse", user) not in self.harvested and self.browses < 8:
+                self.harvested.add(("browse", user))
+                self.harvest_q.append(("browse", user, None))
+        return gained
+
+    def match_entries(self, entries, exclude=None):
+        """Score new pool files against every track still looking for a copy."""
+        idx = collections.defaultdict(list)
+        for row in self.q("select * from tracks where status in ('search','searching','transfer','missing')"):
+            req = self.req_of(row)
+            if row["id"] != exclude and req.core_tokens:
+                idx[max(req.core_tokens, key=len)].append((row, req))
+        matches = []
+        for e in entries:
+            for tok in e["name_set"]:
+                for row, req in idx.get(tok, ()):
+                    if set(req.core_tokens) <= e["name_set"]:
+                        t = self.target(row)
+                        good, score, notes = evaluate(req, e, t["length"] if t else None, e["peer"])
+                        if good:
+                            matches.append((row, e, score, notes))
+        return self.record_matches(matches)
+
+    def match_track(self, row):
+        req = self.req_of(row)
+        if not req.core_tokens:
+            return set()
+        with self.pool_lock:
+            entries = list(self.pool_index.get(max(req.core_tokens, key=len), ()))
+        t = self.target(row)
+        matches = []
+        for e in entries:
+            if set(req.core_tokens) <= e["name_set"]:
+                good, score, notes = evaluate(req, e, t["length"] if t else None, e["peer"])
+                if good:
+                    matches.append((row, e, score, notes))
+        return self.record_matches(matches)
+
+    def harvester(self):
+        """Folder listings and share browses: candidates without spending Soulseek searches."""
+        while not self.stop.is_set():
+            if not self.harvest_q:
+                time.sleep(2)
+                continue
+            kind, user, d = self.harvest_q.popleft()
+            try:
+                dirs = self.slsk.directory(user, d) if kind == "dir" else self.slsk.browse(user)
+            except Exception as e:
+                self.log(f"harvest   {kind} {user} failed: {str(e)[:120]}")
+                continue
+            if kind == "browse":
+                self.browses += 1
+            peer = self.peer_info.get(user) or {"username": user, "hasFreeUploadSlot": None, "queueLength": None, "uploadSpeed": None}
+            new = []
+            for dobj in dirs if isinstance(dirs, list) else [dirs]:
+                new += self.pool_add(peer, dobj.get("files") or [], dobj.get("name"))
+            gained = self.match_entries(new)
+            if gained or kind == "browse":
+                self.log(f"harvest   {kind} {user}: {len(new)} files, {len(gained)} tracks gained candidates")
+
+    def plan_seeds(self):
+        """Artists or remixers with several tracks in the list get one broad search that serves them all."""
+        counts = collections.Counter()
+        for r in self.q("select artist, title from tracks where status in ('pending','search','sc')"):
+            req = Request(r["artist"], r["title"])
+            for k in {" ".join(tokens(req.primary)), " ".join(req.remixer_tokens)}:
+                if len(k) >= 4 and not set(k.split()) <= NOT_NAMES:
+                    counts[k] += 1
+        done = {r["query"] for r in self.q("select query from seeds")}
+        return collections.deque(k for k, n in counts.most_common() if n >= 3 and k not in done)
+
+    def handle_seed(self, query, sid):
+        responses = self.slsk.responses(sid)
+        self.slsk.delete_search(sid)
+        new = []
+        for resp in responses:
+            peer = {k: resp.get(k) for k in ("username", "hasFreeUploadSlot", "queueLength", "uploadSpeed")}
+            self.peer_info[resp["username"]] = peer
+            new += self.pool_add(peer, resp.get("files") or [])
+        gained = self.match_entries(new)
+        self.q("insert or replace into seeds values (?,?,?,?)", (query, len(new), len(gained), time.time()))
+        self.log(f"seeded    [{query}]: {len(new)} files, {len(gained)} tracks gained candidates")
 
     def place_rejected(self, src):
         dest = self.dir / "_rejected" / src.name
@@ -770,6 +895,8 @@ class Runner:
                     nxt, note = "sc", "not on Beatport; SoundCloud first"
                 self.status(row["id"], nxt, target_json=json.dumps(target) if target else None, note=note)
                 self.log(f"resolved  {row['artist']} - {row['title']}: {note}")
+                if nxt == "search" and self.match_track(self.q("select * from tracks where id=?", (row["id"],))[0]):
+                    self.log(f"pooled    {row['artist']} - {row['title']}: copies already seen, no search needed")
 
     # ---- SoundCloud worker thread
     def soundcloud_worker(self, resolver_thread):
@@ -822,9 +949,11 @@ class Runner:
         responses = self.slsk.responses(sid)
         self.slsk.delete_search(sid)
         files = ok = 0
+        new = []
         with self.lock:
             for resp in responses:
                 peer = {k: resp.get(k) for k in ("username", "hasFreeUploadSlot", "queueLength", "uploadSpeed")}
+                self.peer_info[resp["username"]] = peer
                 for f in resp.get("files") or []:
                     files += 1
                     good, score, notes = evaluate(req, f, tlen, peer)
@@ -835,8 +964,12 @@ class Runner:
                                      "; ".join(notes), json.dumps(peer)))
             self.db.execute("insert into searches values (?,?,?,?,?,?)", (row["id"], query, sid, files, ok, time.time()))
             self.db.commit()
-        self.log(f"searched  {row['artist']} - {row['title']} [{query}]: {files} files, {ok} usable")
-        self.status(row["id"], "transfer" if ok else "search", qidx=row["qidx"] + 1)
+        for resp in responses:
+            new += self.pool_add(self.peer_info[resp["username"]], resp.get("files") or [])
+        gained = self.match_entries(new, exclude=row["id"])
+        self.log(f"searched  {row['artist']} - {row['title']} [{query}]: {files} files, {ok} usable"
+                 + (f"; {len(gained)} other tracks gained candidates" if gained else ""))
+        self.status(row["id"], "transfer" if self.next_candidate(row["id"]) else "search", qidx=row["qidx"] + 1)
 
     def next_candidate(self, tid):
         tried = {(r["username"], r["filename"]) for r in self.q("select username, filename from attempts where track=?", (tid,))}
@@ -947,6 +1080,10 @@ class Runner:
             dest = self.place(row, src)
             note = (f"{info['codec']} {info['duration']:.0f}s" + (f", matches Beatport {target['mix_name']}" if target else ", no Beatport release to compare"))
             self.finish_transfer(row, a, "succeeded", str(dest))
+            folder = re.split(r"[\\/][^\\/]*$", a["filename"])[0]
+            if ("dir", a["username"], folder) not in self.harvested:
+                self.harvested.add(("dir", a["username"], folder))
+                self.harvest_q.append(("dir", a["username"], folder))
             self.status(row["id"], "done", final_path=str(dest), source=f"soulseek:{a['username']}", note=note)
             self.log(f"done      {row['artist']} - {row['title']} ({note})")
         elif d <= pv["review_tolerance_seconds"] and not row["final_path"]:
@@ -977,6 +1114,10 @@ class Runner:
             sc_thread = threading.Thread(target=self.soundcloud_worker, args=(resolver,), daemon=True)
             sc_thread.start()
         pace, inflight = Pace(), {}
+        self.seeds = self.plan_seeds() if not getattr(self.args, "no_seed", False) else collections.deque()
+        if self.seeds:
+            self.log(f"seed searches planned: {', '.join(self.seeds)}")
+        threading.Thread(target=self.harvester, daemon=True).start()
         last_report = 0
         while True:
             try:
@@ -989,12 +1130,13 @@ class Runner:
                 write_report(self.db, self.dir)
                 last_report = time.time()
             busy = self.q("select count(*) from tracks where status in ('pending','sc','search','searching','transfer')")[0][0]
-            if not busy and not active and not inflight and not resolver.is_alive() and not (sc_thread and sc_thread.is_alive()):
+            if not busy and not active and not inflight and not self.harvest_q and not resolver.is_alive() and not (sc_thread and sc_thread.is_alive()):
                 break
             if self.args.limit_minutes and time.time() - self.t0 > self.args.limit_minutes * 60:
                 self.log("time limit reached; rerun the same command to resume")
                 break
             time.sleep(2)
+        self.stop.set()
         write_report(self.db, self.dir)
         self.log(f"finished. report: {self.dir / 'report.md'}")
 
@@ -1004,12 +1146,22 @@ class Runner:
             st = self.slsk.search_state(sid) or {}
             if st.get("isComplete") or "Completed" in (st.get("state") or "") or time.time() - t0 > 90:
                 del inflight[sid]
-                self.handle_results(self.q("select * from tracks where id=?", (tid,))[0], query, sid)
+                if tid is None:
+                    self.handle_seed(query, sid)
+                else:
+                    self.handle_results(self.q("select * from tracks where id=?", (tid,))[0], query, sid)
+        while self.seeds and len(inflight) < self.prefs["max_inflight_searches"] and pace.take():
+            query = self.seeds.popleft()
+            inflight[self.slsk.start_search(query)] = (None, query, time.time())
+            self.log(f"seeding   [{query}]")
         while len(inflight) < self.prefs["max_inflight_searches"]:
             rows = self.q("select * from tracks where status='search' order by pos limit 1")
             if not rows:
                 break
             row = rows[0]
+            if self.next_candidate(row["id"]):
+                self.status(row["id"], "transfer")
+                continue
             queries = self.req_of(row).queries()
             if row["qidx"] >= len(queries):
                 if self.q("select 1 from candidates where track=? and ok=1 limit 1", (row["id"],)) and self.next_candidate(row["id"]):
@@ -1230,6 +1382,7 @@ def main():
     r.add_argument("--adopt", action="append", help="folder of earlier downloads: files matching a track (right name and length) are moved into the list; repeatable")
     r.add_argument("--no-have", action="store_true", help="don't skip tracks found in library folders")
     r.add_argument("--no-soundcloud", action="store_true")
+    r.add_argument("--no-seed", action="store_true", help="skip the broad artist searches")
     r.add_argument("--limit-minutes", type=float, default=0, help="stop after this long; rerun to resume")
     r.set_defaults(fn=cmd_run)
     s = sub.add_parser("status", help="counts and active transfers; refreshes report.md")
