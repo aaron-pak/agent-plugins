@@ -144,8 +144,11 @@ def read_api_key():
 def write_launchd(listen_port):
     upnpc = shutil.which("upnpc") or "/opt/homebrew/bin/upnpc"
     WRAPPER.write_text(f"""#!/bin/sh
-# Map the Soulseek listen port on the router (best effort), then run slskd.
-if [ -x {upnpc} ]; then {upnpc} -e slskd -r {listen_port} TCP >/dev/null 2>&1 || true; fi
+# Map the Soulseek listen port on the router in the background (upnpc can hang
+# when the router is slow to answer), then run slskd.
+if [ -x {upnpc} ]; then
+  ( {upnpc} -e slskd -r {listen_port} TCP >/dev/null 2>&1 & pid=$!; sleep 30; kill $pid 2>/dev/null ) &
+fi
 exec {BIN} --app-dir {APP_DIR}
 """)
     WRAPPER.chmod(0o755)
