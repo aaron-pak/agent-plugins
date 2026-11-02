@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pakstack",
+  "description": "Aaron's own working skills. For now, interview: question the user until you both agree on what they want and why.",
+  "author": {
+    "name": "Aaron Pak"
+  }
+}

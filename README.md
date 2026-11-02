@@ -5,6 +5,7 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 Current plugins:
 
 - `artifact-design` (`artifact-design`, `artifact-diagramming` and, in Codex, `dataviz`, plus an `artifact` MCP server)
+- `create-skill`
 - `deeper-task` (Felix Rieseberg's prompt, see [Credits](#credits))
 - `dj-fetch` (needs `uv` and `ffprobe`; `setup_slskd.py` installs slskd)
 - `eli5`
@@ -12,6 +13,7 @@ Current plugins:
 - `implement-with-notes`
 - `learn-how-i-write` (Claude Duet's skill, adapted, see [Credits](#credits))
 - `mac-computer-use` (Grok Bot only, see [Grok Bot](#grok-bot))
+- `pakstack` (`interview`)
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
 
