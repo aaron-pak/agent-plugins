@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pakstack",
-  "description": "Aaron's own working skills. For now, interview: question the user until you both agree on what they want and why.",
+  "description": "Aaron's own working skills: interview (question the user until you both agree on what they want and why), catchup (pick up work left earlier) and the give-the-goal-not-the-how principle for writing prompts.",
   "author": {
     "name": "Aaron Pak"
   }

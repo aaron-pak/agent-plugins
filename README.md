@@ -9,11 +9,12 @@ Current plugins:
 - `deeper-task` (Felix Rieseberg's prompt, see [Credits](#credits))
 - `dj-fetch` (needs `uv` and `ffprobe`; `setup_slskd.py` installs slskd)
 - `eli5`
+- `evals` (`build-eval`, `save-trace`, `hillclimb`; needs the `plugin-eval` runner, not ported yet)
 - `frontend-skill`
 - `implement-with-notes`
 - `learn-how-i-write` (Claude Duet's skill, adapted, see [Credits](#credits))
 - `mac-computer-use` (Grok Bot only, see [Grok Bot](#grok-bot))
-- `pakstack` (`interview`)
+- `pakstack` (`interview`, `catchup`, `principle-give-the-goal-not-the-how`)
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
 

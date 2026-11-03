@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "evals",
+  "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Needs the plugin-eval runner, which isn't in this repository yet.",
+  "author": {
+    "name": "Aaron Pak"
+  }
+}

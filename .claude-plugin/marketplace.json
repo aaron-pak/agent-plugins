@@ -38,6 +38,12 @@
       "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words."
     },
     {
+      "name": "evals",
+      "source": "./plugins/evals",
+      "strict": false,
+      "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Needs the plugin-eval runner, which isn't in this repository yet."
+    },
+    {
       "name": "frontend-skill",
       "source": "./plugins/frontend-skill",
       "strict": false,
@@ -65,7 +71,7 @@
       "name": "pakstack",
       "source": "./plugins/pakstack",
       "strict": false,
-      "description": "Aaron's own working skills. For now, interview: question the user until you both agree on what they want and why."
+      "description": "Aaron's own working skills: interview (question the user until you both agree on what they want and why), catchup (pick up work left earlier) and the give-the-goal-not-the-how principle for writing prompts."
     },
     {
       "name": "session-band",
