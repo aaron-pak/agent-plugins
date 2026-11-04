@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "create-skill",
+  "description": "Write or revise an agent skill so it gives the model only the guidance it needs: start thin, write for the user's intent, and offer your own ideas as proposals the user picks from.",
+  "author": {
+    "name": "Aaron Pak"
+  }
+}

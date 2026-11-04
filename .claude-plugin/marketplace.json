@@ -14,6 +14,12 @@
       "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with Artifact and ArtifactCheck MCP tools that publish and preview them on this machine. From Anthropic's Claude Code."
     },
     {
+      "name": "create-skill",
+      "source": "./plugins/create-skill",
+      "strict": false,
+      "description": "Write or revise an agent skill so it gives the model only the guidance it needs: start thin, write for the user's intent, and offer your own ideas as proposals the user picks from."
+    },
+    {
       "name": "deeper-task",
       "source": "./plugins/deeper-task",
       "strict": false,
@@ -54,6 +60,12 @@
       "source": "./plugins/mac-computer-use",
       "strict": false,
       "description": "Run Cua's cua-driver on Aaron's Mac mini from Grok Bot: an adapter that loads the driver's own skill on the Mac and covers only what differs when the Mac is another computer, plus a few facts about how this Mac is set up. Grok Bot only."
+    },
+    {
+      "name": "pakstack",
+      "source": "./plugins/pakstack",
+      "strict": false,
+      "description": "Small skills for how Aaron works with agents, such as interview, which questions the user until you both agree on what they want and why."
     },
     {
       "name": "session-band",
