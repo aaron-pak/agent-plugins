@@ -7,10 +7,10 @@
     "build": "bun scripts/build.ts",
     "dev:artifact": "bun --cwd plugins/artifact-design/src --watch server.ts",
     "drift": "bun scripts/claude-code-drift.ts",
-    "fmt": "oxfmt plugins/artifact-design/src plugins/artifact-design/tests scripts",
-    "lint": "oxfmt --check plugins/artifact-design/src plugins/artifact-design/tests scripts && oxlint plugins/artifact-design/src plugins/artifact-design/tests scripts",
+    "fmt": "oxfmt plugins/artifact-design/src plugins/artifact-design/tests plugins/evals/src plugins/evals/tests scripts",
+    "lint": "oxfmt --check plugins/artifact-design/src plugins/artifact-design/tests plugins/evals/src plugins/evals/tests scripts && oxlint plugins/artifact-design/src plugins/artifact-design/tests plugins/evals/src plugins/evals/tests scripts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "test": "bun test plugins/artifact-design/tests",
+    "test": "bun test plugins/artifact-design/tests plugins/evals/tests",
     "mod": "bun scripts/mod/cli.ts"
   },
   "dependencies": {

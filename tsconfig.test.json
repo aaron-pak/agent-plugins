@@ -4,5 +4,5 @@
   "compilerOptions": {
     "types": ["bun"]
   },
-  "include": ["plugins/*/src", "plugins/artifact-design/tests", "scripts"]
+  "include": ["plugins/*/src", "plugins/artifact-design/tests", "plugins/evals/tests", "scripts"]
 }
