@@ -1,19 +1,24 @@
-// `evals`: the helper the evals plugin's skills call next to `claude plugin eval`. It reads Claude
-// Code sessions, saves traces, cuts cases from recorded moments, makes instruction-file variants,
-// grades recorded turns for free, and compares two eval results. It never runs a model.
+// `evals`: the evals plugin's runner and helper. `evals run` runs a suite's cases the way `claude
+// plugin eval` does, in our own code; the other commands read Claude Code sessions, save traces, cut
+// cases from recorded moments, make instruction-file variants, grade recorded turns for free, and
+// compare two results.
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { type ParseArgsOptionsConfig, parseArgs } from "node:util";
 
 import { capture } from "./capture.ts";
 import { compare, formatComparison, loadResult } from "./compare.ts";
 import { gradeCase } from "./grade.ts";
+import { claudeHarness } from "./run/harness/claude.ts";
+import { renderReport } from "./run/report.ts";
+import { type Ablation, runSuite } from "./run/runner.ts";
 import { type Edit, recordedFiles, rewriteHistoryFile, writeVariant } from "./instructions.ts";
 import { findSession, listSessions, parseSince, projectsDir, searchSessions } from "./sessions.ts";
 import { describeTrace, evalsHome, filterTraces, listTraces, saveTrace, updateTrace } from "./traces.ts";
 import { clip, mainChain, readTranscript, textOf, turnsOf } from "./transcript.ts";
 
-const HELP = `evals: helper for the evals plugin. Runs go through \`claude plugin eval\`; this never calls a model.
+const HELP = `evals: the evals plugin's runner and helper.
 
 Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CLAUDE_CONFIG_DIR/projects
 (default ~/.claude/projects).
@@ -38,6 +43,12 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   instructions rewrite <history.jsonl> (--replace <path> | --remove <path> | --add <path>) [--with <file>]
                        [--type Project|User|Local] [--out <file>]
   variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
+
+  run [target] [--runs n] [--model m] [--judge-model m] [--ablation none|with-without] [--case glob]... [--tag t]...
+      [--allow-tools t...] [--disallow-tools t...] [--threshold 0..1] [--max-cost-usd usd] [-j n] [--scaffold]
+      [--mocks record|off] [--allow-real-servers] [--eval-dir d] [--output-dir d] [--report file] [--json [file]] [--keep-temp]
+                                       runs the target's eval cases (<target>/evals/**/case.yaml or prompt.md) the
+                                       way \`claude plugin eval\` does; --max-cost-usd 0 loads them and runs nothing
 
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
                                        B against A: paired per-case score Δ with a 95% interval and a sign test;
@@ -215,9 +226,91 @@ function traceCommand(sub: string | undefined, rest: string[]): void {
   fail("trace save | show | list | update");
 }
 
-function main(argv: string[]): void {
+const RUN_OPTIONS: ParseArgsOptionsConfig = {
+  runs: { type: "string" },
+  model: { type: "string" },
+  "judge-model": { type: "string" },
+  ablation: { type: "string" },
+  threshold: { type: "string" },
+  "max-cost-usd": { type: "string" },
+  "allow-tools": { type: "string", multiple: true },
+  "disallow-tools": { type: "string", multiple: true },
+  case: { type: "string", multiple: true },
+  tag: { type: "string", multiple: true },
+  "eval-dir": { type: "string" },
+  scaffold: { type: "boolean" },
+  "no-scaffold": { type: "boolean" },
+  "output-dir": { type: "string" },
+  report: { type: "string" },
+  json: { type: "string" },
+  concurrency: { type: "string", short: "j" },
+  "keep-temp": { type: "boolean" },
+  mocks: { type: "string" },
+  "allow-real-servers": { type: "boolean" },
+};
+
+function number(value: unknown, flag: string, min: number, max: number, integer = false): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < min || n > max || (integer && !Number.isInteger(n)))
+    fail(`${flag} must be ${integer ? "a whole number " : ""}from ${min} to ${max}`);
+  return n;
+}
+
+async function runCommand(argv: string[]): Promise<void> {
+  // `--json` with no path prints to stdout, as `claude plugin eval --json` does.
+  const jsonBare = argv.includes("--json") && (argv[argv.indexOf("--json") + 1] ?? "--").startsWith("-");
+  const { values, positionals } = args(
+    argv.filter((a, i) => !(jsonBare && a === "--json" && i === argv.indexOf("--json"))),
+    RUN_OPTIONS,
+  );
+  const ablation = (values.ablation as string | undefined) ?? "auto";
+  if (!["auto", "with-without", "none"].includes(ablation)) fail("--ablation none | with-without");
+  const mocks = (values.mocks as string | undefined) ?? "record";
+  if (mocks !== "record" && mocks !== "off") fail("--mocks record | off");
+  const log = (line: string) => (jsonBare ? console.error(line) : console.log(line));
+  const controller = new AbortController();
+  process.once("SIGINT", () => controller.abort());
+  const { result, exitCode, outputDir } = await runSuite({
+    target: positionals[0] ?? ".",
+    evalDir: values["eval-dir"] as string | undefined,
+    runs: number(values.runs, "--runs", 1, 50, true),
+    model: values.model as string | undefined,
+    judgeModel: (values["judge-model"] as string | undefined) ?? "haiku",
+    ablation: ablation as Ablation,
+    threshold: number(values.threshold, "--threshold", 0, 1) ?? 1,
+    maxCostUsd: number(values["max-cost-usd"], "--max-cost-usd", 0, Number.MAX_SAFE_INTEGER),
+    allowTools: ((values["allow-tools"] as string[] | undefined) ?? []).flatMap((t) => t.split(/\s+/)).filter(Boolean),
+    disallowTools: ((values["disallow-tools"] as string[] | undefined) ?? [])
+      .flatMap((t) => t.split(/[\s,]+/))
+      .filter(Boolean),
+    caseGlobs: (values.case as string[] | undefined) ?? [],
+    tags: (values.tag as string[] | undefined) ?? [],
+    scaffold: Boolean(values.scaffold) && !values["no-scaffold"],
+    outputDir: values["output-dir"] as string | undefined,
+    concurrency: number(values.concurrency, "--concurrency", 1, 8, true) ?? 1,
+    keepTemp: Boolean(values["keep-temp"]),
+    mocks: mocks === "record",
+    allowRealServers: Boolean(values["allow-real-servers"]),
+    harness: claudeHarness,
+    judgeHarness: claudeHarness,
+    onLine: log,
+    signal: controller.signal,
+  });
+  const reportPath = (values.report as string | undefined) ?? join(outputDir, "report.html");
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, renderReport(result));
+  if (jsonBare) console.log(JSON.stringify(result, null, 2));
+  else if (values.json) writeFileSync(values.json as string, `${JSON.stringify(result, null, 2)}\n`);
+  log(`results: ${join(outputDir, "aggregate-result.json")}\nreport: ${reportPath}`);
+  process.exitCode = exitCode;
+}
+
+function main(argv: string[]): void | Promise<void> {
   const [command, sub, ...rest] = argv;
   switch (command) {
+    case "run":
+      return runCommand(argv.slice(1));
     case "sessions":
       return sessionsCommand(sub, rest);
     case "trace":
@@ -365,7 +458,7 @@ function main(argv: string[]): void {
 }
 
 try {
-  main(process.argv.slice(2));
+  await main(process.argv.slice(2));
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error));
 }
