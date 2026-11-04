@@ -95,6 +95,13 @@ effect from the cut on, and the agent is steered by everything the old setup alr
 so recorded cases lean toward the recorded behavior. A change that moves them is likely real; one
 that doesn't may still help a conversation from its start. Confirm a winner on fresh cases.
 
+Two more effects of an edited history. The agent's reasoning is signed and only valid in the exact
+conversation that produced it, so a replay never carries it: the runner removes it from every arm,
+and the agent resumes from what it said and did, not from what it thought. And the turns after an
+edit were written under the old text, so the agent can read its own earlier replies as mistakes
+against the new one and spend its reply apologizing for them. Cut the case at the first turn the
+change could affect, and when a grader sees a correction of the past, read it as this effect.
+
 ## Captured versus derived
 
 A capture is the situation exactly as it happened, which is its value and its limit: one draw of

@@ -203,7 +203,7 @@ describe("capture", () => {
 
 describe("instruction variants", () => {
   test("renders a file the way Claude Code does", () => {
-    expect(renderFile("---\npaths: x\n---\n# A\n<!-- note -->\nB\n")).toBe("# A\n\nB\n");
+    expect(renderFile("---\npaths: x\n---\n# A\n<!-- note -->\nB\n")).toBe("# A\n\nB");
   });
 
   test("replaces a recorded file in the attachment and in the text the model was sent", () => {
@@ -213,9 +213,9 @@ describe("instruction variants", () => {
     ]);
     expect(changed).toBe(1);
     const att = out.find((r) => r.attachment?.type === "instructions")!;
-    expect(att.attachment!.files![0]!.content).toBe("# Rules\n\nJust do it.\n");
+    expect(att.attachment!.files![0]!.content).toBe("# Rules\n\nJust do it.");
     expect(att.rendered![0]!.content).toContain(
-      "Contents of /repo/AGENTS.md (project instructions, checked into the codebase):\n\n# Rules\n\nJust do it.\n",
+      "Contents of /repo/AGENTS.md (project instructions, checked into the codebase):\n\n# Rules\n\nJust do it.\n</system-reminder>",
     );
     expect(att.rendered![0]!.content).not.toContain("Ask before deleting");
     expect(() => rewriteHistory(records, [{ kind: "remove", path: "/repo/CLAUDE.md" }])).toThrow(/never loaded/);

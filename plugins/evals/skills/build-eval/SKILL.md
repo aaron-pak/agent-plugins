@@ -240,7 +240,8 @@ folder, or in the user's config with `--instructions-scope user`. No other instr
   derived from them, carry the files their session loaded; with `--instructions`, the recorded
   text of that scope is replaced in a copy of the history, rendered the way Claude Code renders a
   file (frontmatter and HTML comments dropped; a new `@import` isn't expanded), so the resumed
-  conversation reads the new text where the old was. This is where real failures are tested; mind
+  conversation reads the new text where the old was. The recorded reasoning is left out of every
+  arm, since the API only accepts it in the conversation that produced it. This is where real failures are tested; mind
   the off-policy bias in `docs/principles.md`.
 - **Fresh cases** read the file from disk exactly as a session would. Good for synthetic cases and
   for confirming a change on new prompts.

@@ -3,7 +3,8 @@
 // questions with PASS, and otherwise plays a short run: it starts the MCP servers of each plugin
 // passed with --plugin-dir (and of --mcp-config), calls a tool when the prompt says
 // `call <server> <tool> <json>`, writes a file when the prompt says `write <name>`, and prints the
-// stream-json events Claude Code would.
+// stream-json events Claude Code would. Its reply states what it saw: the cwd's CLAUDE.md (read only
+// from the project setting source), whether CLAUDE.md files were off, and the resumed history.
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -90,10 +91,14 @@ if (call) {
 }
 const resume = values("--resume")[0];
 const claudeMd = join(process.cwd(), "CLAUDE.md");
+// Like Claude Code, a project CLAUDE.md loads only from the project setting source.
+const projectSource = (values("--setting-sources")[0] ?? "user,project,local").split(",").includes("project");
+const recorded = resume ? readFileSync(resume, "utf8") : "";
 const facts = [
-  `claude-md:${existsSync(claudeMd) ? readFileSync(claudeMd, "utf8").split("\n")[0] : "none"}`,
+  `claude-md:${projectSource && existsSync(claudeMd) ? readFileSync(claudeMd, "utf8").split("\n")[0] : "none"}`,
   `mds-off:${process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS === "1"}`,
-  `history:${resume ? (readFileSync(resume, "utf8").includes("NEW RULES") ? "new" : "old") : "none"}`,
+  `history:${resume ? (recorded.includes("NEW RULES") ? "new" : "old") : "none"}`,
+  `thinking:${recorded.includes('"type":"thinking"')}`,
 ];
 const write = /write (\S+)/.exec(stdin);
 if (write) writeFileSync(join(process.cwd(), write[1]), "written\n");

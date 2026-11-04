@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 
 import { CaseError, loadCase, pathGlob } from "../src/run/case.ts";
 import { gradeRun, scoreOf } from "../src/run/graders.ts";
+import { placeFor, prepareHistory, stripThinking } from "../src/run/history.ts";
 import { claudeHarness, parseStream } from "../src/run/harness/claude.ts";
 import type { Harness, RunOutput } from "../src/run/harness/types.ts";
 import { readVote, renderTrace } from "../src/run/judge.ts";
@@ -333,6 +334,7 @@ describe("suites", () => {
       type: "attachment",
       uuid: "a1",
       parentUuid: null,
+      cwd: "/p",
       attachment: { type: "instructions", files: [{ path: "/p/CLAUDE.md", type: "Project", content: "OLD RULES" }] },
       rendered: [
         {
@@ -341,14 +343,29 @@ describe("suites", () => {
         },
       ],
     };
-    write(join(suite, "evals", "recorded", "history.jsonl"), `${JSON.stringify(attachment)}\n`);
+    const thought = {
+      type: "assistant",
+      uuid: "t1",
+      parentUuid: "a1",
+      message: { id: "m1", role: "assistant", content: [{ type: "thinking", thinking: "", signature: "sig" }] },
+    };
+    const said = {
+      type: "assistant",
+      uuid: "t2",
+      parentUuid: "t1",
+      message: { id: "m1", role: "assistant", content: [{ type: "text", text: "done" }] },
+    };
+    write(
+      join(suite, "evals", "recorded", "history.jsonl"),
+      `${[attachment, thought, said].map((r) => JSON.stringify(r)).join("\n")}\n`,
+    );
     write(
       join(suite, "evals", "recorded", "case.yaml"),
       'schema_version: "1.1"\nname: recorded\nruns: 1\ncontext:\n  history_file: history.jsonl\nexecution:\n  prompt: next\n',
     );
     write(
       join(suite, "evals", "recorded", "graders", "rewritten.md"),
-      "---\ntype: regex\n---\nclaude-md:none mds-off:true history:new\n",
+      "---\ntype: regex\n---\nclaude-md:NEW RULES mds-off:false history:new thinking:false\n",
     );
     const base: RunOptions = {
       target: suite,
@@ -416,6 +433,63 @@ describe("suites", () => {
       explanation: "mcp__tracker__create called 1x (expected 1..∞)",
     });
   }, 30_000);
+});
+
+describe("recorded histories", () => {
+  const to = { cwd: "/box/home/work", parents: ["/box/home", "/box"], configDir: "/box/config" };
+
+  test("each recorded instruction file gets a place in the sandbox, or none", () => {
+    expect(placeFor("/r/proj/CLAUDE.md", "Project", "/r/proj", to)).toBe("/box/home/work/CLAUDE.md");
+    expect(placeFor("/r/proj/.claude/rules/a.md", "Project", "/r/proj", to)).toBe("/box/home/work/.claude/rules/a.md");
+    expect(placeFor("/r/CLAUDE.md", "Project", "/r/proj", to)).toBe("/box/home/CLAUDE.md");
+    expect(placeFor("/CLAUDE.md", "Project", "/r/proj", to)).toBe("/box/CLAUDE.md");
+    expect(placeFor("/a/b/c/CLAUDE.md", "Project", "/a/b/c/d/e/f", to)).toBeNull();
+    expect(placeFor("/Users/me/.claude/CLAUDE.md", "User", "/r/proj", to)).toBe("/box/config/CLAUDE.md");
+    expect(placeFor("/Library/CLAUDE.md", "Managed", "/r/proj", to)).toBeNull();
+  });
+
+  test("thinking is stripped and an emptied record's children relinked to its parent", () => {
+    const { records, removed } = stripThinking([
+      { type: "user", uuid: "u", parentUuid: null },
+      { type: "assistant", uuid: "t", parentUuid: "u", message: { content: [{ type: "thinking" }] } },
+      {
+        type: "assistant",
+        uuid: "x",
+        parentUuid: "t",
+        message: { content: [{ type: "redacted_thinking" }, { type: "text", text: "hi" }] },
+      },
+    ]);
+    expect(removed).toBe(2);
+    expect(records.map((r) => [r.uuid, r.parentUuid])).toEqual([
+      ["u", null],
+      ["x", "u"],
+    ]);
+    expect(records[1]!.message!.content).toEqual([{ type: "text", text: "hi" }]);
+  });
+
+  test("files are written where the history now says they are", () => {
+    const box = mkdtempSync(join(tmpdir(), "evals-history-"));
+    const placement = { cwd: join(box, "home", "work"), parents: [join(box, "home"), box], configDir: join(box, "c") };
+    const out = prepareHistory(
+      [
+        {
+          type: "attachment",
+          cwd: "/r/p",
+          attachment: { type: "instructions", files: [{ path: "/r/p/CLAUDE.md", type: "Project", content: "RULES" }] },
+          rendered: [
+            { content: "Contents of /r/p/CLAUDE.md (project instructions, checked into the codebase):\n\nRULES" },
+          ],
+        },
+      ],
+      placement,
+    );
+    const moved = join(placement.cwd, "CLAUDE.md");
+    expect(out.placed).toBe(1);
+    expect(readFileSync(moved, "utf8")).toBe("RULES");
+    expect(out.records[0]!.attachment!.files![0]!.path).toBe(moved);
+    expect(out.records[0]!.rendered![0]!.content).toContain(`Contents of ${moved} (`);
+    rmSync(box, { recursive: true, force: true });
+  });
 });
 
 describe("codex", () => {

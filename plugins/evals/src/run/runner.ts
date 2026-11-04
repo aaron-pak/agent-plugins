@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { type Edit, recordedFiles, rewriteHistory } from "../instructions.ts";
 import { readTranscript } from "../transcript.ts";
+import { prepareHistory } from "./history.ts";
 import { type Case, CaseError, findCaseDirs, globMatch, inCase, loadCase } from "./case.ts";
 import { scoreOf, gradeRun, type GraderResult } from "./graders.ts";
 import { READ_ONLY_TOOLS } from "./harness/claude.ts";
@@ -222,7 +223,9 @@ export function instructionsFor(c: Case, options: Pick<RunOptions, "instructions
 /**
  * Puts the instruction file where the harness loads it. A recorded case's history already carries
  * the files its session loaded, so there the recorded text is replaced in a copy of the history
- * (the resumed conversation then reads the new text where the old was) and no file is written.
+ * (the resumed conversation then reads the new text where the old was). Either way a recorded case's
+ * files are then written into the sandbox to match the history (see history.ts), so that Claude
+ * Code's re-read on resume finds them unchanged.
  */
 function loadInstructions(
   c: Case,
@@ -231,29 +234,45 @@ function loadInstructions(
   historyFile: string | undefined,
 ): { written: boolean; notes: string[] } {
   const file = instructionsFor(c, options);
-  if (!file) return { written: false, notes: [] };
-  const text = readFileSync(file, "utf8");
-  if (historyFile) {
-    const records = readTranscript(historyFile);
+  const text = file ? readFileSync(file, "utf8") : undefined;
+  const target = () => options.harness.instructionsPath(box, options.instructionsScope, options.instructionsName);
+  if (!historyFile) {
+    if (text === undefined) return { written: false, notes: [] };
+    writeFileSync(target(), text);
+    return { written: true, notes: [] };
+  }
+  let records = readTranscript(historyFile);
+  const notes: string[] = [];
+  let wrote = false;
+  if (text !== undefined) {
     const type = options.instructionsScope === "user" ? "User" : "Project";
     const edits: Edit[] = recordedFiles(records)
       .filter((f) => (f.type ?? "Project") === type)
       .map((f) => ({ kind: "replace", path: f.path, text }));
     if (edits.length > 0) {
       const result = rewriteHistory(records, edits);
-      writeFileSync(historyFile, `${result.records.map((r) => JSON.stringify(r)).join("\n")}\n`);
-      return { written: false, notes: result.warnings };
+      records = result.records;
+      notes.push(...result.warnings);
+    } else {
+      writeFileSync(target(), text);
+      wrote = true;
+      notes.push(
+        "the history loaded no instruction file of this scope, so the file was written for the resumed session to load",
+      );
     }
   }
-  writeFileSync(options.harness.instructionsPath(box, options.instructionsScope, options.instructionsName), text);
-  return {
-    written: true,
-    notes: historyFile
-      ? [
-          "the history loaded no instruction file of this scope, so the file was written for the resumed session to load",
-        ]
-      : [],
-  };
+  const prepared = prepareHistory(records, {
+    cwd: box.cwd,
+    parents: [dirname(box.cwd), box.root],
+    configDir: box.configDir,
+  });
+  notes.push(...prepared.notes);
+  if (c.execution.append_system_prompt)
+    notes.push(
+      "append_system_prompt has no effect on a resumed Claude Code session: it reuses the system prompt it recorded",
+    );
+  writeFileSync(historyFile, `${prepared.records.map((r) => JSON.stringify(r)).join("\n")}\n`);
+  return { written: wrote || prepared.placed > 0, notes };
 }
 
 /** Runs the case's scaffold script in the run's working folder. */

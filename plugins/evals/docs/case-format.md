@@ -90,9 +90,25 @@ $E run <suite or plugin> [--harness claude|codex] [--runs 3] [--ablation with-wi
   `AGENTS.md` (Codex) in the working folder, or the user's config folder with
   `--instructions-scope user`. Without one, no instruction file loads. A recorded case's history
   already holds the files its session loaded, so there the recorded text of that scope is replaced
-  in a copy of the history (rendered the way Claude Code renders a file: frontmatter and HTML
-  comments dropped, `@imports` not expanded) and no file is written. An A/B of two instruction
-  files is two runs with different `--instructions`, then `evals compare`.
+  in a copy of the history (rendered the way Claude Code renders a file: frontmatter, HTML comments
+  and trailing whitespace dropped, `@imports` not expanded). An A/B of two instruction files is two
+  runs with different `--instructions`, then `evals compare`.
+- **A recorded case resumes the way it would at home.** Claude Code re-reads a resumed session's
+  instruction files and tells the model about any that changed or vanished, so the runner writes
+  each file the history holds (after any replace) into the sandbox, where the recorded cwd, the
+  folders above it, or the user's config folder map to, and moves the history's paths to match. A
+  file with no place there (a managed file, or one more than two folders above the recorded cwd) is
+  noted, and the model is told it's no longer present.
+- **A recorded case resumes without its old reasoning.** The API keeps a signed thinking block only
+  in the exact conversation that produced it: change anything before it (an instruction file, the
+  tool list, a path) and the block is dropped. A sandbox always changes something, and a variant
+  changes more than its baseline, so the runner removes the recorded thinking from every arm and
+  says so in the run's notes; both arms then resume from the same visible history. The turns after
+  an edit were still written under the old text, and the model can notice that (an edited rule its
+  earlier replies didn't follow reads as its own mistake), so a decision point is best cut at the
+  first turn the change could affect.
+- A resumed Claude Code session reuses the system prompt it recorded, so a recorded case's
+  `append_system_prompt` has no effect (noted on each run).
 - `--max-cost-usd 0` loads every case and runs nothing: a free check that the suite parses (exit 2).
   Otherwise the ceiling is checked before each run starts; a run that crosses it skips its judged
   graders.

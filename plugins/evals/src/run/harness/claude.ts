@@ -240,8 +240,10 @@ export const claudeHarness: Harness = {
       String(request.maxTurns),
       "--permission-mode",
       "dontAsk",
+      // A project CLAUDE.md loads only from the project source, so a run that loads instruction files
+      // takes it too; the sandbox's cwd holds nothing else that source would read.
       "--setting-sources",
-      "user",
+      request.loadsInstructions ? "user,project" : "user",
     ];
     if (request.model) args.push(`--model=${request.model}`);
     for (const dir of request.pluginDirs) args.push("--plugin-dir", dir);

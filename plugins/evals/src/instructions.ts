@@ -16,12 +16,15 @@ const LABELS: Record<string, string> = {
   Managed: "managed instructions",
 };
 
-/** Claude Code drops frontmatter and HTML comments from an instruction file before sending it. */
+/** Claude Code drops frontmatter, HTML comments and trailing whitespace from an instruction file before sending it. */
 export function renderFile(text: string): string {
   let body = text.replace(/^﻿/, "");
   const fm = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(body);
   if (fm) body = body.slice(fm[0].length);
-  return body.replace(/<!--[\s\S]*?-->/g, "").replace(/^\n+/, "");
+  return body
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/^\n+/, "")
+    .replace(/\s+$/, "");
 }
 
 export function header(file: { path: string; type?: string }): string {
