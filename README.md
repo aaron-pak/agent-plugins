@@ -5,6 +5,7 @@ Aaron's personal skills, packaged as a plugin marketplace that both Claude Code 
 Current plugins:
 
 - `artifact-design` (`artifact-design`, `artifact-diagramming` and, in Codex, `dataviz`, plus an `artifact` MCP server)
+- `auto-memory` (Claude Code's auto memory for Codex, sharing one store with Claude Code, see [Auto memory](#auto-memory))
 - `create-skill`
 - `deeper-task` (Felix Rieseberg's prompt, see [Credits](#credits))
 - `dj-fetch` (needs `uv` and `ffprobe`; `setup_slskd.py` installs slskd)
@@ -41,7 +42,7 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### Grok Bot
 
-Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
+Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band`) or Codex only (`auto-memory`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
 
 Team marketplaces are available on Teams and Enterprise plans. Add one from Dashboard → Plugins & MCPs → Team Marketplaces → Add Marketplace, using Import from Repo. Auto Refresh is a Marketplace Setting there: on a GitHub import it re-indexes when commits are pushed to the tracked branch, which requires the Cursor GitHub App, and Cursor re-indexes at most once every 10 minutes. On a marketplace created with Import from Repo, Auto Refresh re-reads the full manifest on each push. See [Plugins](https://cursor.com/docs/plugins). Aaron is on Pro, so this repository is a personal marketplace, and Cursor's docs describe no refresh for those.
 
@@ -66,6 +67,29 @@ direct_only_tool_namespaces = ["mcp__artifact"]
 ```
 
 Publishing asks too. Claude Code asks before the plugin's `Artifact` and `ArtifactCheck` tools run, and its "don't ask again" lasts for the project. Codex asks before every call until you answer "always", and `codex exec` refuses the call until then.
+
+### Auto memory
+
+`auto-memory` gives Codex Claude Code's auto memory (as of Claude Code 2.1.318), and puts both harnesses' memories in one store, `~/.agents/memory` (or `AGENT_MEMORY_DIR`), laid out as Claude Code lays out its own: `projects/<project>/memory/`, with `MEMORY.md` as the index. A project is the main working tree of the Git repository a session starts in (its subfolders and worktrees share it), or the folder itself outside a repository, named the way Claude Code names it, so a Codex session and a Claude Code session in the same project read and write the same memories.
+
+In Codex, a `SessionStart` hook starts each session with Claude Code's memory section and the project's `MEMORY.md`, cut at 200 lines or 25,000 bytes as Claude Code cuts it, and the `memory` MCP server gives the model Claude Code's `memory_list`, `memory_read` and `memory_write` tools over the project's memory as the store `personal`. Install it and trust its hook once:
+
+```sh
+codex plugin marketplace add aaron-pak/pak-plugins
+codex plugin add auto-memory@agent-plugins
+```
+
+At its next start Codex says the plugin's hook needs review: choose "Trust all and continue", or trust it later in `/hooks`. Codex asks again after an update changes the hook, and until it's trusted, sessions start without the memory section. The server and the hook run with `node` (20 or later). Codex starts the server with only the variables the plugin names, so set `AGENT_MEMORY_DIR` (a relative path is read from your home folder), if you use it, in the shell you start Codex from; Codex's background server keeps the environment it started with, so restart it with `/daemon` after a change.
+
+Claude Code keeps its own auto memory, which this plugin doesn't replace; point it at the shared store in `~/.claude/settings.json` (use your home folder's full path):
+
+```json
+{ "env": { "CLAUDE_CODE_REMOTE_MEMORY_DIR": "/Users/you/.agents/memory" } }
+```
+
+To keep what Claude Code already remembers, move `~/.claude/projects/<project>/memory/` folders to `~/.agents/memory/projects/<project>/memory/` first. Put the setting in your user settings, not a project's `.claude/settings.json`, where Claude Code ignores it. `CLAUDE_CODE_REMOTE_MEMORY_DIR` isn't a documented setting, and it moves Claude Code's subagent memory (`agent-memory/`) into the shared folder too, so a Claude Code release could change what it does. Installed in Claude Code too, the plugin adds only a `SessionStart` check that warns when Claude Code's memory isn't in the shared store.
+
+Left out for now: Claude Code's background extraction of memories at the end of a turn, its recall of relevant memories into a turn, and its consolidation ("dream"), which are off in Claude Code unless a flag turns them on. [`UPSTREAM.md`](plugins/auto-memory/UPSTREAM.md) lists every change from Claude Code's text.
 
 ## Global instructions
 
@@ -107,6 +131,8 @@ The session reloads the mod when its files change, so edits show up without a re
 ## Credits
 
 The `artifact-design` plugin carries Anthropic's built-in Claude Code `artifact-design`, `artifact-diagramming`, and `dataviz` skills, its Markdown page template and its highlight.js runtime, captured from Claude Code 2.1.304. Its `artifact` MCP server stands in for Claude Code's Artifact tool and `ArtifactCheck`. `artifact-diagramming` and `dataviz` are unchanged except for one sentence each about claude.ai-only features, and only Codex gets `dataviz` (from `codex-skills/`), since Claude Code always has its own; [`UPSTREAM.md`](plugins/artifact-design/UPSTREAM.md) lists every change to `artifact-design` and every way the server differs from the Artifact tool. The server's bundle includes [marked](https://github.com/markedjs/marked) and [Effect](https://github.com/Effect-TS/effect), both under the MIT license, and the highlight.js runtime keeps its BSD license notice.
+
+`auto-memory` carries Claude Code 2.1.318's auto memory text, its memory section and the `memory_list`, `memory_read` and `memory_write` tool descriptions, with the edits [`UPSTREAM.md`](plugins/auto-memory/UPSTREAM.md) lists, and ports its project keys, index truncation and tool behavior. Its bundles include [Effect](https://github.com/Effect-TS/effect), under the MIT license.
 
 `deeper-task` is the depth prompt from Felix Rieseberg's post [How to be more ambitious](https://felixrieseberg.com/how-to-be-more-ambitious-a-tutorial-for-humans-with-models/), word for word as the skill's body. The post gives no license.
 

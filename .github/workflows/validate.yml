@@ -63,7 +63,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD) || changed=scripts/mod/
           status=0
           for mod in plugins/*/; do
-            [ -f "$mod/hooks/hooks.json" ] || continue
+            [ -f "$mod/.claude-plugin/plugin.json" ] && [ -f "$mod/hooks/hooks.json" ] || continue
             echo "$changed" | grep -qE "^($mod|scripts/mod/|package\.json$)" || continue
             bun run mod test "$mod" || status=1
           done
@@ -75,6 +75,12 @@ jobs:
         run: |
           status=0
           for target in . plugins/*/; do
+            # Claude Code reads a plugin folder on its own only through skills/ or a
+            # .claude-plugin/plugin.json; a Codex-only plugin has neither, and the marketplace
+            # check above covers its entry.
+            case "$target" in */plugins/*/|plugins/*/)
+              [ -d "$target/skills" ] || [ -f "$target/.claude-plugin/plugin.json" ] || continue ;;
+            esac
             out=$(claude plugin validate --strict "$target" 2>&1) && { echo "$out"; continue; }
             echo "$out"
             warnings=$(echo "$out" | sed -n 's/.*Found \([0-9]*\) warning.*/\1/p')

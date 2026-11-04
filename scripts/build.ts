@@ -8,6 +8,8 @@ const root = resolve(import.meta.dir, "..");
 
 const bundles: { entry: string; out: string }[] = [
   { entry: "plugins/artifact-design/src/server.ts", out: "plugins/artifact-design/mcp/server.mjs" },
+  { entry: "plugins/auto-memory/src/server.ts", out: "plugins/auto-memory/mcp/server.mjs" },
+  { entry: "plugins/auto-memory/src/hook.ts", out: "plugins/auto-memory/mcp/hook.mjs" },
 ];
 
 for (const { entry, out } of bundles) {

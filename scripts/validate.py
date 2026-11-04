@@ -74,8 +74,11 @@ def check_skills(plugin_dir, where, folder="skills"):
     return bool(skill_dirs)
 
 
-def check_mcp(plugin_dir, where, codex_servers=None, codex_manifest=False):
-    """Compare the Claude Code servers with Codex's: mcp.json, or the mcpServers in .codex-plugin/plugin.json."""
+def check_mcp(plugin_dir, where, codex_servers=None, codex_manifest=False, codex_only=False):
+    """Compare the Claude Code servers with Codex's: mcp.json, or the mcpServers in .codex-plugin/plugin.json.
+
+    A plugin described as Codex only gives Claude Code no servers, so it has no .mcp.json.
+    """
     agent_plugins = plugin_dir / "mcp.json"
     claude_code = plugin_dir / ".mcp.json"
     if codex_manifest and codex_servers is None:
@@ -86,6 +89,10 @@ def check_mcp(plugin_dir, where, codex_servers=None, codex_manifest=False):
     if codex_servers is not None:
         if agent_plugins.exists():
             error(where, "has mcp.json beside .codex-plugin/plugin.json; Codex reads only the manifest's mcpServers")
+        if codex_only:
+            if claude_code.exists():
+                error(where, f"says {CODEX_ONLY} but has a .mcp.json, which Claude Code would load")
+            return True
         if not claude_code.exists():
             error(where, ".codex-plugin/plugin.json has mcpServers but there is no .mcp.json (Claude Code)")
             return True
@@ -188,7 +195,8 @@ def check_plugin(entry, catalog=PUBLIC_CATALOG, folder="plugins"):
             error(where_manifest, "author.name is missing")
 
     has_skills = check_skills(plugin_dir, where)
-    has_mcp = check_mcp(plugin_dir, where, codex_servers, (plugin_dir / ".codex-plugin" / "plugin.json").exists())
+    codex_only = CODEX_ONLY in (entry.get("description") or "")
+    has_mcp = check_mcp(plugin_dir, where, codex_servers, (plugin_dir / ".codex-plugin" / "plugin.json").exists(), codex_only)
     if not has_skills and not has_mcp:
         error(where, "has neither skills/ nor mcp.json")
 
@@ -212,10 +220,17 @@ def check_mod(entry, plugin_dir, where):
 CURSOR_ENTRY_KEYS = {"name", "source", "description", "minClientVersions"}
 CURSOR_TOP_KEYS = {"name", "owner", "metadata", "plugins"}
 CLAUDE_CODE_ONLY = "Claude Code only"
+CODEX_ONLY = "Codex only"
+NOT_FOR_CURSOR = (CLAUDE_CODE_ONLY, CODEX_ONLY)
+
+
+def for_cursor(entry):
+    description = entry.get("description") or ""
+    return not any(phrase in description for phrase in NOT_FOR_CURSOR)
 
 
 def check_cursor_marketplace(claude_entries):
-    """The Cursor catalog is the Claude catalog, minus plugins described as Claude Code only.
+    """The Cursor catalog is the Claude catalog, minus plugins described as Claude Code only or Codex only.
 
     Marketplace entries follow cursor/plugins schemas/marketplace.schema.json:
     name, source, description, and minClientVersions only. source has no leading ./.
@@ -260,8 +275,8 @@ def check_cursor_marketplace(claude_entries):
             error(where, f"entry {name!r} is not in {PUBLIC_CATALOG}")
         elif entry.get("description") != claude.get("description"):
             error(where, f"entry {name!r} description does not match the Claude catalog")
-        if claude is not None and CLAUDE_CODE_ONLY in (claude.get("description") or ""):
-            error(where, f"entry {name!r} says Claude Code only; leave it out of the Cursor catalog")
+        if claude is not None and not for_cursor(claude):
+            error(where, f"entry {name!r} says Claude Code only or Codex only; leave it out of the Cursor catalog")
         versions = entry.get("minClientVersions", None)
         if name == "mac-computer-use":
             if versions != {"cursor": "never"}:
@@ -273,8 +288,7 @@ def check_cursor_marketplace(claude_entries):
     expected = [
         entry.get("name")
         for entry in claude_entries
-        if entry.get("name")
-        and CLAUDE_CODE_ONLY not in (entry.get("description") or "")
+        if entry.get("name") and for_cursor(entry)
     ]
     for name in expected:
         if name not in listed:

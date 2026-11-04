@@ -14,6 +14,12 @@
       "description": "Claude Code's artifact-design, artifact-diagramming and dataviz skills for HTML artifacts, with Artifact and ArtifactCheck MCP tools that publish and preview them on this machine. From Anthropic's Claude Code."
     },
     {
+      "name": "auto-memory",
+      "source": "./plugins/auto-memory",
+      "strict": false,
+      "description": "Claude Code's auto memory for Codex only: the same memory prompt, MEMORY.md index, and memory_list, memory_read and memory_write tools, over one store in ~/.agents/memory that Claude Code's own auto memory can share. From Anthropic's Claude Code."
+    },
+    {
       "name": "create-skill",
       "source": "./plugins/create-skill",
       "strict": false,

@@ -1,0 +1,18 @@
+{
+  "name": "auto-memory",
+  "description": "Claude Code's auto memory for Codex only: the same memory prompt, MEMORY.md index, and memory_list, memory_read and memory_write tools, over one store in ~/.agents/memory that Claude Code's own auto memory can share. From Anthropic's Claude Code.",
+  "author": {
+    "name": "Anthropic"
+  },
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": {
+    "memory": {
+      "command": "node",
+      "args": ["mcp/server.mjs"],
+      "cwd": ".",
+      "env_vars": ["AGENT_MEMORY_DIR"],
+      "default_tools_approval_mode": "approve",
+      "omit_tools_from": ["deferred", "code_mode"]
+    }
+  }
+}
