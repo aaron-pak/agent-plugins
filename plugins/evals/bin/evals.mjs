@@ -806,8 +806,13 @@ function paired(a, b) {
     pSign: signTest(wins, losses)
   };
 }
+function isPlumbing(r) {
+  if (r.aborted)
+    return true;
+  return r.error !== null && !/turn/i.test(r.error);
+}
 function runsOf(c, dropErrors) {
-  return dropErrors ? c.arms.with.filter((r) => r.error === null && !r.aborted) : c.arms.with;
+  return dropErrors ? c.arms.with.filter((r) => !isPlumbing(r)) : c.arms.with;
 }
 function env(r) {
   return [
@@ -873,10 +878,7 @@ function compare(a, b, options = {}) {
     durationSeconds: da.every((x) => !Number.isNaN(x)) && db.every((x) => !Number.isNaN(x)) ? paired(da, db) : undefined,
     noiseHalfWidth,
     runsPerCase: { a: ka, b: kb },
-    errored: {
-      a: count(a, (r) => r.error !== null || Boolean(r.aborted)),
-      b: count(b, (r) => r.error !== null || Boolean(r.aborted))
-    },
+    errored: { a: count(a, isPlumbing), b: count(b, isPlumbing) },
     unjudged: { a: count(a, (r) => Boolean(r.skippedPaidGraders)), b: count(b, (r) => Boolean(r.skippedPaidGraders)) },
     partial: { a: Boolean(a.partial), b: Boolean(b.partial) },
     environment: { a: env(a), b: env(b) },
@@ -903,7 +905,7 @@ function formatComparison(c, minEffect) {
   ];
   if (c.durationSeconds)
     out.push(line("seconds", c.durationSeconds, 0));
-  out.push(`errored or aborted runs: ${c.errored.a} vs ${c.errored.b}; unjudged (cost ceiling): ${c.unjudged.a} vs ${c.unjudged.b}`);
+  out.push(`plumbing failures (timeouts, API errors, aborts): ${c.errored.a} vs ${c.errored.b}; unjudged (cost ceiling): ${c.unjudged.a} vs ${c.unjudged.b}`);
   const excludesZero = !Number.isNaN(s.halfWidth) && Math.abs(s.delta) > s.halfWidth;
   const bigEnough = minEffect === undefined || Math.abs(s.delta) >= minEffect;
   let verdict;
@@ -1370,7 +1372,8 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
 
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
-                                       B against A: paired per-case score Δ with a 95% interval and a sign test
+                                       B against A: paired per-case score Δ with a 95% interval and a sign test;
+                                       --drop-errors leaves out plumbing (timeouts, API errors, aborts), not the turn cap
 `;
 function fail(message) {
   console.error(`evals: ${message}`);

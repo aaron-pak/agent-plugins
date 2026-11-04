@@ -1,6 +1,6 @@
 ---
 name: build-eval
-description: Build an eval suite for a Claude Code plugin, a skill, an instruction file (CLAUDE.md, AGENTS.md, rules) or an MCP server, through an interview with sign-offs, and run its first baseline with the bundled plugin-eval runner. Use when the user wants an eval, wants to measure or test a plugin, skill, instruction file or MCP server, asks whether a change helped, wants a case built from a session or thread where an agent went wrong, or runs /build-eval.
+description: Build an eval suite for a Claude Code plugin, a skill, an instruction file (CLAUDE.md, AGENTS.md, rules) or an MCP server, through an interview with sign-offs, and run its first baseline with claude plugin eval. Use when the user wants an eval, wants to measure or test a plugin, skill, instruction file or MCP server, asks whether a change helped, wants a case built from a session or thread where an agent went wrong, or runs /build-eval.
 ---
 
 # Build an eval
@@ -9,10 +9,12 @@ The goal is a suite the user trusts enough to make decisions with, plus a baseli
 user's sign-offs on the inputs and on the grading are what make it trustworthy, so they are the
 product, not a formality. A suite that runs but that nobody believes is worth nothing.
 
-The runner is `"${CLAUDE_PLUGIN_ROOT}/bin/plugin-eval"`, a port of `claude plugin eval` (same
-case files, flags and results; no report publishing). Read these before you start:
+Runs go through Claude Code's `claude plugin eval`, always with `--model opus --judge-model opus`
+and `--no-publish`. The helper `"${CLAUDE_PLUGIN_ROOT}/bin/evals"` reads sessions and saved traces,
+cuts cases from recorded moments, makes instruction-file variants, grades recorded turns for free
+and compares results; it never calls a model. Read these before you start:
 
-- `${CLAUDE_PLUGIN_ROOT}/docs/case-format.md` — the case files, graders, mocks, flags and results.
+- `${CLAUDE_PLUGIN_ROOT}/docs/case-format.md` — the case files, graders, mocks, flags, results and the helper.
 - `${CLAUDE_PLUGIN_ROOT}/docs/principles.md` — what makes an eval trustworthy.
 - `${CLAUDE_PLUGIN_ROOT}/docs/audit.md` — the checklist every suite you build must pass.
 
@@ -27,7 +29,7 @@ case files, flags and results; no report publishing). Read these before you star
   mean something: at least one case where the target must not act; at least one outcome grader per
   case (never only `tool_used`); `runs` of 3 or more; and the with-without ablation on whenever
   there is a plugin to remove (cases captured from a session run single-arm under it; their Δ
-  comes from an instruction or context variant instead). Say "I can't drop that, it's what makes the result mean something."
+  comes from an instruction-file variant or a comparison between runs instead). Say "I can't drop that, it's what makes the result mean something."
 - The target is read-only. If the user asks you to fix it, note it as a follow-up and test it as it
   is. You write only in the eval directory.
 - Fit the suite to the repository: where it already keeps evals, how it builds the plugin.
@@ -51,7 +53,7 @@ intent, not the user's experience. A literal format string from it may be a seco
 
 ## Step 2 — The inputs (gate 1)
 
-Ask for real material first: traces the user saved, then their sessions (`plugin-eval sessions search`), transcripts, bug reports
+Ask for real material first: traces the user saved, then their sessions (`evals sessions search`), transcripts, bug reports
 where the target should or shouldn't have acted. Then the user's own examples, and synthesize only
 last, anchored on a few real ones and on what makes a case hard. Saved traces and corrections
 alone skew toward obvious failures (user feedback is "sparse and self-selected"), so also sample
@@ -60,7 +62,7 @@ shouldn't have fired. Before pulling transcripts, ask whether they may sit in
 the repository (retention, customer data); if not, rewrite them into synthetic cases of the same
 shape and show the rewrites.
 
-Saved traces: run both `plugin-eval trace list --used <target>` (what the moment's turn used: a
+Saved traces: run both `evals trace list --used <target>` (what the moment's turn used: a
 skill, command, plugin or MCP server name) and `trace list --tag <target>` (what the user filed it
 under), since either can miss a trace the other finds. Read each one's notes (`trace show <id>`)
 before keeping it; a note can say the trace is about something else. A note marked `inferred` is
@@ -76,30 +78,33 @@ prompt in the user's plain words tests whether it fires. Know which one each cas
 When the user points at a thread ("that reply where I got confused", "the turn where it spawned a
 subagent for nothing"), build the case from the recorded moment rather than paraphrasing it:
 
-1. Find the moment: a saved trace (`plugin-eval trace show <id>`), the id from the thread, or
-   `plugin-eval sessions search --user-text '<words from their reaction>'`. `sessions turns <session>` lists its turns and whether each request
-   rebuilds exactly, with what each request did.
+1. Find the moment: a saved trace (`evals trace show <id>`), the id from the thread, or
+   `evals sessions search --user-text '<words from their reaction>'`. `evals sessions turns
+   <session>` lists its turns, with each response's request id and what it did.
 2. Decide with the user where the failure lives (`docs/principles.md`, "Cases from real
-   moments"): one response → a decision-point case at the step that went wrong (`--reply-before`
-   the user's reaction, or `--request` for a step inside the turn, `--agent` for a subagent's
-   step); a whole turn → a turn episode `--at` the message that started it, cut as early as the
-   change could matter.
-3. `plugin-eval capture ...` (`--trace <id>` for a saved trace) into `<work>/<case>`, where
-   `<work>` is one working folder for the suite outside the repository or ignored by git, then
-   read `original.md` with the user. Everything in it after the moment (the
-   user's reaction, the trace's notes) is grading evidence and never reaches the agent under test.
+   moments"): the first response of a turn → a decision case (`--kind decision`, graded on that
+   one response); anything later in a turn, or a whole turn → a turn case at the user's message
+   that started it. A run can only start at a user message, so a step after a tool result or
+   inside a subagent is tested through its turn.
+3. `evals capture --trace <id>` (or `--session <id> --moment <ref>`) `--out <work>/evals/<case>`,
+   where `<work>` is one working folder for the suite outside the repository or ignored by git
+   (`~/.claude/evals/suites/<name>` by default), with `--plugin <dir>` when a plugin is under
+   test. Then read `original.md` with the user. Everything in it after the cut (the agent's
+   recorded turn, the user's reaction, the trace's notes) is grading evidence and never reaches
+   the agent under test.
 4. Write the graders from the user's reaction: what they needed, as checkable claims rather than
    their exact wording, plus
-   `tool_used` for decisions ("no `Agent` call"). A decision-point judge sees only the response,
-   so quote the user's message and what they needed in the rubric. A turn episode also needs its
-   environment: fixtures, the drafted mocks (review them and move them into `mocks/`), or read
-   grants (`Read(//absolute/path)` through `--allow-tools`). Read grants show the files as they
+   `tool_used` for decisions ("no `Agent` call"). A decision case's judge sees only that one
+   response, so quote the user's message and what they needed in the rubric. A turn case also
+   needs its environment: fixtures, mocks for every MCP tool the turn called (capture lists them),
+   or read grants (`Read(//absolute/path)` through `--allow-tools`). Read grants show the files as they
    are today, which may already contain the fix; and Bash runs in the OS sandbox, which can't read
    the user's home whatever the grants say. A task about the live state of the user's machine is
-   a poor turn episode.
-5. **First gate, free:** the recorded response must fail the graders.
-   `plugin-eval grade <case> --run <case>/original-run` grades exactly what the agent did. If it
-   passes, the graders miss the problem; fix them before anything is paid for.
+   a poor turn case.
+5. **First gate, free:** the recorded response must fail the graders. `evals grade <case>` runs
+   the deterministic graders on exactly what the agent did (`original-turn.jsonl`); read the
+   judged rubrics against `original.md` yourself. If the recording passes, the graders miss the
+   problem; fix them before anything is paid for.
 6. **Second gate:** measure how often the recorded behavior fails. Run the recorded arm several
    times (`--runs 5`, no variant). One bad reply was one draw, and the same moment often goes fine.
    If it rarely fails, the case can catch a regression but can't show a fix: tell the user, and
@@ -135,8 +140,9 @@ tool"). Show the criteria you considered and left out, and why.
   `allowed-tools` so the without-plugin arm stays honest; list any `--allow-tools` in the run
   command. Size `timeout_seconds` and `max_turns` to the work: a one-shot answer about 120 s and
   5 turns; reading a repository, running something and writing a result 600-900 s and 25-40 turns.
-- **Judges:** a model other than the one under test, sonnet-tier or stronger. The rubric says what
-  passes and what fails in concrete terms.
+- **Judges:** Opus (`--judge-model opus`; the runner's default judge is a small model). That is
+  also the model under test, so calibration against the user (below) is the check on a judge that
+  favors answers like its own. The rubric says what passes and what fails in concrete terms.
 - **Side measures:** turns, cost and duration are recorded per run; ask whether any has a hard
   ceiling.
 - End with "Things I'm unsure about". If the user softens a grader until it always passes, push
@@ -158,29 +164,33 @@ the user's explicit approval, and never for tools that write.
 Write the case files, then pilot every case once:
 
 ```
-"${CLAUDE_PLUGIN_ROOT}/bin/plugin-eval" <target> --runs 1 --ablation with-without [--scaffold] [--allow-tools ...]
+claude plugin eval <target> --model opus --judge-model opus --runs 1 --ablation with-without --no-publish [--scaffold] [--allow-tools ...]
 ```
+
+Check first that every case loads, for free: the same command with `--max-cost-usd 0` loads the
+suite and runs nothing.
 
 Pass `--scaffold` only for scaffolds you wrote. The runner asks to trust a plugin on first use;
 from a non-interactive shell pass `--trust-plugin`, but only for plugins the user owns or has said
 they trust. Run anything longer than a minute in the background and wait for it to finish.
 
 Before the pilot, put an oracle and a null through every case's graders without running the
-agent: `"${CLAUDE_PLUGIN_ROOT}/bin/plugin-eval" grade <case-dir> --output <file>` grades a text as
-the final message (add `--workspace <dir>` for file graders). The oracle is a known-good answer
-(the user's own, or one you wrote and they accepted), the nulls an empty file, "I don't know", and
-a confident answer to the wrong question. Don't copy the judge into your own script: `grade` is the
-real graders. Then check the pilot against `docs/audit.md` ("The run" and "The graders"). Each
-run's transcript and graded files are under the results directory's `runs/`.
+agent: `"${CLAUDE_PLUGIN_ROOT}/bin/evals" grade <case-dir> --text-file <file>` grades a text as the
+final message with the deterministic graders. The oracle is a known-good answer (the user's own,
+or one you wrote and they accepted), the nulls an empty file, "I don't know", and a confident
+answer to the wrong question. Judged graders and file graders are checked by the pilot itself; read
+their verdicts on the oracle and nulls by hand. Then check the pilot against `docs/audit.md` ("The
+run" and "The graders"). Each run's transcript is at its `tracePath` in `aggregate-result.json`;
+`--keep-temp` keeps each run's workspace for reading what it produced.
 
-Calibrate with the user's judgment first: show them each case's output (its `last-message.txt`)
+Calibrate with the user's judgment first: show them each case's output (the run's final message)
 **before** the grades, ask how they'd score it, and only then compare with the graders. The judge
 answers a bare PASS or FAIL, so there is no reasoning to show; its three votes are. Ask: **"Would
 you have scored any of these differently?"** If yes for even one, the rubric isn't ready: revise
 and re-pilot until the user and the graders agree on clear-cut cases (aim for about 9 in 10 or
 better), then get an explicit yes. The user's good and bad saved traces for the target are labels a
 judge can be checked on for free: it must pass the good replies and fail the bad ones before its
-scores count. Only traces whose latest note is the user's (`trace list --source user`), or that
+scores count. Only traces whose latest note is the user's (`evals trace list --source user`), or that
 the user confirmed at the inputs gate, count as human labels; an inferred verdict is an agent's
 guess.
 
@@ -189,10 +199,9 @@ guess.
 The pilot's `costUsd` in `aggregate-result.json` is what cases × 1 run × 2 arms really cost. A
 full run is about that × `runs`. Show the math, the per-case spread, the expected wall-clock time,
 and the planning check from "When a change is real". For recorded
-cases the first run of each case and arm writes the prompt cache and the rest read it; capture
-prints both prices. If it's too much, offer the levers:
-fewer runs on cheap cases, a cheaper judge, or trimming cases that never discriminate (always
-pass or always fail in both arms). The runs and cases you get approved are what you run;
+cases a long history is most of the cost of each run. If it's too much, offer the levers: fewer
+runs on cheap cases, a shorter cut of a long history, or trimming cases that never discriminate
+(always pass or always fail in both arms). The judge stays Opus. The runs and cases you get approved are what you run;
 `--max-cost-usd` can hold the line.
 
 ## Step 5 — Baseline and hand-over
@@ -202,16 +211,16 @@ metric present and plausible, zero-score runs classified by their `error`, the h
 from the per-run scores. Then hand over the report path and a one-line headline (score, Δ against
 the no-plugin arm with its interval or sign test). Name a case or two only if the user should look at them first.
 
-Offer to commit the suite (cases, mocks, fixtures, scaffolds) with `results/` ignored (the runner
-writes a `.gitignore` into each results folder). Leave captured material out unless the user says
-otherwise: `request.json.gz`, `history.jsonl`, `original.md`, `original-run/` and stored `runs/` hold
-real session content. If the user
+Offer to commit the suite (cases, mocks, fixtures, scaffolds) with `results/` ignored. Leave
+captured material out unless the user says otherwise: `history.jsonl`, `original.md`,
+`original-turn.jsonl` and `results/` hold real session content, and this plugin's own repository
+is public. If the user
 wants to improve the target against it next, that's the **hillclimb** skill.
 
 ## Targets
 
-**A plugin or a skill.** Target the plugin directory, or a skill directory (one with SKILL.md),
-or an installed plugin by name. If the plugin is generated by a build, build it and target the
+**A plugin or a skill.** Target the plugin directory, or an installed plugin by name; a suite in a
+working folder names the plugin in each case's `plugins:`. If the plugin is generated by a build, build it and target the
 built directory, with the suite linked or copied in. Δ against the no-plugin arm is the headline.
 
 **An MCP server.** Test it through the plugin that ships it. What usually matters is whether the
@@ -222,26 +231,23 @@ asks before writing. Mocks with `expect:` catch wrong arguments; `mock_calls` gr
 testing stale text. Δ against the no-plugin arm answers "does having the server help"; whether new
 descriptions beat the old ones is a comparison between runs (hillclimb).
 
-**An instruction file (CLAUDE.md, AGENTS.md, rules).** Tell the user which option you're using and
-its trade-off:
+**An instruction file (CLAUDE.md, AGENTS.md, rules).** No instruction file loads in a run, so a
+version reaches the agent one of these ways. Tell the user which you're using and its trade-off:
 
-- **Recorded moments first.** Decision-point cases and turn episodes captured from the user's
-  sessions, or derived from them, run with `--instructions <new file> --instructions-replaces <the recorded path>`: the
-  with arm gets the new text in place of the recorded file, rendered the way Claude Code renders
-  it (frontmatter and HTML comments dropped), the without arm keeps the recording, and Δ is the
-  change's effect on the exact situations that went wrong. Every edit is checked against every
-  case before anything runs. A new `@import` in the file isn't expanded (the runner warns). Keep
-  recorded and fresh cases in separate runs unless you pass `--baseline-instructions <file>`. `--context-replace`
-  changes any other recorded text (one rule sentence, a tool description). This is where real
-  failures are tested; mind the off-policy bias in `docs/principles.md`.
-- **Fresh cases** with `--instructions <new> --baseline-instructions <old>`: every case runs with
-  each version through the real loading path. Pick the scope where the file lives:
-  `--instructions-scope user` for global rules (the run's user-level CLAUDE.md), `project`
-  (default) for a repository's file, with `--instructions-name` when it isn't AGENTS.md. Good for
-  synthetic cases and for confirming a change on new prompts.
-- `setting_sources: [user, project]` in a case, plus a scaffold that writes the file: when one case
-  needs its own instruction file or a whole `.claude/` layout. No A/B; compare runs.
-- `append_system_prompt` — the text in the system prompt; tests the content, not the loading path.
+- **Recorded moments first.** Decision and turn cases captured from the user's sessions, or
+  derived from them, carry the files their session loaded. `evals variant --suite <work> --out
+  <dir> --file <new file> --replaces <the recorded path>` copies the suite with the new text in
+  place of the recorded file, rendered the way Claude Code renders it (frontmatter and HTML
+  comments dropped; a new `@import` isn't expanded). Run the original and the variant the same way
+  and compare them: the difference is the change's effect on the exact situations that went wrong.
+  This is where real failures are tested; mind the off-policy bias in `docs/principles.md`.
+- **Fresh cases** get the same command's variant plugin, whose SessionStart hook adds the file as
+  context under the same "Contents of <path>" header (`--path` and `--type User|Project|Local` set
+  how it's labeled). Build one variant from the old file and one from the new, so both go through
+  the same path. Close to the real loading path, not the same: the text arrives as hook context.
+  Good for synthetic cases and for confirming a change on new prompts.
+- `append_system_prompt` in a case: the text in the system prompt; tests the content, not where it
+  loads.
 
 ## Failure modes
 

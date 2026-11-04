@@ -1,5 +1,5 @@
 // Paired comparison of two `claude plugin eval` results (aggregate-result.json): the per-case score
-// difference with its interval and a sign test, the guardrails (turns, cost, time), and errored runs.
+// difference with its interval and a sign test, the guardrails (turns, cost, time), and plumbing failures.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -145,8 +145,16 @@ export type Comparison = {
   warnings: string[];
 };
 
+/** Plumbing (timeouts, API errors, failed scaffolds, mock aborts) rather than model behavior. Hitting
+ * the turn cap is behavior: a decision case sets max_turns 1 on purpose, and a run that wanders
+ * until the cap has done something worth grading. */
+export function isPlumbing(r: RunResult): boolean {
+  if (r.aborted) return true;
+  return r.error !== null && !/turn/i.test(r.error);
+}
+
 function runsOf(c: CaseResult, dropErrors: boolean): RunResult[] {
-  return dropErrors ? c.arms.with.filter((r) => r.error === null && !r.aborted) : c.arms.with;
+  return dropErrors ? c.arms.with.filter((r) => !isPlumbing(r)) : c.arms.with;
 }
 
 function env(r: Result): string {
@@ -231,10 +239,7 @@ export function compare(a: Result, b: Result, options: { cases?: string[]; dropE
       da.every((x) => !Number.isNaN(x)) && db.every((x) => !Number.isNaN(x)) ? paired(da, db) : undefined,
     noiseHalfWidth,
     runsPerCase: { a: ka, b: kb },
-    errored: {
-      a: count(a, (r) => r.error !== null || Boolean(r.aborted)),
-      b: count(b, (r) => r.error !== null || Boolean(r.aborted)),
-    },
+    errored: { a: count(a, isPlumbing), b: count(b, isPlumbing) },
     unjudged: { a: count(a, (r) => Boolean(r.skippedPaidGraders)), b: count(b, (r) => Boolean(r.skippedPaidGraders)) },
     partial: { a: Boolean(a.partial), b: Boolean(b.partial) },
     environment: { a: env(a), b: env(b) },
@@ -264,7 +269,7 @@ export function formatComparison(c: Comparison, minEffect?: number): string {
   ];
   if (c.durationSeconds) out.push(line("seconds", c.durationSeconds, 0));
   out.push(
-    `errored or aborted runs: ${c.errored.a} vs ${c.errored.b}; unjudged (cost ceiling): ${c.unjudged.a} vs ${c.unjudged.b}`,
+    `plumbing failures (timeouts, API errors, aborts): ${c.errored.a} vs ${c.errored.b}; unjudged (cost ceiling): ${c.unjudged.a} vs ${c.unjudged.b}`,
   );
 
   const excludesZero = !Number.isNaN(s.halfWidth) && Math.abs(s.delta) > s.halfWidth;

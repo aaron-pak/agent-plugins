@@ -41,7 +41,7 @@
       "name": "evals",
       "source": "./plugins/evals",
       "strict": false,
-      "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Needs the plugin-eval runner, which isn't in this repository yet."
+      "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Runs on claude plugin eval, with a helper for traces, cases cut from real sessions, CLAUDE.md variants and paired comparisons. Claude Code only."
     },
     {
       "name": "frontend-skill",

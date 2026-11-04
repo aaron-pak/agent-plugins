@@ -11,8 +11,9 @@ read transcripts rather than summary numbers, know which change caused which eff
 and never tune on the cases you report. **The result is the test-split delta against the
 baseline.** Train improvement is the process, not the result.
 
-The runner is `"${CLAUDE_PLUGIN_ROOT}/bin/plugin-eval"`. Its files and results are described in
-`${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`; the audit you run first is
+Runs go through `claude plugin eval` with `--model opus --judge-model opus`; the helper that
+compares them is `"${CLAUDE_PLUGIN_ROOT}/bin/evals"`. Both, with their files and results, are
+described in `${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`; the audit you run first is
 `${CLAUDE_PLUGIN_ROOT}/docs/audit.md`.
 
 ## Step 0 — A suite you can trust
@@ -30,9 +31,9 @@ round 1:
   with-without Δ, or the cases that depend on a tool losing it. If the score doesn't depend on the
   lever, tuning it is editing and hoping.
 - **Zeros are classified.** Read the baseline's lowest cases: their output, the grader's reasoning,
-  the expected result. Fix a wrong rubric or reference now and re-grade the baseline's stored runs
-  with `plugin-eval regrade <results dir>` (no agent runs), and keep
-  plumbing failures (timeouts, API errors, mock failures) out of the denominator.
+  the expected result. Fix a wrong rubric or reference now and run the baseline again (stored runs
+  can't be regraded), and keep plumbing failures (timeouts, API errors, mock failures) out of the
+  denominator.
 - **The headline recomputes** from the per-run scores in `aggregate-result.json`.
 
 ## Step 1 — Goal and scope
@@ -51,20 +52,20 @@ When the target is whether a skill fires, its description is the lever and the t
 metric. Run that loop with `--ablation none`, where `tool_used: Skill` graders are scored, and
 keep it on `--ablation none` for every round, the baseline included.
 
-When the target is an instruction file, run every round with `--instructions <the round's file>`:
-fresh cases add `--baseline-instructions <the original>` at the scope where the file really loads;
-decision-point and turn-episode cases add `--instructions-replaces <the recorded path>` and keep
-the recording as the baseline. Each round's Δ is then measured against the original. Edit a
-working copy, never the user's live file, until the winner is chosen. A decision point only sees
-a change delivered through `--instructions` or `--context-replace`: it re-sends a recorded
-request, so an edit to a plugin's files never reaches it.
+When the target is an instruction file, build each round's suite with `evals variant --suite
+<suite> --out <state>/r<N>/suite --file <the round's file> --replaces <the recorded path>` and run
+that folder. Build round 0 the same way from the original file, so every round reaches the agent
+by the same path and each round's Δ is measured against the original. Edit a working copy, never
+the user's live file, until the winner is chosen. A recorded case resumes the recorded
+conversation with the plugin as it is now: an edit to the plugin reaches it from the cut on, an
+edit to the instruction file on disk never does, and the history still shows what the old version
+said and did.
 
-With cases captured from real sessions, the decision-point cases are the loop's suite, with their
-own train/test split (after the first run of a variant, each run reads its context from the prompt
-cache). Turn episodes are a separate confirm suite, run on the baseline and on the winner, never
-tuned on. Decision-point results lean toward the recorded behavior (`docs/principles.md`,
+With cases captured from real sessions, the decision cases are the loop's suite, with their own
+train/test split. Turn cases are a separate confirm suite, run on the baseline and on the winner,
+never tuned on. Recorded cases lean toward the recorded behavior (`docs/principles.md`,
 off-policy bias), so a change that moves them is likely real, and one that doesn't may still
-deserve an episode check before you drop it.
+deserve a turn-case or fresh-case check before you drop it.
 
 ## Step 2 — Plan and stopping rule
 
@@ -103,7 +104,7 @@ Keep the loop's state on disk so it survives a lost session, in
   every round.
 
 Run the baseline on the full suite and record an environment fingerprint with it: commit, plugin
-build, model, runner version. If any of it changes mid-loop, re-run the baseline; comparisons
+build, model, judge, Claude Code version. If any of it changes mid-loop, re-run the baseline; comparisons
 across it are broken.
 
 ## Step 4 — The loop
@@ -112,10 +113,9 @@ Each round: analyze, apply, run, record. Run the suite in the background and wai
 before reading anything; a half-landed round can show a sign that flips.
 
 **Analyze.** Unless the next change is obvious, start a fresh analyzer subagent each round. Give it
-only: the train cases' rows from the last round's `aggregate-result.json`, the stored run
-directories of each train run (the directory of its `tracePath`, under `runs/`: trace, final
-message, created files and graded files; list them, it reads nothing else under the results
-directory), each train case's
+only: the train cases' rows from the last round's `aggregate-result.json`, the transcript at
+each train run's `tracePath` (list them; it reads nothing else under the results directory), each
+train case's
 score in every round so far, the current artifact, the scope and off-limits, the target metric,
 the guardrails and the noise (the interval on a paired difference). Ask it for the single behavior that costs the most on train,
 how many cases show it and what it costs, and one change, as a diff, that fixes it at the root,
@@ -134,7 +134,7 @@ built, rebuild it.
 is comparable. A round
 whose errors look nothing like the baseline's is void: fix it and run again.
 
-**Record and decide.** `plugin-eval compare <current best> <this round> --cases <test cases>` gives
+**Record and decide.** `evals compare <current best> <this round> --cases <test cases>` gives
 the paired Δ on test; train the same way for the overfitting check. Keep the change only if test
 improves by the rule in `docs/principles.md`, "When a change is real", and no guardrail regresses. Revert if
 the test change is within noise, if train rose but test stayed flat (it overfit), or if it
@@ -145,7 +145,7 @@ If a judged score jumps further than the change could explain, suspect the judge
 celebrate. Read a few outputs by hand. The judge answers a bare PASS or FAIL three times; its
 votes are all the reasoning you get, so judge the outputs yourself.
 
-For turn episodes with operator read grants, the agent reads files as they are today, which may
+For turn cases with read grants, the agent reads files as they are today, which may
 already contain a fix made after the session was recorded; check before crediting a round. Track whether the mechanism engaged (the skill fired, the
 tool was called) next to the score; a score that moved while engagement didn't is probably noise.
 
@@ -157,7 +157,7 @@ round sorting every remaining train failure by cause:
 | cause | tell | instead of another content round |
 |---|---|---|
 | artifact gap | the agent lacked a fact or rule and guessed | keep going |
-| grader | the output looks right but fails, or the rubric asks for something the prompt doesn't | fix the grader, then `plugin-eval regrade` every round's results directory (it re-grades the stored runs, no agent runs) and check whether the ranking changed |
+| grader | the output looks right but fails, or the rubric asks for something the prompt doesn't | fix the grader, then run the baseline and the best round again (stored runs can't be regraded) and check whether the ranking changed |
 | harness | timeouts, API errors, mock or scaffold failures, budget hit | fix the plumbing; leave those runs out until then |
 | structural | the content exists but isn't reached, or the same finding recurs | reorganize (consolidate, split, fix routing) rather than add |
 | variance | identical setups flip between runs as much as rounds differ | report best-so-far; offer more runs or a new target |
@@ -169,10 +169,10 @@ it breaks the one-change rule and why.
 
 Leave the target at the round that won on test. Because test also chose the winner, the winner's
 test score is optimistic. Before reporting, run a **confirm**: fresh runs of the baseline and the
-winner on the test cases only (or on held-back cases, if you kept some), plus the turn-episode
+winner on the test cases only (or on held-back cases, if you kept some), plus the turn-case
 confirm suite if there is one. Train cases never count toward the headline. Then:
 
-- **Headline:** the confirm runs' paired Δ from `plugin-eval compare`, with its interval or sign
+- **Headline:** the confirm runs' paired Δ from `evals compare`, with its interval or sign
   test. If it isn't real by the rule in `docs/principles.md`, say so plainly and recommend not
   merging.
 - The round table: change, train, test, guardrails (cost, turns), with only the deltas that clear

@@ -40,7 +40,8 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
 
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
-                                       B against A: paired per-case score Δ with a 95% interval and a sign test
+                                       B against A: paired per-case score Δ with a 95% interval and a sign test;
+                                       --drop-errors leaves out plumbing (timeouts, API errors, aborts), not the turn cap
 `;
 
 function fail(message: string): never {

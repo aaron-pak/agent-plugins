@@ -6,17 +6,17 @@ description: Bookmark a moment in a conversation that went wrong (or a good exam
 # Save a trace
 
 A saved trace is a bookmark: the conversation, the moment, whether it went wrong or right, and
-what happened. The conversation itself stays where Claude Code or Codex keeps it, so the judgment
-is what's worth recording; from the bookmark an eval can later be built in any form. The runner is
-`"${CLAUDE_PLUGIN_ROOT}/bin/plugin-eval"`; its `trace` and `sessions` commands are described in
-`${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`.
+what happened. The conversation itself stays where Claude Code keeps it, so the judgment is what's
+worth recording; from the bookmark an eval can later be built in any form. The helper is
+`"${CLAUDE_PLUGIN_ROOT}/bin/evals"`; its `trace` and `sessions` commands are described in
+`${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`. Traces are saved under `~/.claude/evals` (or
+`$EVALS_HOME`), never in a repository, because they point at real conversations.
 
 ## This conversation
 
-`plugin-eval trace save` saves the current conversation (in Claude Code it is session
-`${CLAUDE_SESSION_ID}`). Add:
+`evals trace save --session ${CLAUDE_SESSION_ID}` saves the current conversation. Add:
 
-- `--moment` for each response it's about: a request id (`plugin-eval sessions turns <session>`
+- `--moment` for each response it's about: a request id (`evals sessions turns <session>`
   lists them), or the user message that reacted to it.
 - `--note`: what went wrong and what the user wanted instead. Notes are saved as your reading
   (inferred) unless you pass `--user`, which is only for the user's own words. If they only said
@@ -26,9 +26,9 @@ is what's worth recording; from the bookmark an eval can later be built in any f
 - `--good` only when the user says it was a good example.
 - `--tag` for the skill, plugin or behavior involved.
 
-Add `--copy` only when a frozen snapshot is wanted, such as for a Codex thread.
+Add `--copy` only when a frozen snapshot is wanted, such as for a session that may be deleted.
 
-After saving, run `plugin-eval trace show <id>` and check it shows the reply the user meant. A
+After saving, run `evals trace show <id>` and check it shows the reply the user meant. A
 message moment stands for the reply it reacted to, and when task notifications or command output
 arrived during that turn it picks the reply before the first of them (save warns). If it picked
 the wrong one, find the right request with `sessions turns` and re-point it with
@@ -36,9 +36,9 @@ the wrong one, find the right request with `sessions turns` and re-point it with
 
 ## Past conversations
 
-Search Claude Code sessions with `plugin-eval sessions search` (Codex threads aren't searched; the
-user has to point you at one): `--since` for the window, `--used` for a skill or tool
-the user named, `--user-text` for words their reaction would contain. The search only narrows the
+Search Claude Code sessions with `evals sessions search` (Codex threads aren't read yet):
+`--since` for the window, `--used` for a skill or tool the user named, `--user-text` for words
+their reaction would contain. The search only narrows the
 field. Read each candidate around the match and keep the ones that fit what the user described.
 Save each kept moment with a note quoting the reaction that made it a match, and `--tag`, then
 check it with `trace show` as above.

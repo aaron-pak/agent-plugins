@@ -276,6 +276,15 @@ describe("compare", () => {
     expect(signTest(10, 0)).toBeCloseTo(2 / 1024, 6);
   });
 
+  test("leaves out plumbing but keeps runs that hit the turn cap", () => {
+    const a = result([[0, 0]]);
+    a.cases[0]!.arms.with[0] = run(0, { error: "timed out after 300s" }) as never;
+    a.cases[0]!.arms.with[1] = run(1, { error: "Reached maximum number of turns (1)" }) as never;
+    const b = result([[1, 1]]);
+    expect(compare(a, b, { dropErrors: true }).perCase[0]).toMatchObject({ a: 1, b: 1 });
+    expect(compare(a, b).errored).toEqual({ a: 1, b: 0 });
+  });
+
   test("compares two results case by case and flags uneven ones", () => {
     const a = result([
       [0, 0, 1],

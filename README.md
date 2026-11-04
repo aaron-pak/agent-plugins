@@ -9,7 +9,7 @@ Current plugins:
 - `deeper-task` (Felix Rieseberg's prompt, see [Credits](#credits))
 - `dj-fetch` (needs `uv` and `ffprobe`; `setup_slskd.py` installs slskd)
 - `eli5`
-- `evals` (`build-eval`, `save-trace`, `hillclimb`; needs the `plugin-eval` runner, not ported yet)
+- `evals` (`build-eval`, `save-trace`, `hillclimb`, on `claude plugin eval`; Claude Code only)
 - `frontend-skill`
 - `implement-with-notes`
 - `learn-how-i-write` (Claude Duet's skill, adapted, see [Credits](#credits))
@@ -42,7 +42,7 @@ Codex installs plugins for the user and records them in `~/.codex/config.toml`. 
 
 ### Grok Bot
 
-Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
+Grok Bot installs plugins from Cursor's marketplaces. Cursor reads `.cursor-plugin/marketplace.json` for multi-plugin repos ([Plugins reference](https://cursor.com/docs/reference/plugins)), so this file lists every plugin meant for Cursor and Grok Bot: the Claude Code catalog, except plugins whose description says Claude Code only (`session-band`, `evals`). `mac-computer-use` is the one entry with `minClientVersions.cursor` set to `never`, which hides it from Cursor.
 
 Team marketplaces are available on Teams and Enterprise plans. Add one from Dashboard → Plugins & MCPs → Team Marketplaces → Add Marketplace, using Import from Repo. Auto Refresh is a Marketplace Setting there: on a GitHub import it re-indexes when commits are pushed to the tracked branch, which requires the Cursor GitHub App, and Cursor re-indexes at most once every 10 minutes. On a marketplace created with Import from Repo, Auto Refresh re-reads the full manifest on each push. See [Plugins](https://cursor.com/docs/plugins). Aaron is on Pro, so this repository is a personal marketplace, and Cursor's docs describe no refresh for those.
 
