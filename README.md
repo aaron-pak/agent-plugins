@@ -15,14 +15,14 @@ Current plugins:
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
 
-Changing this repository? [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks CI runs.
+This repository is published from Aaron's private monorepo, so changes arrive as commits rather than pull requests. [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks they pass.
 
 ## Install a plugin
 
 Claude Code:
 
 ```sh
-claude plugin marketplace add aaron-pak/agent-plugins
+claude plugin marketplace add aaron-pak/pak-plugins
 claude plugin install eli5@agent-plugins --scope user   # or --scope project / local
 ```
 
@@ -31,7 +31,7 @@ Skills appear as `/<plugin>:<skill>`, for example `/eli5:eli5` or `/artifact-des
 Codex:
 
 ```sh
-codex plugin marketplace add aaron-pak/agent-plugins
+codex plugin marketplace add aaron-pak/pak-plugins
 codex plugin add eli5@agent-plugins
 ```
 

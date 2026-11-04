@@ -3,6 +3,10 @@
 
 Run from anywhere: python3 scripts/validate.py
 Exits 1 and lists every problem it finds.
+
+In pak-tools the public catalogs and README sit in public/ (the export moves them to the root of
+pak-plugins), and the root catalog lists the private plugins in private/plugins. In the exported
+tree, which has no public/, the public files are at the root and there is no private catalog.
 """
 
 import json
@@ -11,6 +15,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+PUBLIC = ROOT / "public" if (ROOT / "public").is_dir() else ROOT
+PUBLIC_CATALOG = str((PUBLIC / ".claude-plugin" / "marketplace.json").relative_to(ROOT))
+PRIVATE_CATALOG = ".claude-plugin/marketplace.json"
 SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 
 errors = []
@@ -108,16 +115,16 @@ def check_mcp(plugin_dir, where, codex_servers=None, codex_manifest=False):
     return True
 
 
-def check_plugin(entry):
+def check_plugin(entry, catalog=PUBLIC_CATALOG, folder="plugins"):
     name = entry.get("name")
-    where = f"plugins/{name}"
+    where = f"{folder}/{name}"
     for key in ("name", "source", "description"):
         if not entry.get(key):
-            error(".claude-plugin/marketplace.json", f"entry {name!r} has no {key}")
-    if entry.get("source") != f"./plugins/{name}":
-        error(".claude-plugin/marketplace.json", f"entry {name!r} source should be ./plugins/{name}")
+            error(catalog, f"entry {name!r} has no {key}")
+    if entry.get("source") != f"./{folder}/{name}":
+        error(catalog, f"entry {name!r} source should be ./{folder}/{name}")
         return
-    plugin_dir = ROOT / "plugins" / name
+    plugin_dir = ROOT / folder / name
     if not plugin_dir.is_dir():
         error(where, "directory missing")
         return
@@ -126,13 +133,13 @@ def check_plugin(entry):
             error(where, "has .claude-plugin/plugin.json; plugins carry only the root plugin.json")
         else:
             if "strict" in entry:
-                error(".claude-plugin/marketplace.json", f"entry {name!r} sets strict; its .claude-plugin/plugin.json is the manifest")
+                error(catalog, f"entry {name!r} sets strict; its .claude-plugin/plugin.json is the manifest")
             check_mod(entry, plugin_dir, where)
             return
     # Without a .claude-plugin/plugin.json the entry is the Claude Code manifest. The Claude CLI loads
     # such a plugin either way, but the desktop app's marketplace sync skips it unless strict is false.
     if entry.get("strict") is not False:
-        error(".claude-plugin/marketplace.json", f"entry {name!r} needs \"strict\": false (it has no .claude-plugin/plugin.json)")
+        error(catalog, f"entry {name!r} needs \"strict\": false (it has no .claude-plugin/plugin.json)")
     hooks = plugin_dir / "hooks" / "hooks.json"
     if hooks.is_file():
         config = load_json(hooks)
@@ -213,8 +220,8 @@ def check_cursor_marketplace(claude_entries):
     Marketplace entries follow cursor/plugins schemas/marketplace.schema.json:
     name, source, description, and minClientVersions only. source has no leading ./.
     """
-    where = ".cursor-plugin/marketplace.json"
-    marketplace = load_json(ROOT / ".cursor-plugin" / "marketplace.json")
+    where = str((PUBLIC / ".cursor-plugin" / "marketplace.json").relative_to(ROOT))
+    marketplace = load_json(PUBLIC / ".cursor-plugin" / "marketplace.json")
     if marketplace is None:
         return
     extra = set(marketplace) - CURSOR_TOP_KEYS
@@ -250,7 +257,7 @@ def check_cursor_marketplace(claude_entries):
             error(where, f"entry {name!r} source should be plugins/{name}")
         claude = claude_by_name.get(name)
         if claude is None:
-            error(where, f"entry {name!r} is not in .claude-plugin/marketplace.json")
+            error(where, f"entry {name!r} is not in {PUBLIC_CATALOG}")
         elif entry.get("description") != claude.get("description"):
             error(where, f"entry {name!r} description does not match the Claude catalog")
         if claude is not None and CLAUDE_CODE_ONLY in (claude.get("description") or ""):
@@ -275,34 +282,50 @@ def check_cursor_marketplace(claude_entries):
 
 
 def check_readme(names):
-    readme = (ROOT / "README.md").read_text()
+    where = str((PUBLIC / "README.md").relative_to(ROOT))
+    readme = (PUBLIC / "README.md").read_text()
     # One bullet per plugin, so pull requests that add plugins touch different lines.
     match = re.search(r"^Current plugins:\n\n((?:- .+\n)+)", readme, re.MULTILINE)
     if not match:
-        error("README.md", "no 'Current plugins:' list")
+        error(where, "no 'Current plugins:' list")
         return
     # Each bullet starts with the plugin's name; what follows it names skills inside the plugin.
     listed = re.findall(r"^- `([^`]+)`", match.group(1), re.MULTILINE)
     if sorted(listed) != sorted(names):
-        error("README.md", f"'Current plugins' lists {sorted(listed)}, but the marketplace has {sorted(names)}")
+        error(where, f"'Current plugins' lists {sorted(listed)}, but the marketplace has {sorted(names)}")
 
 
-def main():
-    marketplace = load_json(ROOT / ".claude-plugin" / "marketplace.json")
+def check_catalog(path, label, folder, name=None):
+    """Check one catalog against the plugin folders it lists; return its entries."""
+    marketplace = load_json(path)
     if marketplace is None:
-        return
+        return []
+    if name and marketplace.get("name") != name:
+        error(label, f"name {marketplace.get('name')!r} should be {name!r}")
     entries = marketplace.get("plugins", [])
     names = [e.get("name") for e in entries]
     for name in {n for n in names if names.count(n) > 1}:
-        error(".claude-plugin/marketplace.json", f"plugin {name!r} is listed more than once")
+        error(label, f"plugin {name!r} is listed more than once")
     for entry in entries:
-        check_plugin(entry)
-    on_disk = {p.name for p in (ROOT / "plugins").iterdir() if p.is_dir()}
+        check_plugin(entry, label, folder)
+    plugins_dir = ROOT / folder
+    on_disk = {p.name for p in plugins_dir.iterdir() if p.is_dir()} if plugins_dir.is_dir() else set()
     for name in sorted(on_disk - set(names)):
-        error(f"plugins/{name}", "not listed in .claude-plugin/marketplace.json")
+        error(f"{folder}/{name}", f"not listed in {label}")
+    return entries
+
+
+def main():
+    entries = check_catalog(PUBLIC / ".claude-plugin" / "marketplace.json", PUBLIC_CATALOG, "plugins")
+    names = [e.get("name") for e in entries]
     check_readme(names)
     check_cursor_marketplace(entries)
-
+    if PUBLIC == ROOT:
+        return
+    # pak-tools: the root catalog is the private marketplace, and a plugin is public or private, not both.
+    private_entries = check_catalog(ROOT / PRIVATE_CATALOG, PRIVATE_CATALOG, "private/plugins", name="pak-tools")
+    for name in sorted({e.get("name") for e in private_entries} & set(names)):
+        error(PRIVATE_CATALOG, f"plugin {name!r} is also in {PUBLIC_CATALOG}; a plugin is public or private")
 
 main()
 if errors:

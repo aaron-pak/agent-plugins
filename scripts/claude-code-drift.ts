@@ -499,7 +499,7 @@ function main(): number {
   else
     console.log(
       `\nTo sync: commit the verbatim copies (--write), port the ported-text changes as AGENTS.md describes, ` +
-        `then set the version in UPSTREAM.md and README.md to ${target}.`,
+        `then set the version in UPSTREAM.md and public/README.md to ${target}.`,
     );
   return drift ? 1 : 0;
 }
