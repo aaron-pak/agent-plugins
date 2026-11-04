@@ -1,5 +1,7 @@
 # Upstream
 
+The sources, tests and commits this note names (`src/`, `tests/`) are in Aaron's private source repository, which builds the plugin; this one carries the built plugin.
+
 `auto-memory` ports Claude Code 2.1.318's auto memory to harnesses that don't have it, Codex first. The text in `src/text/` was captured from that release and committed verbatim first ("Add Claude Code 2.1.318's auto memory text, verbatim"), so `git diff` from that commit shows every edit below.
 
 ## Where each piece comes from

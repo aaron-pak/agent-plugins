@@ -1,9 +1,0 @@
-{
-  // The repository's own TypeScript: the build, export and mod scripts (which run on Bun) and the
-  // Vitest config. Each plugin with TypeScript has its own tsconfig.json beside its src/.
-  "extends": "./tsconfig.base.json",
-  "compilerOptions": {
-    "types": ["node", "bun"]
-  },
-  "include": ["scripts", "vitest.config.ts"]
-}

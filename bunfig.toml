@@ -1,4 +1,0 @@
-# bun fmt's settings (bun run fmt and bun run lint). The text a server sends and test fixtures stay as written.
-[fmt]
-printWidth = 120
-ignorePatterns = ["plugins/*/src/text/", "plugins/*/tests/fixtures/"]

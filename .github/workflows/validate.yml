@@ -1,9 +1,11 @@
 name: Validate plugins
 
+# pak-plugins holds only what installs need; pak-tools runs every other check before it exports here.
+# This checks the marketplace and each plugin the way Claude Code loads them.
+
 on:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
@@ -12,62 +14,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      # The whole history, so the mod step below can see what a change touched.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check marketplace, manifests, skills, and README agree
-        run: python3 scripts/validate.py
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      # Bun's version comes from packageManager in package.json.
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install the TypeScript toolchain
-        run: bun install --frozen-lockfile
-
-      - name: Check formatting and lint
-        run: bun run lint
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      # The bundles plugins run are committed; a fresh build must reproduce them.
-      - name: Check the committed bundles are up to date
-        run: |
-          bun run build
-          if [ -n "$(git status --porcelain -- plugins)" ]; then
-            git status --short -- plugins
-            echo "Run bun run build and commit the bundles."
-            exit 1
-          fi
-
-      - name: Test
-        run: bun run test
 
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
-
-      # A mod's tests take minutes, so they run for the mods a change touches, and for every mod
-      # when the commands that run them change (or when what changed can't be told).
-      - name: Test the mods this change touches
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          changed=$(git diff --name-only "$BASE" HEAD) || changed=scripts/mod/
-          status=0
-          for mod in plugins/*/; do
-            [ -f "$mod/.claude-plugin/plugin.json" ] && [ -f "$mod/hooks/hooks.json" ] || continue
-            echo "$changed" | grep -qE "^($mod|scripts/mod/|package\.json$)" || continue
-            bun run mod test "$mod" || status=1
-          done
-          exit $status
+        run: npm install -g @anthropic-ai/claude-code@2.1.318
 
       # --strict fails on warnings. The one warning allowed is a missing version: a mod's
       # .claude-plugin/plugin.json leaves it unset on purpose, like every manifest here.
@@ -77,8 +27,8 @@ jobs:
           for target in . plugins/*/; do
             # Claude Code reads a plugin folder on its own only through skills/ or a
             # .claude-plugin/plugin.json; a Codex-only plugin has neither, and the marketplace
-            # check above covers its entry.
-            case "$target" in */plugins/*/|plugins/*/)
+            # check covers its entry.
+            case "$target" in plugins/*/)
               [ -d "$target/skills" ] || [ -f "$target/.claude-plugin/plugin.json" ] || continue ;;
             esac
             out=$(claude plugin validate --strict "$target" 2>&1) && { echo "$out"; continue; }

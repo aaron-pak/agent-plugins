@@ -18,7 +18,7 @@ Current plugins:
 - `session-band` (a Claude Code mod, see [Mods](#mods))
 - `show-me`
 
-This repository is published from Aaron's private monorepo, so changes arrive as commits rather than pull requests. [AGENTS.md](AGENTS.md) covers the layout, adding a plugin, and the checks they pass.
+This repository is published from Aaron's private monorepo, so changes arrive as commits rather than pull requests. It holds only what installing a plugin needs. An MCP server or hook written in TypeScript arrives as the one bundled `.mjs` file the plugin runs, and the sources, tests and tooling stay in that repository, which is where `src/` and `tests/` in a plugin's notes are.
 
 ## Install a plugin
 
@@ -48,7 +48,7 @@ Team marketplaces are available on Teams and Enterprise plans. Add one from Dash
 
 ### The `artifact` server
 
-`artifact-design` runs its `artifact` MCP server with `node` (20 or later), so that command must be on `PATH`. The server is one bundled file, so there is nothing to install. The server reads these environment variables:
+`artifact-design` runs its `artifact` MCP server with `node` (22.19 or later), so that command must be on `PATH`. The server is one bundled file, so there is nothing to install. The server reads these environment variables:
 
 - `ARTIFACTS_DIR`: where published artifacts go, one folder each (default `~/artifacts`). A relative path is taken from the folder the server starts in.
 - `ARTIFACT_OPEN=0`: don't open a first publish in the browser; the publish result then says the page was not opened.
@@ -79,7 +79,7 @@ codex plugin marketplace add aaron-pak/pak-plugins
 codex plugin add auto-memory@agent-plugins
 ```
 
-At its next start Codex says the plugin's hook needs review: choose "Trust all and continue", or trust it later in `/hooks`. Codex asks again after an update changes the hook, and until it's trusted, sessions start without the memory section. The server and the hook run with `node` (20 or later). Codex starts the server with only the variables the plugin names, so set `AGENT_MEMORY_DIR` (a relative path is read from your home folder), if you use it, in the shell you start Codex from; Codex's background server keeps the environment it started with, so restart it with `/daemon` after a change.
+At its next start Codex says the plugin's hook needs review: choose "Trust all and continue", or trust it later in `/hooks`. Codex asks again after an update changes the hook, and until it's trusted, sessions start without the memory section. The server and the hook run with `node` (22.19 or later). Codex starts the server with only the variables the plugin names, so set `AGENT_MEMORY_DIR` (a relative path is read from your home folder), if you use it, in the shell you start Codex from; Codex's background server keeps the environment it started with, so restart it with `/daemon` after a change.
 
 Claude Code keeps its own auto memory, which this plugin doesn't replace; point it at the shared store in `~/.claude/settings.json` (use your home folder's full path):
 
@@ -106,7 +106,7 @@ ln -s ~/projects/agent-plugins/instructions/CLAUDE.md ~/.claude/CLAUDE.md
 
 A mod is a Claude Code plugin of function hooks: one TypeScript module that hooks the session's events and draws into its interface (status line, toasts, a band above the prompt, panes, slash commands) or adds tools. Mods are Claude Code only. They are listed in `.claude-plugin/marketplace.json` so Claude Code can install them like any other plugin, and their descriptions say Claude Code only for Codex, which reads the same catalog. The Cursor catalog leaves out a plugin whose description says that.
 
-A mod folder holds `.claude-plugin/plugin.json` (with `version` unset, as for every plugin here), `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), the module itself, and `tests/*.test.ts`. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`), and the mod's `tsconfig.json` extends them.
+A mod folder holds `.claude-plugin/plugin.json` (with `version` unset, as for every plugin here), `hooks/hooks.json` naming the module (`{ "modules": ["./register.tsx"] }`), and the module itself. A mod that keeps values in `$.state` also has `types/index.d.ts` declaring them. Claude Code lays the API types into `.claude-plugin/types/` when it loads the mod (ignored there by its own `.gitignore`). A mod's tests stay in the source repository.
 
 Current mods:
 
@@ -118,12 +118,11 @@ Install a mod for your user, so every session loads it:
 claude plugin install session-band@agent-plugins --scope user
 ```
 
-To try a mod from a checkout in one session, check it, and run its tests:
+To try a mod from a checkout in one session and check it:
 
 ```sh
 claude --plugin-dir ~/projects/agent-plugins/plugins/session-band
 claude plugin validate plugins/session-band
-claude plugin test plugins/session-band
 ```
 
 The session reloads the mod when its files change, so edits show up without a restart.
