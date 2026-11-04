@@ -1,9 +1,10 @@
 # Cases, runs and the helper
 
-Runs go through Claude Code's own `claude plugin eval` (documented at
-https://code.claude.com/docs/en/plugin-evals; `claude plugin eval --help` is the source of truth for
-the installed version). This plugin adds a helper, `"${CLAUDE_PLUGIN_ROOT}/bin/evals"`, that reads
-sessions and results and never calls a model. This page covers what the skills need from both.
+Everything goes through one command, `bin/evals` at this plugin's root (`${CLAUDE_PLUGIN_ROOT}/bin/evals`
+in Claude Code; elsewhere, two folders up from a skill's folder). `evals run` runs a suite: it reads
+the same case files as Claude Code's `claude plugin eval` and grades and reports the same way, in
+the plugin's own code, with the agent under test running in Claude Code or Codex. The other
+commands read sessions and results and never call a model. This page covers what the skills need.
 
 ## Where things live
 
@@ -17,7 +18,7 @@ sessions and results and never calls a model. This page covers what the skills n
   `plugin.json` names in `experimental.evals`), with `results/` git-ignored.
 
 A suite folder holds an `evals/` folder of cases, and is itself the target of a run:
-`claude plugin eval <suite folder>`. A case says which plugin it tests with `plugins:` (paths
+`evals run <suite folder>`. A case says which plugin it tests with `plugins:` (paths
 relative to the case folder); with none, it runs against Claude Code alone.
 
 ## A case
@@ -35,9 +36,9 @@ relative to the case folder); with none, it runs against Claude Code alone.
 `max_turns` (default 10), `timeout_seconds` (default 300), `allowed_tools`, `append_system_prompt`,
 `env` (`EVAL_*` keys only). Unknown keys are errors. In `case.yaml` the run fields sit under
 `execution:`, and only `case.yaml` has `context.scaffold_script` (runs with `--scaffold`),
-`context.history_file` (a recorded conversation to resume; the prompt is the next user turn) and
-`context.add_dirs` (read-only fixture folders). `prompt.md` overrides `case.yaml` where both set a
-field.
+`context.history_file` (a recorded conversation to resume; the prompt is the next user turn),
+`context.add_dirs` (read-only fixture folders) and `context.instructions` (an instruction file the
+run loads; see below). `prompt.md` overrides `case.yaml` where both set a field.
 
 Graders (`type:`), each with `weight` (default 1) and `arm` (`with-only` or `both`):
 
@@ -63,28 +64,58 @@ or `--mocks off`.
 ## A run
 
 ```sh
-claude plugin eval <suite or plugin> --model opus --judge-model opus --runs 3 \
-  [--ablation with-without|none] [--case <glob>] [--tag <t>] [--allow-tools Write "Bash(npm test *)"] \
-  [--scaffold] [--max-cost-usd <usd>] [--output-dir <dir>] [-j 4] --no-publish
+E="${CLAUDE_PLUGIN_ROOT}/bin/evals"
+$E run <suite or plugin> [--harness claude|codex] [--runs 3] [--ablation with-without|none] \
+  [--case <glob>]... [--tag <t>]... [--allow-tools Write "Bash(npm test *)"] [--scaffold] \
+  [--instructions <file> [--instructions-scope project|user] [--instructions-name AGENTS.md]] \
+  [--max-cost-usd <usd>] [--output-dir <dir>] [-j 4] [--keep-temp]
 ```
 
-- Always pass `--model opus --judge-model opus`; the default judge is a small model.
+- Runs and judges are Opus by default (`--model`, `--judge-model` to change; `--judge-harness`
+  picks where the judge runs, Claude Code by default). Under `--harness codex` the run uses Codex's
+  own default model unless `--model` names one.
 - `--ablation with-without` (the default when a plugin resolves) adds a no-plugin arm and reports Δ.
   Under it, `tool_used: Skill` graders and `arm: with-only` graders are indicators, not scored;
   under `none` they score. Keep one mode for every run you'll compare. A case with a history file
   runs one arm unless `--ablation with-without` is passed.
-- Runs never ask for permission. Read-only tools listed in `allowed_tools` are granted; anything
-  else needs `--allow-tools`. Bash runs in an OS sandbox that can't read the home directory.
-- `--max-cost-usd 0` loads every case and runs nothing: a free check that the suite parses.
-- A first run in an untrusted folder asks to trust it; a non-interactive run needs `--trust-plugin`,
-  only for a plugin the user owns or trusts.
-- `--no-publish` keeps the report local (a run a Claude Code session starts stays local anyway).
+- Each run gets a fresh temporary home, working folder and config folder: none of the user's
+  settings, instruction files, memory, hooks, MCP servers or plugins load, and only the PATH,
+  locale, proxy and model credentials pass through from the environment. Claude Code's Bash runs in
+  its OS sandbox, which can't read the user's home; Codex runs in its read-only sandbox, or
+  workspace-write when the case grants Bash, Write or Edit.
+- Runs never ask for permission. Read-only tools are always granted; a case's other
+  `allowed_tools` need `--allow-tools`. Mocked tools are granted automatically.
+- **Instruction files load for real.** `--instructions <file>` (or a case's `context.instructions`,
+  relative to the case) is written where the harness reads it: `CLAUDE.md` (Claude Code) or
+  `AGENTS.md` (Codex) in the working folder, or the user's config folder with
+  `--instructions-scope user`. Without one, no instruction file loads. A recorded case's history
+  already holds the files its session loaded, so there the recorded text of that scope is replaced
+  in a copy of the history (rendered the way Claude Code renders a file: frontmatter and HTML
+  comments dropped, `@imports` not expanded) and no file is written. An A/B of two instruction
+  files is two runs with different `--instructions`, then `evals compare`.
+- `--max-cost-usd 0` loads every case and runs nothing: a free check that the suite parses (exit 2).
+  Otherwise the ceiling is checked before each run starts; a run that crosses it skips its judged
+  graders.
+- The agent's credentials: Claude Code takes `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`),
+  `ANTHROPIC_API_KEY` or a provider's variables from the environment, or copies
+  `~/.claude/.credentials.json` (a macOS keychain login can't be passed to an isolated run). Codex
+  takes `OPENAI_API_KEY` or copies `~/.codex/auth.json`.
+- Exit code: 0 when every case reaches `--threshold` (default 1) with no errors, 1 otherwise, 2 for
+  a partial run (cost ceiling, interrupted, or refused credentials).
 
-Results: `<output dir>/aggregate-result.json` and `report.html`. Per case, `cases[].aggregates`
-(`score`, `scoreWithout`, `delta`) and per run `cases[].arms.with[]` / `.without[]` with `score`,
-`turns`, `costUsd`, `judgeCostUsd`, `durationSeconds`, `error`, `aborted`, `skippedPaidGraders`,
-`tracePath` (the run's transcript) and `graders[]` (`passed`, `scored`, `explanation`, `judgeVotes`,
-`evidence`). The top level has `claudeVersion`, `costUsd`, `partial`, `partialReason` and `suite`.
+Results: `<output dir>/aggregate-result.json` (default `<eval dir>/results/<timestamp>/`), and
+`report.html` beside it. The top level has `harness`, `harnessVersion`, `costUsd`, `partial`,
+`partialReason` and `suite` (with `instructions`: the file, its hash and scope). Per case,
+`cases[].aggregates` (`score`, `scoreWithout`, `delta`) and per run `cases[].arms.with[]` /
+`.without[]` with `score`, `turns`, `costUsd`, `judgeCostUsd`, `durationSeconds`, `error`,
+`aborted`, `skippedPaidGraders`, `tracePath` (the run's event stream, kept in
+`runs/<case>/<arm>-<n>/trace.jsonl` with the mock calls beside it) and `graders[]` (`passed`,
+`scored`, `explanation`, `judgeVotes`, `evidence`).
+
+Tool names: Claude Code names a plugin's MCP tool `mcp__plugin_<plugin>_<server>__<tool>` and Codex
+`mcp__<server>__<tool>`; a mocked tool answers to `mcp__<server>__<tool>` under both, so write
+graders with that name. Under Codex a shell command is `Bash`, a file edit is `Edit`, and reading a
+skill's `SKILL.md` also counts as a `Skill` call for that skill.
 
 ## The helper
 
@@ -135,22 +166,10 @@ turn's first response. Images in the user's message can't be carried into the pr
 `tool_order` graders against the recorded turn (default `original-turn.jsonl`), another transcript
 in Claude Code's session format, or a text given as the final message. Judged graders are listed, not run.
 
-**Instruction-file variants.** No CLAUDE.md, AGENTS.md or rules file loads in a run. Two ways in:
-
-- A recorded case carries the files its session loaded, as an `instructions` record in the history.
-  `$E instructions list <history.jsonl>` shows them; `$E instructions rewrite <history.jsonl>
-  --replace <recorded path> --with <file>` (or `--remove <path>`, `--add <path> --with <file>`)
-  puts new text where the old was, in the record and in the text the model was sent, rendered the
-  way Claude Code renders a file (frontmatter and HTML comments dropped; `@imports` are not expanded).
-- A fresh case gets the file through a small plugin whose SessionStart hook adds it as context,
-  with the same "Contents of <path>" header. It's close to the real loading path, not the same:
-  the text arrives as hook context.
-
-`$E variant --suite <dir> --out <dir> --file <new text> --replaces <recorded path> [--path <path for fresh cases>] [--type Project|User|Local]`
-copies a suite (without `results/`) and applies one variant to every case: recorded cases' histories
-are rewritten, fresh cases get the variant plugin added to `plugins:`. For an A/B comparison build
-one variant from the old file and one from the new, run both the same way (`--ablation none`), and
-compare. Under with-without, a fresh case's no-plugin arm runs without any instruction file.
+**Instruction files in a history:** `$E instructions list <history.jsonl>` shows the files a
+recorded case loaded; `$E instructions rewrite <history.jsonl> --replace <recorded path> --with <file>`
+(or `--remove <path>`, `--add <path> --with <file>`) edits them by hand, in the record and in the
+text the model was sent. `evals run --instructions` does the replace for you.
 
 **Compare** two results: `$E compare <A> <B> [--cases <glob>]... [--drop-errors] [--min-effect 0.1] [--json]`
 (each a results folder or an `aggregate-result.json`). It pairs cases by name and reports B against
@@ -168,4 +187,8 @@ than 20 cases are paired.
   graders on a recorded turn.
 - A simulated user over several turns, hidden tests on the final repository, and blind pairwise
   preference between two setups: not built yet.
-- Codex sessions: not read yet.
+- Codex as the agent under test can't resume a recorded Claude Code session (those cases fail),
+  doesn't cap turns (`max_turns` is ignored; the timeout holds), can't allow tools one by one, runs
+  no plugin hooks, and reports no cost (so `--max-cost-usd` can't bound it). Reading Codex
+  sessions for traces isn't built yet.
+- A judge reading an image: the judge is shown text only.

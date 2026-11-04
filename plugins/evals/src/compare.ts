@@ -1,4 +1,4 @@
-// Paired comparison of two `claude plugin eval` results (aggregate-result.json): the per-case score
+// Paired comparison of two eval results (aggregate-result.json, from `evals run` or `claude plugin eval`): the per-case score
 // difference with its interval and a sign test, the guardrails (turns, cost, time), and plumbing failures.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -23,11 +23,13 @@ export type CaseResult = {
 };
 
 export type Result = {
+  harness?: string;
+  harnessVersion?: string;
   claudeVersion?: string;
   costUsd?: number;
   partial?: boolean;
   partialReason?: string;
-  suite?: { ablation?: string; modelOverride?: string; judgeModel?: string };
+  suite?: { ablation?: string; modelOverride?: string | null; judgeModel?: string | null; judgeHarness?: string };
   cases: CaseResult[];
 };
 
@@ -159,9 +161,9 @@ function runsOf(c: CaseResult, dropErrors: boolean): RunResult[] {
 
 function env(r: Result): string {
   return [
-    r.claudeVersion && `Claude Code ${r.claudeVersion}`,
+    r.harness ? `${r.harness} ${r.harnessVersion ?? ""}`.trim() : r.claudeVersion && `Claude Code ${r.claudeVersion}`,
     r.suite?.modelOverride && `model ${r.suite.modelOverride}`,
-    r.suite?.judgeModel && `judge ${r.suite.judgeModel}`,
+    r.suite?.judgeModel && `judge ${r.suite.judgeModel}${r.suite.judgeHarness ? ` on ${r.suite.judgeHarness}` : ""}`,
     r.suite?.ablation && `ablation ${r.suite.ablation}`,
   ]
     .filter(Boolean)

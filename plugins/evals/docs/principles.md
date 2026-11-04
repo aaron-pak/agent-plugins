@@ -2,8 +2,8 @@
 
 An eval is worth what the decisions made with it are worth. These are the ideas the build-eval and
 hillclimb skills lean on. They come from Anthropic's "Demystifying evals for AI agents", "Automating
-eval design and hillclimbing with Claude", the `claude plugin eval` docs and the eval guides in the
-`claude-api` skill, restated for this plugin's setup.
+eval design and hillclimbing with Claude", the `claude plugin eval` docs (whose runner `evals run`
+ports) and the eval guides in the `claude-api` skill, restated for this plugin's setup.
 
 ## Read the transcripts
 
@@ -35,8 +35,7 @@ noisier than a regex over it.
 
 ## Judges
 
-Runs and judges use Opus (`--model opus --judge-model opus`); the runner's default judge is a small
-model, so always pass the flag. A judge from the same family as the agent under test can prefer
+Runs and judges use Opus, the runner's default; never a small model as the judge. A judge from the same family as the agent under test can prefer
 answers like its own, and here both are Opus, so the check is calibration: the judge must agree with
 the user on clear-cut cases (about 9 in 10 or better) before its scores steer anything, and it must
 fail an empty reply, "I don't know" and a confident answer to the wrong question. The judge votes
@@ -107,9 +106,9 @@ as the capture did, or it no longer tests the failure.
 
 ## Isolation
 
-Each `claude plugin eval` run gets a temporary home and working directory: no user settings,
-CLAUDE.md, memory, hooks, MCP servers or other plugins load, and Bash runs in an OS sandbox that
-can't read the home directory. That is what keeps runs from touching real sessions and services.
+Each run gets a temporary home, working folder and config folder: no user settings, instruction
+files (unless the case loads one on purpose), memory, hooks, MCP servers or other plugins load, and
+shell commands run in the harness's OS sandbox, which can't read the user's home. That is what keeps runs from touching real sessions and services.
 MCP servers are mocked unless real ones are explicitly started, and no case may reach a real
 service. Anything the agent must not see (expected answers, graders, the evidence in `original.md`)
 stays out of the workspace and its read grants; under optimization the agent will find it.

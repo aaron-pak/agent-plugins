@@ -11,10 +11,11 @@ read transcripts rather than summary numbers, know which change caused which eff
 and never tune on the cases you report. **The result is the test-split delta against the
 baseline.** Train improvement is the process, not the result.
 
-Runs go through `claude plugin eval` with `--model opus --judge-model opus`; the helper that
-compares them is `"${CLAUDE_PLUGIN_ROOT}/bin/evals"`. Both, with their files and results, are
-described in `${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`; the audit you run first is
-`${CLAUDE_PLUGIN_ROOT}/docs/audit.md`.
+Runs and comparisons go through this plugin's `bin/evals` (`"${CLAUDE_PLUGIN_ROOT}/bin/evals"` in
+Claude Code; elsewhere, two folders up from this skill's folder): `evals run` with Opus for runs and
+judges, and `evals compare`. Both, with their files and results, are described in
+`${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`; the audit you run first is
+`${CLAUDE_PLUGIN_ROOT}/docs/audit.md`. Keep one harness (`--harness`) for every round.
 
 ## Step 0 — A suite you can trust
 
@@ -52,10 +53,9 @@ When the target is whether a skill fires, its description is the lever and the t
 metric. Run that loop with `--ablation none`, where `tool_used: Skill` graders are scored, and
 keep it on `--ablation none` for every round, the baseline included.
 
-When the target is an instruction file, build each round's suite with `evals variant --suite
-<suite> --out <state>/r<N>/suite --file <the round's file> --replaces <the recorded path>` and run
-that folder. Build round 0 the same way from the original file, so every round reaches the agent
-by the same path and each round's Δ is measured against the original. Edit a working copy, never
+When the target is an instruction file, run each round with `--instructions <state>/r<N>/<file>`,
+and round 0 the same way with a copy of the original file, so every round reaches the agent by the
+same path and each round's Δ is measured against the original. Edit a working copy, never
 the user's live file, until the winner is chosen. A recorded case resumes the recorded
 conversation with the plugin as it is now: an edit to the plugin reaches it from the cut on, an
 edit to the instruction file on disk never does, and the history still shows what the old version

@@ -6906,8 +6906,8 @@ var require_public_api = __commonJS(function(exports) {
 });
 
 // plugins/evals/src/cli.ts
-import { mkdirSync as mkdirSync7, readFileSync as readFileSync12, writeFileSync as writeFileSync8 } from "node:fs";
-import { dirname as dirname4, join as join14 } from "node:path";
+import { mkdirSync as mkdirSync6, readFileSync as readFileSync11, writeFileSync as writeFileSync8 } from "node:fs";
+import { dirname as dirname4, join as join13 } from "node:path";
 import { parseArgs } from "node:util";
 
 // plugins/evals/src/capture.ts
@@ -7722,9 +7722,9 @@ function runsOf(c, dropErrors) {
 }
 function env(r) {
   return [
-    r.claudeVersion && `Claude Code ${r.claudeVersion}`,
+    r.harness ? `${r.harness} ${r.harnessVersion ?? ""}`.trim() : r.claudeVersion && `Claude Code ${r.claudeVersion}`,
     r.suite?.modelOverride && `model ${r.suite.modelOverride}`,
-    r.suite?.judgeModel && `judge ${r.suite.judgeModel}`,
+    r.suite?.judgeModel && `judge ${r.suite.judgeModel}${r.suite.judgeHarness ? ` on ${r.suite.judgeHarness}` : ""}`,
     r.suite?.ablation && `ablation ${r.suite.ablation}`
   ].filter(Boolean).join(", ");
 }
@@ -8778,14 +8778,13 @@ ${result.cases.map((c) => caseBlock(c, result.suite.threshold)).join("")}
 
 // plugins/evals/src/run/runner.ts
 import { createHash as createHash2, randomBytes as randomBytes2 } from "node:crypto";
-import { copyFileSync as copyFileSync4, existsSync as existsSync14, mkdirSync as mkdirSync6, readFileSync as readFileSync11, writeFileSync as writeFileSync7 } from "node:fs";
+import { copyFileSync as copyFileSync4, existsSync as existsSync13, mkdirSync as mkdirSync5, readFileSync as readFileSync10, writeFileSync as writeFileSync7 } from "node:fs";
 import { createServer } from "node:net";
-import { dirname as dirname3, join as join13, relative as relative6, resolve as resolve8 } from "node:path";
+import { dirname as dirname3, join as join12, relative as relative5, resolve as resolve7 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // plugins/evals/src/instructions.ts
-import { cpSync as cpSync2, existsSync as existsSync9, mkdirSync as mkdirSync4, readFileSync as readFileSync6, readdirSync as readdirSync6, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
-import { join as join9, relative as relative2, resolve as resolve3 } from "node:path";
+import { writeFileSync as writeFileSync5 } from "node:fs";
 var LABELS = {
   Project: "project instructions, checked into the codebase",
   User: "user's private global instructions for all projects",
@@ -8909,114 +8908,10 @@ function rewriteHistoryFile(path, edits, outPath = path) {
 `);
   return result;
 }
-function writeShim(dir, files, name = "instructions-variant") {
-  const rendered = files.map((f) => ({ path: f.path, type: f.type ?? "Project", content: renderFile(f.text) }));
-  const context = rendered.map((f) => `${header(f)}
-
-${f.content}`).join(`
-
-`);
-  mkdirSync4(join9(dir, ".claude-plugin"), { recursive: true });
-  mkdirSync4(join9(dir, "hooks"), { recursive: true });
-  writeFileSync5(join9(dir, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name, description: "Adds an instruction-file variant as session context, for evals." }, null, 2)}
-`);
-  writeFileSync5(join9(dir, "hooks", "context.json"), `${JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } })}
-`);
-  writeFileSync5(join9(dir, "hooks", "hooks.json"), `${JSON.stringify({
-    hooks: {
-      SessionStart: [{ hooks: [{ type: "command", command: 'cat "${CLAUDE_PLUGIN_ROOT}/hooks/context.json"' }] }]
-    }
-  }, null, 2)}
-`);
-}
-function caseDirs(root) {
-  const out = [];
-  const walk = (dir) => {
-    const names = readdirSync6(dir);
-    if (names.includes("case.yaml") || names.includes("prompt.md")) {
-      out.push(dir);
-      return;
-    }
-    for (const n of names) {
-      if (n === "results" || n === "mocks" || n.startsWith("."))
-        continue;
-      const p = join9(dir, n);
-      if (statSync4(p).isDirectory())
-        walk(p);
-    }
-  };
-  walk(root);
-  return out;
-}
-function historyOf(caseDir) {
-  const yaml = join9(caseDir, "case.yaml");
-  if (!existsSync9(yaml))
-    return;
-  const m = /^\s+history_file:\s*["']?([^"'\n]+)["']?\s*$/m.exec(readFileSync6(yaml, "utf8"));
-  return m ? join9(caseDir, m[1].trim()) : undefined;
-}
-function addPlugin(caseDir, pluginDir) {
-  const rel = relative2(caseDir, pluginDir);
-  const yamlPath = join9(caseDir, "case.yaml");
-  if (!existsSync9(yamlPath)) {
-    const name = caseDir.split("/").pop();
-    writeFileSync5(yamlPath, `schema_version: "1.1"
-name: ${JSON.stringify(name)}
-plugins: [${JSON.stringify(rel)}]
-`);
-    return;
-  }
-  let yaml = readFileSync6(yamlPath, "utf8");
-  const inline = /^plugins:\s*\[(.*)\]\s*$/m.exec(yaml);
-  if (inline) {
-    const items = inline[1].trim() ? `${inline[1].trim()}, ` : "";
-    yaml = yaml.replace(inline[0], `plugins: [${items}${JSON.stringify(rel)}]`);
-  } else if (/^plugins:\s*$/m.test(yaml)) {
-    yaml = yaml.replace(/^plugins:\s*$/m, `plugins:
-  - ${JSON.stringify(rel)}`);
-  } else {
-    yaml = yaml.replace(/^(name:.*)$/m, `$1
-plugins: [${JSON.stringify(rel)}]`);
-  }
-  writeFileSync5(yamlPath, yaml);
-}
-function writeVariant(options) {
-  const suite = resolve3(options.suite);
-  const out = resolve3(options.out);
-  if (existsSync9(out))
-    throw new Error(`${out} exists; pick a new folder for the variant`);
-  const text = readFileSync6(options.file, "utf8");
-  const path = options.path ?? options.replaces ?? resolve3(options.file);
-  cpSync2(suite, out, {
-    recursive: true,
-    filter: (src) => !relative2(suite, src).split("/").includes("results")
-  });
-  const result = { recorded: [], fresh: [], warnings: [] };
-  const shimDir = join9(out, ".variant-plugin");
-  let shimWritten = false;
-  for (const dir of caseDirs(out)) {
-    const history = historyOf(dir);
-    if (history && existsSync9(history)) {
-      if (!options.replaces)
-        throw new Error(`${relative2(out, dir)} is a recorded case; pass --replaces <the path its session loaded>`);
-      const r = rewriteHistoryFile(history, [{ kind: "replace", path: options.replaces, text }]);
-      result.warnings.push(...r.warnings.map((w) => `${relative2(out, dir)}: ${w}`));
-      result.recorded.push(relative2(out, dir));
-    } else {
-      if (!shimWritten) {
-        writeShim(shimDir, [{ path, type: options.type, text }]);
-        shimWritten = true;
-      }
-      addPlugin(dir, shimDir);
-      result.fresh.push(relative2(out, dir));
-    }
-  }
-  return result;
-}
 
 // plugins/evals/src/run/case.ts
-import { existsSync as existsSync10, readFileSync as readFileSync7, readdirSync as readdirSync7, statSync as statSync5 } from "node:fs";
-import { basename as basename3, isAbsolute, join as join10, relative as relative3, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync9, readFileSync as readFileSync6, readdirSync as readdirSync6, statSync as statSync4 } from "node:fs";
+import { basename as basename3, isAbsolute, join as join9, relative as relative2, resolve as resolve3 } from "node:path";
 
 // node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -9271,14 +9166,14 @@ function graderOf(c, g, path) {
   }
 }
 function readText(path) {
-  return existsSync10(path) ? readFileSync7(path, "utf8") : undefined;
+  return existsSync9(path) ? readFileSync6(path, "utf8") : undefined;
 }
 function loadCase(dir, evalRoot) {
-  const abs = resolve4(dir);
-  const shown = relative3(evalRoot, abs) || ".";
-  const yamlText = readText(join10(abs, "case.yaml"));
-  const promptText = readText(join10(abs, "prompt.md"));
-  const graderFiles = existsSync10(join10(abs, "graders")) ? readdirSync7(join10(abs, "graders")).filter((n) => n.endsWith(".md")).sort() : [];
+  const abs = resolve3(dir);
+  const shown = relative2(evalRoot, abs) || ".";
+  const yamlText = readText(join9(abs, "case.yaml"));
+  const promptText = readText(join9(abs, "prompt.md"));
+  const graderFiles = existsSync9(join9(abs, "graders")) ? readdirSync6(join9(abs, "graders")).filter((n) => n.endsWith(".md")).sort() : [];
   if (yamlText === undefined && promptText === undefined && graderFiles.length === 0)
     return;
   let fromYaml;
@@ -9316,7 +9211,7 @@ function loadCase(dir, evalRoot) {
     }
   }
   for (const file of graderFiles) {
-    const text = readFileSync7(join10(abs, "graders", file), "utf8");
+    const text = readFileSync6(join9(abs, "graders", file), "utf8");
     const { fm, body, had } = splitFrontmatter(text, `${shown}/graders/${file}`);
     if (!had)
       continue;
@@ -9437,11 +9332,11 @@ function loadCase(dir, evalRoot) {
     ["context.instructions", context.instructions],
     ...context.add_dirs.map((d) => ["context.add_dirs", d])
   ]) {
-    if (p !== undefined && !existsSync10(resolve4(abs, p)))
+    if (p !== undefined && !existsSync9(resolve3(abs, p)))
       throw new CaseError(`${shown}: ${label} ${p} does not exist`);
   }
   for (const g of graders) {
-    if (g.type === "baseline" && !existsSync10(resolve4(abs, g.baseline_file))) {
+    if (g.type === "baseline" && !existsSync9(resolve3(abs, g.baseline_file))) {
       throw new CaseError(`${shown}: grader "${g.name}" baseline_file ${g.baseline_file} does not exist`);
     }
   }
@@ -9463,12 +9358,12 @@ function loadCase(dir, evalRoot) {
   };
 }
 function findCaseDirs(evalDir, depth = 0) {
-  if (depth > 8 || !existsSync10(evalDir) || !statSync5(evalDir).isDirectory())
+  if (depth > 8 || !existsSync9(evalDir) || !statSync4(evalDir).isDirectory())
     return [];
-  const here = readdirSync7(evalDir);
+  const here = readdirSync6(evalDir);
   if (here.includes("case.yaml") || here.includes("prompt.md"))
     return [evalDir];
-  return here.filter((n) => !n.startsWith(".") && !SKIP_DIRS.has(n)).map((n) => join10(evalDir, n)).filter((p) => statSync5(p).isDirectory()).sort().flatMap((p) => findCaseDirs(p, depth + 1));
+  return here.filter((n) => !n.startsWith(".") && !SKIP_DIRS.has(n)).map((n) => join9(evalDir, n)).filter((p) => statSync4(p).isDirectory()).sort().flatMap((p) => findCaseDirs(p, depth + 1));
 }
 function globMatch(glob, text) {
   const re = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
@@ -9499,12 +9394,12 @@ function pathGlob(pattern) {
   return new RegExp(`${out}$`);
 }
 function inCase(c, p) {
-  return isAbsolute(p) ? p : resolve4(c.dir, p);
+  return isAbsolute(p) ? p : resolve3(c.dir, p);
 }
 
 // plugins/evals/src/run/graders.ts
-import { existsSync as existsSync11, readFileSync as readFileSync8, realpathSync as realpathSync2, statSync as statSync6 } from "node:fs";
-import { relative as relative4, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync10, readFileSync as readFileSync7, realpathSync as realpathSync2, statSync as statSync5 } from "node:fs";
+import { relative as relative3, resolve as resolve4 } from "node:path";
 
 // plugins/evals/src/run/judge.ts
 var JUDGE_SYSTEM = "You are a strict, terse evaluation judge for coding-agent traces.";
@@ -9588,21 +9483,21 @@ function unavailable(g, reason) {
 }
 function focusText(focus, ctx) {
   if (typeof focus === "object") {
-    const file = resolve5(ctx.sandboxCwd, focus.path);
-    const rel = relative4(ctx.sandboxCwd, file);
+    const file = resolve4(ctx.sandboxCwd, focus.path);
+    const rel = relative3(ctx.sandboxCwd, file);
     if (rel.startsWith("..") || rel.startsWith("/"))
       return { kind: "unavailable", reason: `focus file ${focus.path} is outside the run's working folder` };
-    if (!existsSync11(file) || !statSync6(file).isFile())
+    if (!existsSync10(file) || !statSync5(file).isFile())
       return { kind: "unavailable", reason: `focus file ${focus.path} does not exist` };
     const real = realpathSync2(file);
-    if (relative4(realpathSync2(ctx.sandboxCwd), real).startsWith(".."))
+    if (relative3(realpathSync2(ctx.sandboxCwd), real).startsWith(".."))
       return { kind: "unavailable", reason: `focus file ${focus.path} links outside the run's working folder` };
     if (IMAGE.test(file))
       return {
         kind: "unavailable",
         reason: `${label(focus)} is an image; this runner shows the judge text only, so have the case write a text rendering and grade that`
       };
-    const bytes = readFileSync8(real);
+    const bytes = readFileSync7(real);
     if (bytes.includes(0))
       return {
         kind: "unavailable",
@@ -9674,7 +9569,7 @@ async function judged(g, ctx) {
     prompt = llmPrompt(g.criteria, label(g.focus), evidence);
   } else {
     const file = inCase(ctx.case_, g.baseline_file);
-    const baseline = readFileSync8(file, "utf8").split(`
+    const baseline = readFileSync7(file, "utf8").split(`
 `).filter((l) => l.trim()).map((l) => {
       try {
         return JSON.parse(l);
@@ -9781,8 +9676,8 @@ function scoreOf(results) {
 }
 
 // plugins/evals/src/run/mocks.ts
-import { existsSync as existsSync12, readFileSync as readFileSync9, readdirSync as readdirSync8, statSync as statSync7 } from "node:fs";
-import { basename as basename4, dirname as dirname2, join as join11, relative as relative5, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync8, readdirSync as readdirSync7, statSync as statSync6 } from "node:fs";
+import { basename as basename4, dirname as dirname2, join as join10, relative as relative4, resolve as resolve5 } from "node:path";
 var ABORT_PREFIX = "ABORT:";
 var ERROR_PREFIX = "ERROR:";
 var RESPONDER_FAILED = "mock agent responder failed";
@@ -9831,7 +9726,7 @@ function countGuards(e) {
   return Object.values(e).reduce((n, v) => n + (isObj2(v) ? countGuards(v) : 1), 0);
 }
 function readResponder(file, baseDir, label) {
-  const { fm, body } = splitFrontmatter(readFileSync9(file, "utf8"), label);
+  const { fm, body } = splitFrontmatter(readFileSync8(file, "utf8"), label);
   for (const k of Object.keys(fm)) {
     if (!["type", "expect", "error", "tools", "abort_when"].includes(k)) {
       throw new CaseError(`${label}: ${k}: unknown key (keys: type, expect, error, tools, abort_when)`);
@@ -9878,11 +9773,11 @@ function readResponder(file, baseDir, label) {
 }
 function readListings(file, label) {
   const out = new Map;
-  if (!existsSync12(file))
+  if (!existsSync11(file))
     return out;
   let raw;
   try {
-    raw = JSON.parse(readFileSync9(file, "utf8"));
+    raw = JSON.parse(readFileSync8(file, "utf8"));
   } catch (error) {
     throw new CaseError(`${label}: not valid JSON (${error.message})`);
   }
@@ -9903,13 +9798,13 @@ function readListings(file, label) {
 }
 function readLayer(mocksDir, root) {
   const out = new Map;
-  if (!existsSync12(mocksDir) || !statSync7(mocksDir).isDirectory())
+  if (!existsSync11(mocksDir) || !statSync6(mocksDir).isDirectory())
     return out;
-  for (const dirName of readdirSync8(mocksDir).sort()) {
-    const dir = join11(mocksDir, dirName);
-    if (!statSync7(dir).isDirectory())
+  for (const dirName of readdirSync7(mocksDir).sort()) {
+    const dir = join10(mocksDir, dirName);
+    if (!statSync6(dir).isDirectory())
       continue;
-    const shown = relative5(root, dir) || dir;
+    const shown = relative4(root, dir) || dir;
     if (!NAME.test(dirName)) {
       throw new CaseError(`${shown}: name the folder after the server (letters, digits, "_" and "-" only)`);
     }
@@ -9918,15 +9813,15 @@ function readLayer(mocksDir, root) {
     const layer = {
       toolFiles: new Map,
       serverAgent: null,
-      listings: readListings(join11(dir, "_tools.json"), `${shown}/_tools.json`)
+      listings: readListings(join10(dir, "_tools.json"), `${shown}/_tools.json`)
     };
-    for (const file of readdirSync8(dir).sort()) {
+    for (const file of readdirSync7(dir).sort()) {
       if (!file.endsWith(".md"))
         continue;
       const label = `${shown}/${file}`;
       const tool = file.slice(0, -3);
       if (file === "_server.md") {
-        const r = readResponder(join11(dir, file), dir, label);
+        const r = readResponder(join10(dir, file), dir, label);
         if (r.responder.kind !== "agent") {
           throw new CaseError(`${label}: only \`type: agent\` is meaningful here; put a fixed answer in <tool>.md`);
         }
@@ -9941,7 +9836,7 @@ function readLayer(mocksDir, root) {
       if (!NAME.test(tool) || tool.includes("__")) {
         throw new CaseError(`${label}: name responder files after the tool (letters, digits, "_" and "-" only), e.g. list_issues.md`);
       }
-      layer.toolFiles.set(tool, readResponder(join11(dir, file), dir, label).responder);
+      layer.toolFiles.set(tool, readResponder(join10(dir, file), dir, label).responder);
     }
     out.set(dirName, layer);
   }
@@ -9949,8 +9844,8 @@ function readLayer(mocksDir, root) {
 }
 function layerDirs(caseDir, evalRoot) {
   const dirs = [];
-  let d = resolve6(caseDir);
-  const root = resolve6(evalRoot);
+  let d = resolve5(caseDir);
+  const root = resolve5(evalRoot);
   for (;; ) {
     dirs.unshift(d);
     if (d === root || !d.startsWith(`${root}/`))
@@ -9964,7 +9859,7 @@ function layerDirs(caseDir, evalRoot) {
 }
 function loadMocks(caseDir, evalRoot) {
   const notes = [];
-  const layers = layerDirs(caseDir, evalRoot).map((d) => readLayer(join11(d, "mocks"), evalRoot));
+  const layers = layerDirs(caseDir, evalRoot).map((d) => readLayer(join10(d, "mocks"), evalRoot));
   const servers = new Map;
   for (const name of new Set(layers.flatMap((l) => [...l.keys()]))) {
     const mine = layers.flatMap((l) => l.has(name) ? [l.get(name)] : []);
@@ -9998,14 +9893,14 @@ function declaredServers(pluginDir) {
   const out = new Map;
   const read = (file) => {
     try {
-      return JSON.parse(readFileSync9(file, "utf8"));
+      return JSON.parse(readFileSync8(file, "utf8"));
     } catch {
       return;
     }
   };
   const take = (value, base) => {
     if (typeof value === "string")
-      value = read(resolve6(base, value));
+      value = read(resolve5(base, value));
     if (!isObj2(value))
       return;
     const map = isObj2(value.mcpServers) ? value.mcpServers : value;
@@ -10013,10 +9908,10 @@ function declaredServers(pluginDir) {
       if (isObj2(v) && !out.has(k))
         out.set(k, v);
   };
-  if (existsSync12(join11(pluginDir, ".mcp.json")))
-    take(read(join11(pluginDir, ".mcp.json")), pluginDir);
+  if (existsSync11(join10(pluginDir, ".mcp.json")))
+    take(read(join10(pluginDir, ".mcp.json")), pluginDir);
   for (const manifest of [".claude-plugin/plugin.json", "plugin.json", ".codex-plugin/plugin.json"]) {
-    const m = read(join11(pluginDir, manifest));
+    const m = read(join10(pluginDir, manifest));
     if (isObj2(m) && m.mcpServers !== undefined)
       take(m.mcpServers, pluginDir);
   }
@@ -10145,17 +10040,17 @@ function fillTemplate(text, input, baseDir, maxArg = Number.POSITIVE_INFINITY) {
         problem ??= `{input.${p}} = ${show(v)} is not a plain file-name segment`;
       return s;
     });
-    const file = resolve6(baseDir, path);
-    const rel = relative5(baseDir, file);
+    const file = resolve5(baseDir, path);
+    const rel = relative4(baseDir, file);
     if (!rel || rel.startsWith("..") || rel.startsWith("/")) {
       problem ??= `{{file:${path}}} names a path outside the mock's folder`;
       return "";
     }
-    if (!existsSync12(file)) {
+    if (!existsSync11(file)) {
       problem ??= `{{file:${path}}}: no such file`;
       return "";
     }
-    return readFileSync9(file, "utf8");
+    return readFileSync8(file, "utf8");
   });
   return problem === null ? { ok: true, text: out } : { ok: false, reason: problem };
 }
@@ -10247,13 +10142,13 @@ function listingsOf(server) {
 }
 
 // plugins/evals/src/run/plugins.ts
-import { cpSync as cpSync3, existsSync as existsSync13, mkdirSync as mkdirSync5, mkdtempSync as mkdtempSync2, readFileSync as readFileSync10, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
+import { cpSync as cpSync2, existsSync as existsSync12, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync2, readFileSync as readFileSync9, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { basename as basename5, join as join12, resolve as resolve7 } from "node:path";
+import { basename as basename5, join as join11, resolve as resolve6 } from "node:path";
 var MANIFESTS = [".claude-plugin/plugin.json", "plugin.json", ".codex-plugin/plugin.json"];
 function readJson(file) {
   try {
-    const v = JSON.parse(readFileSync10(file, "utf8"));
+    const v = JSON.parse(readFileSync9(file, "utf8"));
     return v && typeof v === "object" && !Array.isArray(v) ? v : undefined;
   } catch {
     return;
@@ -10261,17 +10156,17 @@ function readJson(file) {
 }
 function manifestOf(dir) {
   for (const m of MANIFESTS) {
-    const data = readJson(join12(dir, m));
+    const data = readJson(join11(dir, m));
     if (data)
-      return { path: join12(dir, m), data };
+      return { path: join11(dir, m), data };
   }
   return;
 }
 function isPlugin(dir) {
-  return manifestOf(dir) !== undefined || existsSync13(join12(dir, "skills")) || existsSync13(join12(dir, "hooks", "hooks.json"));
+  return manifestOf(dir) !== undefined || existsSync12(join11(dir, "skills")) || existsSync12(join11(dir, "hooks", "hooks.json"));
 }
 function isSkill(dir) {
-  return existsSync13(join12(dir, "SKILL.md"));
+  return existsSync12(join11(dir, "SKILL.md"));
 }
 function pluginName(dir) {
   const m = manifestOf(dir);
@@ -10283,22 +10178,22 @@ function pluginVersion(dir) {
 }
 function evalDirOf(target, flag) {
   if (flag)
-    return resolve7(target, flag);
+    return resolve6(target, flag);
   const evals = manifestOf(target)?.data.experimental?.evals;
   if (typeof evals === "string" && evals && !evals.startsWith("/") && !evals.split("/").includes(".."))
-    return resolve7(target, evals);
-  return join12(target, "evals");
+    return resolve6(target, evals);
+  return join11(target, "evals");
 }
 var wrapped = new Map;
 function wrapSkill(skillDir) {
   const known = wrapped.get(skillDir);
   if (known)
     return known;
-  const root = mkdtempSync2(join12(tmpdir2(), "evals-skill-"));
+  const root = mkdtempSync2(join11(tmpdir2(), "evals-skill-"));
   const name = basename5(skillDir);
-  mkdirSync5(join12(root, ".claude-plugin"), { recursive: true });
-  writeFileSync6(join12(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name }));
-  cpSync3(skillDir, join12(root, "skills", name), { recursive: true, filter: (src) => !src.includes(`${name}/evals`) });
+  mkdirSync4(join11(root, ".claude-plugin"), { recursive: true });
+  writeFileSync6(join11(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name }));
+  cpSync2(skillDir, join11(root, "skills", name), { recursive: true, filter: (src) => !src.includes(`${name}/evals`) });
   wrapped.set(skillDir, root);
   return root;
 }
@@ -10311,7 +10206,7 @@ function casePluginDirs(c, targetPlugin) {
   if (c.plugins) {
     return c.plugins.map((p) => {
       const dir = inCase(c, p);
-      if (!existsSync13(dir))
+      if (!existsSync12(dir))
         throw new CaseError(`case "${c.name}": plugins: ${p} does not exist`);
       if (isPlugin(dir))
         return dir;
@@ -10326,8 +10221,8 @@ function rebindPlugin(pluginDir, into, servers, command) {
   const mine = servers.filter((s) => s.kind === "shadow" && s.pluginDir === pluginDir);
   if (mine.length === 0)
     return pluginDir;
-  const dest = join12(into, basename5(pluginDir));
-  cpSync3(pluginDir, dest, { recursive: true, filter: (src) => !/\/(\.git|node_modules\/\.cache)(\/|$)/.test(src) });
+  const dest = join11(into, basename5(pluginDir));
+  cpSync2(pluginDir, dest, { recursive: true, filter: (src) => !/\/(\.git|node_modules\/\.cache)(\/|$)/.test(src) });
   const declared = declaredServers(pluginDir);
   const kept = {};
   for (const [name, config] of declared) {
@@ -10337,16 +10232,16 @@ function rebindPlugin(pluginDir, into, servers, command) {
     else if (!plan.withheld)
       kept[name] = { type: "stdio", ...command(plan) };
   }
-  writeFileSync6(join12(dest, ".mcp.json"), JSON.stringify({ mcpServers: kept }, null, 2));
+  writeFileSync6(join11(dest, ".mcp.json"), JSON.stringify({ mcpServers: kept }, null, 2));
   for (const m of MANIFESTS) {
-    const data = readJson(join12(dest, m));
+    const data = readJson(join11(dest, m));
     if (data && "mcpServers" in data) {
       delete data.mcpServers;
-      writeFileSync6(join12(dest, m), JSON.stringify(data, null, 2));
+      writeFileSync6(join11(dest, m), JSON.stringify(data, null, 2));
     }
   }
-  if (existsSync13(join12(dest, "mcp.json")))
-    rmSync2(join12(dest, "mcp.json"));
+  if (existsSync12(join11(dest, "mcp.json")))
+    rmSync2(join11(dest, "mcp.json"));
   return dest;
 }
 
@@ -10354,14 +10249,14 @@ function rebindPlugin(pluginDir, into, servers, command) {
 function mockServerPath() {
   const here = dirname3(fileURLToPath(import.meta.url));
   for (const p of [
-    join13(here, "mock-server.mjs"),
-    join13(here, "..", "..", "bin", "mock-server.mjs"),
-    join13(here, "..", "bin", "mock-server.mjs")
+    join12(here, "mock-server.mjs"),
+    join12(here, "..", "..", "bin", "mock-server.mjs"),
+    join12(here, "..", "bin", "mock-server.mjs")
   ]) {
-    if (existsSync14(p))
+    if (existsSync13(p))
       return p;
   }
-  return process.env.EVALS_MOCK_SERVER ?? join13(here, "mock-server.mjs");
+  return process.env.EVALS_MOCK_SERVER ?? join12(here, "mock-server.mjs");
 }
 function rule(text) {
   const m = /^([^(]+)\((.*)\)$/.exec(text.trim());
@@ -10391,14 +10286,14 @@ function safeName(s) {
 }
 function instructionsFor(c, options) {
   if (options.instructions)
-    return resolve8(options.instructions);
+    return resolve7(options.instructions);
   return c.context.instructions ? inCase(c, c.context.instructions) : undefined;
 }
 function loadInstructions(c, options, box, historyFile) {
   const file = instructionsFor(c, options);
   if (!file)
     return { written: false, notes: [] };
-  const text = readFileSync11(file, "utf8");
+  const text = readFileSync10(file, "utf8");
   if (historyFile) {
     const records = readTranscript(historyFile);
     const type = options.instructionsScope === "user" ? "User" : "Project";
@@ -10511,8 +10406,8 @@ async function runOne(job, options, runsDir, state) {
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
   const box = createSandbox();
-  const out = join13(runsDir, safeName(c.name), `${arm}-${index + 1}`);
-  mkdirSync6(out, { recursive: true });
+  const out = join12(runsDir, safeName(c.name), `${arm}-${index + 1}`);
+  mkdirSync5(out, { recursive: true });
   const base = { passed: false, turns: 0, costUsd: 0, judgeCostUsd: 0, graders: [], startedAt, tracePath: "" };
   const finish = (r) => ({
     ...r,
@@ -10527,14 +10422,14 @@ async function runOne(job, options, runsDir, state) {
     }
     let historyFile;
     if (c.context.history_file) {
-      historyFile = join13(box.root, "history.jsonl");
+      historyFile = join12(box.root, "history.jsonl");
       copyFileSync4(inCase(c, c.context.history_file), historyFile);
     }
     const loaded = loadInstructions(c, options, box, historyFile);
     const servers = options.mocks ? forArm(plan.servers, arm) : [];
     const live = servers.filter((s) => !s.withheld);
     const token = randomBytes2(12).toString("hex");
-    const socketPath = join13(box.root, "mock.sock");
+    const socketPath = join12(box.root, "mock.sock");
     let kill;
     let aborted;
     const ask = hasAgentResponders(live) ? (s, u) => options.judgeHarness.ask(s, u, options.judgeModel, options.signal) : null;
@@ -10546,12 +10441,12 @@ async function runOne(job, options, runsDir, state) {
       await relay.ready;
     }
     const command = (s) => {
-      const spec = join13(box.outDir, `mock-${s.dirName}.json`);
+      const spec = join12(box.outDir, `mock-${s.dirName}.json`);
       writeFileSync7(spec, JSON.stringify({ server: s.dirName, tools: listingsOf(s.server), socket: socketPath, token }));
       return { command: process.execPath.endsWith("node") ? process.execPath : "node", args: [mockServerPath(), spec] };
     };
-    const pluginsHome = join13(box.root, "plugins");
-    mkdirSync6(pluginsHome, { recursive: true });
+    const pluginsHome = join12(box.root, "plugins");
+    mkdirSync5(pluginsHome, { recursive: true });
     const pluginDirs = arm === "with" ? plan.pluginDirs.map((d) => rebindPlugin(d, pluginsHome, servers, command)) : [];
     const standalone = live.filter((s) => s.kind === "standalone").map((s) => ({ name: s.dirName, ...command(s) }));
     const mockedTools = live.flatMap((s) => [...s.server.tools.keys()].map((t) => options.harness.mcpToolName(s.dirName, t, s.kind === "shadow" ? pluginName(s.pluginDir) : undefined)));
@@ -10580,13 +10475,13 @@ async function runOne(job, options, runsDir, state) {
       }
     });
     const cwdDiff = createdFiles(before, listFiles(box.cwd));
-    if (existsSync14(run.tracePath)) {
-      copyFileSync4(run.tracePath, join13(out, "trace.jsonl"));
-      run.tracePath = join13(out, "trace.jsonl");
+    if (existsSync13(run.tracePath)) {
+      copyFileSync4(run.tracePath, join12(out, "trace.jsonl"));
+      run.tracePath = join12(out, "trace.jsonl");
     }
     const mockCalls = relay?.calls ?? [];
     if (relay)
-      writeFileSync7(join13(out, "mock-calls.jsonl"), mockCalls.map((m) => JSON.stringify(m)).join(`
+      writeFileSync7(join12(out, "mock-calls.jsonl"), mockCalls.map((m) => JSON.stringify(m)).join(`
 `));
     const queue = [...mockCalls];
     for (const call of run.toolCalls) {
@@ -10686,8 +10581,8 @@ async function pool(items, n, work) {
   }));
 }
 function loadSuite(target, evalDirFlag, caseGlobs, tags) {
-  const root = resolve8(target);
-  if (!existsSync14(root))
+  const root = resolve7(target);
+  if (!existsSync13(root))
     throw new CaseError(`${target} does not exist`);
   const targetPlugin = isPlugin(root) ? root : isSkill(root) ? wrapSkill(root) : null;
   const evalDir = isSkill(root) && !isPlugin(root) ? evalDirOf(root, evalDirFlag) : evalDirOf(root, evalDirFlag);
@@ -10709,7 +10604,7 @@ function loadSuite(target, evalDirFlag, caseGlobs, tags) {
       cases.push(c);
       notes.push(...c.notes);
     } catch (error) {
-      errors.push({ case: relative6(evalDir, dir) || ".", error: error.message });
+      errors.push({ case: relative5(evalDir, dir) || ".", error: error.message });
     }
   }
   const names = new Map;
@@ -10764,9 +10659,9 @@ async function runSuite(options) {
       options.onLine(`  ${p.c.name}: ${n}`);
   }
   const startedAt = new Date(started).toISOString();
-  const outputDir = resolve8(options.outputDir ?? join13(suite.evalDir, "results", startedAt.replace(/[:.]/g, "-")));
-  const runsDir = join13(outputDir, "runs");
-  mkdirSync6(runsDir, { recursive: true });
+  const outputDir = resolve7(options.outputDir ?? join12(suite.evalDir, "results", startedAt.replace(/[:.]/g, "-")));
+  const runsDir = join12(outputDir, "runs");
+  mkdirSync5(runsDir, { recursive: true });
   const harnessVersion = await options.harness.version().catch(() => "unknown");
   const jobs = planned.flatMap((plan) => plan.arms.flatMap((arm) => Array.from({ length: options.runs ?? plan.c.runs }, (_, index) => ({ plan, arm, index }))));
   const results = new Map;
@@ -10826,7 +10721,7 @@ async function runSuite(options) {
     }
     return {
       name: p.c.name,
-      dir: relative6(suite.evalDir, p.c.dir) || ".",
+      dir: relative5(suite.evalDir, p.c.dir) || ".",
       source: p.c.source,
       promptMarkdown: p.c.execution.prompt,
       model: options.model ?? p.c.execution.model ?? null,
@@ -10868,8 +10763,8 @@ async function runSuite(options) {
       pluginId: suite.targetPlugin ? pluginName(suite.targetPlugin) : null,
       judgeHarness: options.judgeHarness.name,
       instructions: options.instructions ? {
-        path: resolve8(options.instructions),
-        sha256: createHash2("sha256").update(readFileSync11(options.instructions)).digest("hex"),
+        path: resolve7(options.instructions),
+        sha256: createHash2("sha256").update(readFileSync10(options.instructions)).digest("hex"),
         scope: options.instructionsScope
       } : null,
       plugins: [...new Set(planned.flatMap((p) => p.pluginDirs))].map((d) => ({
@@ -10889,7 +10784,7 @@ async function runSuite(options) {
       meanDelta: deltas.length ? mean2(deltas) : null
     }
   };
-  writeFileSync7(join13(outputDir, "aggregate-result.json"), `${JSON.stringify(result, null, 2)}
+  writeFileSync7(join12(outputDir, "aggregate-result.json"), `${JSON.stringify(result, null, 2)}
 `);
   cleanupWrapped();
   const failed = ran.some((c) => c.aggregates.score < options.threshold || [...c.arms.with, ...c.arms.without ?? []].some((r) => r.error || r.aborted));
@@ -10922,7 +10817,6 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   instructions list <history.jsonl>
   instructions rewrite <history.jsonl> (--replace <path> | --remove <path> | --add <path>) [--with <file>]
                        [--type Project|User|Local] [--out <file>]
-  variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
 
   run [target] [--harness claude|codex] [--runs n] [--model m (opus)] [--judge-model m (opus)] [--judge-harness claude|codex]
       [--instructions <file>] [--instructions-scope project|user] [--instructions-name AGENTS.md] [--ablation none|with-without] [--case glob]... [--tag t]...
@@ -11192,8 +11086,8 @@ async function runCommand(argv) {
     onLine: log,
     signal: controller.signal
   });
-  const reportPath = values.report ?? join14(outputDir, "report.html");
-  mkdirSync7(dirname4(reportPath), { recursive: true });
+  const reportPath = values.report ?? join13(outputDir, "report.html");
+  mkdirSync6(dirname4(reportPath), { recursive: true });
   writeFileSync8(reportPath, renderReport(result));
   if (jsonBare)
     console.log(JSON.stringify(result, null, 2));
@@ -11202,7 +11096,7 @@ async function runCommand(argv) {
 `);
   if (result.partial)
     log(`⚠ partial: ${result.partialReason}`);
-  log(`results: ${join14(outputDir, "aggregate-result.json")}
+  log(`results: ${join13(outputDir, "aggregate-result.json")}
 report: ${reportPath}`);
   process.exitCode = exitCode;
 }
@@ -11255,7 +11149,7 @@ function main(argv) {
       const dir = positionals[0] ?? fail("grade <case dir>");
       const verdicts = gradeCase(dir, {
         transcript: values.transcript,
-        text: values["text-file"] ? readFileSync12(values["text-file"], "utf8") : undefined
+        text: values["text-file"] ? readFileSync11(values["text-file"], "utf8") : undefined
       });
       for (const v of verdicts) {
         const mark = v.passed === undefined ? "  ·  " : v.passed ? "PASS " : "FAIL ";
@@ -11283,7 +11177,7 @@ function main(argv) {
           out: { type: "string" }
         });
         const path = positionals[0] ?? fail("instructions rewrite <history.jsonl> ...");
-        const text = values.with ? readFileSync12(values.with, "utf8") : undefined;
+        const text = values.with ? readFileSync11(values.with, "utf8") : undefined;
         let edit;
         if (values.replace)
           edit = {
@@ -11308,29 +11202,6 @@ function main(argv) {
         return;
       }
       return fail("instructions list | rewrite");
-    }
-    case "variant": {
-      const { values } = args(argv.slice(1), {
-        suite: { type: "string" },
-        out: { type: "string" },
-        file: { type: "string" },
-        replaces: { type: "string" },
-        path: { type: "string" },
-        type: { type: "string" }
-      });
-      if (!values.suite || !values.out || !values.file)
-        fail("variant needs --suite, --out and --file");
-      const result = writeVariant({
-        suite: values.suite,
-        out: values.out,
-        file: values.file,
-        replaces: values.replaces,
-        path: values.path,
-        type: values.type
-      });
-      warn(result.warnings);
-      console.log(`wrote ${values.out}: ${result.recorded.length} recorded case(s) rewritten, ${result.fresh.length} fresh case(s) given the variant plugin`);
-      return;
     }
     case "compare": {
       const { values, positionals } = args(argv.slice(1), {

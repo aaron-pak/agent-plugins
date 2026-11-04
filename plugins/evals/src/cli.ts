@@ -1,6 +1,6 @@
 // `evals`: the evals plugin's runner and helper. `evals run` runs a suite's cases the way `claude
 // plugin eval` does, in our own code; the other commands read Claude Code sessions, save traces, cut
-// cases from recorded moments, make instruction-file variants, grade recorded turns for free, and
+// cases from recorded moments, rewrite the instruction files a recorded case loaded, grade recorded turns for free, and
 // compare two results.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,7 +15,7 @@ import { codexHarness } from "./run/harness/codex.ts";
 import type { Harness } from "./run/harness/types.ts";
 import { renderReport } from "./run/report.ts";
 import { type Ablation, runSuite } from "./run/runner.ts";
-import { type Edit, recordedFiles, rewriteHistoryFile, writeVariant } from "./instructions.ts";
+import { type Edit, recordedFiles, rewriteHistoryFile } from "./instructions.ts";
 import { findSession, listSessions, parseSince, projectsDir, searchSessions } from "./sessions.ts";
 import { describeTrace, evalsHome, filterTraces, listTraces, saveTrace, updateTrace } from "./traces.ts";
 import { clip, mainChain, readTranscript, textOf, turnsOf } from "./transcript.ts";
@@ -44,7 +44,6 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   instructions list <history.jsonl>
   instructions rewrite <history.jsonl> (--replace <path> | --remove <path> | --add <path>) [--with <file>]
                        [--type Project|User|Local] [--out <file>]
-  variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
 
   run [target] [--harness claude|codex] [--runs n] [--model m (opus)] [--judge-model m (opus)] [--judge-harness claude|codex]
       [--instructions <file>] [--instructions-scope project|user] [--instructions-name AGENTS.md] [--ablation none|with-without] [--case glob]... [--tag t]...
@@ -430,30 +429,6 @@ function main(argv: string[]): void | Promise<void> {
         return;
       }
       return fail("instructions list | rewrite");
-    }
-    case "variant": {
-      const { values } = args(argv.slice(1), {
-        suite: { type: "string" },
-        out: { type: "string" },
-        file: { type: "string" },
-        replaces: { type: "string" },
-        path: { type: "string" },
-        type: { type: "string" },
-      });
-      if (!values.suite || !values.out || !values.file) fail("variant needs --suite, --out and --file");
-      const result = writeVariant({
-        suite: values.suite as string,
-        out: values.out as string,
-        file: values.file as string,
-        replaces: values.replaces as string | undefined,
-        path: values.path as string | undefined,
-        type: values.type as string | undefined,
-      });
-      warn(result.warnings);
-      console.log(
-        `wrote ${values.out}: ${result.recorded.length} recorded case(s) rewritten, ${result.fresh.length} fresh case(s) given the variant plugin`,
-      );
-      return;
     }
     case "compare": {
       const { values, positionals } = args(argv.slice(1), {

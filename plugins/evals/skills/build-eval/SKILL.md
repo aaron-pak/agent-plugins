@@ -1,6 +1,6 @@
 ---
 name: build-eval
-description: Build an eval suite for a Claude Code plugin, a skill, an instruction file (CLAUDE.md, AGENTS.md, rules) or an MCP server, through an interview with sign-offs, and run its first baseline with claude plugin eval. Use when the user wants an eval, wants to measure or test a plugin, skill, instruction file or MCP server, asks whether a change helped, wants a case built from a session or thread where an agent went wrong, or runs /build-eval.
+description: Build an eval suite for a plugin, a skill, an instruction file (CLAUDE.md, AGENTS.md, rules) or an MCP server, through an interview with sign-offs, and run its first baseline under Claude Code or Codex. Use when the user wants an eval, wants to measure or test a plugin, skill, instruction file or MCP server, asks whether a change helped, wants a case built from a session or thread where an agent went wrong, or runs /build-eval.
 ---
 
 # Build an eval
@@ -9,10 +9,12 @@ The goal is a suite the user trusts enough to make decisions with, plus a baseli
 user's sign-offs on the inputs and on the grading are what make it trustworthy, so they are the
 product, not a formality. A suite that runs but that nobody believes is worth nothing.
 
-Runs go through Claude Code's `claude plugin eval`, always with `--model opus --judge-model opus`
-and `--no-publish`. The helper `"${CLAUDE_PLUGIN_ROOT}/bin/evals"` reads sessions and saved traces,
-cuts cases from recorded moments, makes instruction-file variants, grades recorded turns for free
-and compares results; it never calls a model. Read these before you start:
+Everything goes through this plugin's `bin/evals` (`"${CLAUDE_PLUGIN_ROOT}/bin/evals"` in Claude
+Code; elsewhere, `bin/evals` two folders up from this skill's folder), called `$E` below. `$E run`
+runs a suite the way Claude Code's `claude plugin eval` does, with the agent under test in Claude
+Code (`--harness claude`, the default) or Codex (`--harness codex`), Opus for runs and judges. The
+other commands read sessions and saved traces, cut cases from recorded moments, grade recorded
+turns for free and compare results; they never call a model. Read these before you start:
 
 - `${CLAUDE_PLUGIN_ROOT}/docs/case-format.md` — the case files, graders, mocks, flags, results and the helper.
 - `${CLAUDE_PLUGIN_ROOT}/docs/principles.md` — what makes an eval trustworthy.
@@ -140,8 +142,7 @@ tool"). Show the criteria you considered and left out, and why.
   `allowed-tools` so the without-plugin arm stays honest; list any `--allow-tools` in the run
   command. Size `timeout_seconds` and `max_turns` to the work: a one-shot answer about 120 s and
   5 turns; reading a repository, running something and writing a result 600-900 s and 25-40 turns.
-- **Judges:** Opus (`--judge-model opus`; the runner's default judge is a small model). That is
-  also the model under test, so calibration against the user (below) is the check on a judge that
+- **Judges:** Opus, the runner's default. That is also the model under test, so calibration against the user (below) is the check on a judge that
   favors answers like its own. The rubric says what passes and what fails in concrete terms.
 - **Side measures:** turns, cost and duration are recorded per run; ask whether any has a hard
   ceiling.
@@ -164,18 +165,17 @@ the user's explicit approval, and never for tools that write.
 Write the case files, then pilot every case once:
 
 ```
-claude plugin eval <target> --model opus --judge-model opus --runs 1 --ablation with-without --no-publish [--scaffold] [--allow-tools ...]
+$E run <target> --runs 1 --ablation with-without [--harness codex] [--scaffold] [--allow-tools ...] [--instructions <file>]
 ```
 
 Check first that every case loads, for free: the same command with `--max-cost-usd 0` loads the
 suite and runs nothing.
 
-Pass `--scaffold` only for scaffolds you wrote. The runner asks to trust a plugin on first use;
-from a non-interactive shell pass `--trust-plugin`, but only for plugins the user owns or has said
-they trust. Run anything longer than a minute in the background and wait for it to finish.
+Pass `--scaffold` only for scaffolds you wrote: they run as the user. Run anything longer than a
+minute in the background and wait for it to finish.
 
 Before the pilot, put an oracle and a null through every case's graders without running the
-agent: `"${CLAUDE_PLUGIN_ROOT}/bin/evals" grade <case-dir> --text-file <file>` grades a text as the
+agent: `$E grade <case-dir> --text-file <file>` grades a text as the
 final message with the deterministic graders. The oracle is a known-good answer (the user's own,
 or one you wrote and they accepted), the nulls an empty file, "I don't know", and a confident
 answer to the wrong question. Judged graders and file graders are checked by the pilot itself; read
@@ -219,8 +219,9 @@ wants to improve the target against it next, that's the **hillclimb** skill.
 
 ## Targets
 
-**A plugin or a skill.** Target the plugin directory, or an installed plugin by name; a suite in a
-working folder names the plugin in each case's `plugins:`. If the plugin is generated by a build, build it and target the
+**A plugin or a skill.** Target the plugin directory (or a skill's folder); a suite in a working
+folder names the plugin in each case's `plugins:`. Pick the harness the user runs the plugin in;
+when it ships for both, run the suite under each and report them separately, never pooled. If the plugin is generated by a build, build it and target the
 built directory, with the suite linked or copied in. Δ against the no-plugin arm is the headline.
 
 **An MCP server.** Test it through the plugin that ships it. What usually matters is whether the
@@ -231,21 +232,20 @@ asks before writing. Mocks with `expect:` catch wrong arguments; `mock_calls` gr
 testing stale text. Δ against the no-plugin arm answers "does having the server help"; whether new
 descriptions beat the old ones is a comparison between runs (hillclimb).
 
-**An instruction file (CLAUDE.md, AGENTS.md, rules).** No instruction file loads in a run, so a
-version reaches the agent one of these ways. Tell the user which you're using and its trade-off:
+**An instruction file (CLAUDE.md, AGENTS.md, rules).** `--instructions <file>` loads a version
+the real way: written as `CLAUDE.md` (Claude Code) or `AGENTS.md` (Codex) in the run's working
+folder, or in the user's config with `--instructions-scope user`. No other instruction file loads.
 
 - **Recorded moments first.** Decision and turn cases captured from the user's sessions, or
-  derived from them, carry the files their session loaded. `evals variant --suite <work> --out
-  <dir> --file <new file> --replaces <the recorded path>` copies the suite with the new text in
-  place of the recorded file, rendered the way Claude Code renders it (frontmatter and HTML
-  comments dropped; a new `@import` isn't expanded). Run the original and the variant the same way
-  and compare them: the difference is the change's effect on the exact situations that went wrong.
-  This is where real failures are tested; mind the off-policy bias in `docs/principles.md`.
-- **Fresh cases** get the same command's variant plugin, whose SessionStart hook adds the file as
-  context under the same "Contents of <path>" header (`--path` and `--type User|Project|Local` set
-  how it's labeled). Build one variant from the old file and one from the new, so both go through
-  the same path. Close to the real loading path, not the same: the text arrives as hook context.
-  Good for synthetic cases and for confirming a change on new prompts.
+  derived from them, carry the files their session loaded; with `--instructions`, the recorded
+  text of that scope is replaced in a copy of the history, rendered the way Claude Code renders a
+  file (frontmatter and HTML comments dropped; a new `@import` isn't expanded), so the resumed
+  conversation reads the new text where the old was. This is where real failures are tested; mind
+  the off-policy bias in `docs/principles.md`.
+- **Fresh cases** read the file from disk exactly as a session would. Good for synthetic cases and
+  for confirming a change on new prompts.
+- Compare two versions as two runs of the same suite, one per `--instructions`, then
+  `$E compare`. Run the old version the same way rather than reusing a result from before.
 - `append_system_prompt` in a case: the text in the system prompt; tests the content, not where it
   loads.
 

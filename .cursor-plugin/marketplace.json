@@ -33,6 +33,11 @@
       "description": "Explain a topic to a complete beginner as an HTML artifact with big pictures and few words."
     },
     {
+      "name": "evals",
+      "source": "plugins/evals",
+      "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Its own runner takes claude plugin eval's suites and runs them under Claude Code or Codex, with Opus judges, real instruction files, cases cut from real sessions and paired comparisons."
+    },
+    {
       "name": "frontend-skill",
       "source": "plugins/frontend-skill",
       "description": "Design visually strong landing pages, websites, apps, prototypes, and game UI with restrained composition and tasteful motion. From OpenAI."

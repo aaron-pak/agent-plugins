@@ -2,14 +2,14 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { capture } from "../src/capture.ts";
 import { compare, paired, signTest } from "../src/compare.ts";
 import { gradeCase, parseFrontmatter } from "../src/grade.ts";
-import { renderFile, rewriteHistory, writeVariant } from "../src/instructions.ts";
+import { renderFile, rewriteHistory } from "../src/instructions.ts";
 import { resolveMoment, searchSessions } from "../src/sessions.ts";
 import { listTraces, saveTrace, updateTrace } from "../src/traces.ts";
 import { type Rec, mainChain, readTranscript, turnsOf, usedIn } from "../src/transcript.ts";
@@ -219,29 +219,6 @@ describe("instruction variants", () => {
     );
     expect(att.rendered![0]!.content).not.toContain("Ask before deleting");
     expect(() => rewriteHistory(records, [{ kind: "remove", path: "/repo/CLAUDE.md" }])).toThrow(/never loaded/);
-  });
-
-  test("a variant suite rewrites recorded cases and gives fresh ones the variant plugin", () => {
-    const suite = join(root, "work");
-    mkdirSync(join(suite, "evals", "fresh", "graders"), { recursive: true });
-    writeFileSync(join(suite, "evals", "fresh", "prompt.md"), "---\nmax_turns: 3\n---\nhi\n");
-    writeFileSync(join(suite, "variant.md"), "# Rules\n\nJust do it.\n");
-    const result = writeVariant({
-      suite,
-      out: join(root, "work-b"),
-      file: join(suite, "variant.md"),
-      replaces: "/repo/AGENTS.md",
-    });
-    expect(result.recorded).toEqual(["evals/ask-first"]);
-    expect(result.fresh).toEqual(["evals/fresh"]);
-    expect(readFileSync(join(root, "work-b", "evals", "fresh", "case.yaml"), "utf8")).toContain(
-      'plugins: ["../../.variant-plugin"]',
-    );
-    expect(
-      JSON.parse(readFileSync(join(root, "work-b", ".variant-plugin", "hooks", "context.json"), "utf8"))
-        .hookSpecificOutput.additionalContext,
-    ).toContain("Just do it.");
-    expect(existsSync(join(root, "work-b", ".variant-plugin", ".claude-plugin", "plugin.json"))).toBe(true);
   });
 });
 

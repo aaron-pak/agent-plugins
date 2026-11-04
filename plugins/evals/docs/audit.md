@@ -9,9 +9,11 @@ one concrete fix each, most misleading first. An audit that finds nothing is a v
 
 ## It runs
 
-- The suite loads: `claude plugin eval <suite> --max-cost-usd 0 --no-publish` loads every case and
-  runs none, for free. A case that fails to load is named above the summary.
+- The suite loads: `evals run <suite> --max-cost-usd 0` loads every case and runs none, for
+  free. A case that fails to load is named above the summary.
 - It has run end to end at least once, and the result is under `results/`.
+- Runs you compare share one setup: harness and its version, model, judge, ablation mode and, unless
+  it is the thing being compared, the instruction file. `evals compare` warns when they differ.
 
 ## The cases
 

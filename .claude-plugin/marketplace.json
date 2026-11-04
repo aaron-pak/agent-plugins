@@ -41,7 +41,7 @@
       "name": "evals",
       "source": "./plugins/evals",
       "strict": false,
-      "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Runs on claude plugin eval, with a helper for traces, cases cut from real sessions, CLAUDE.md variants and paired comparisons. Claude Code only."
+      "description": "Build an eval suite for a plugin, skill, instruction file or MCP server through an interview with sign-offs, save conversation moments as traces to build cases from, and hillclimb a target against its suite. Its own runner takes claude plugin eval's suites and runs them under Claude Code or Codex, with Opus judges, real instruction files, cases cut from real sessions and paired comparisons."
     },
     {
       "name": "frontend-skill",

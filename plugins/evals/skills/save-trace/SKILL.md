@@ -8,7 +8,8 @@ description: Bookmark a moment in a conversation that went wrong (or a good exam
 A saved trace is a bookmark: the conversation, the moment, whether it went wrong or right, and
 what happened. The conversation itself stays where Claude Code keeps it, so the judgment is what's
 worth recording; from the bookmark an eval can later be built in any form. The helper is
-`"${CLAUDE_PLUGIN_ROOT}/bin/evals"`; its `trace` and `sessions` commands are described in
+this plugin's `bin/evals` (`"${CLAUDE_PLUGIN_ROOT}/bin/evals"` in Claude Code); its `trace` and
+`sessions` commands are described in
 `${CLAUDE_PLUGIN_ROOT}/docs/case-format.md`. Traces are saved under `~/.claude/evals` (or
 `$EVALS_HOME`), never in a repository, because they point at real conversations.
 
