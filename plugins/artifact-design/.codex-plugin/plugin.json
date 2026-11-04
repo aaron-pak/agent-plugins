@@ -8,7 +8,7 @@
   "mcpServers": {
     "artifact": {
       "command": "node",
-      "args": ["mcp/server.mjs"],
+      "args": ["mcp/server.mjs", "--client=codex"],
       "cwd": ".",
       "env_vars": [
         "ARTIFACTS_DIR",

@@ -1,6 +1,6 @@
 // The Artifact tool as the server lists it: its description, input schema and the parameters it refuses.
 
-import type { JSONObject, Tool } from "@modelcontextprotocol/server";
+import { McpSchema } from "effect/ai";
 
 import { MAX_EDITS } from "./edits.ts";
 
@@ -84,7 +84,7 @@ export function describe(setting: Setting): string {
     .replaceAll("{store}", () => setting.store);
 }
 
-type Schema = JSONObject;
+type Schema = { [key: string]: unknown };
 type ObjectSchema = { type: "object"; properties: Record<string, Schema>; additionalProperties: false };
 
 export function schema(compact = false): ObjectSchema {
@@ -96,7 +96,7 @@ export function schema(compact = false): ObjectSchema {
     properties: { from: source, contentType: { type: "string" } },
     required: ["from"],
   };
-  const mapItems: Schema[] = [source, fromSource, { type: "null" }];
+  const mapItems: Array<Schema> = [source, fromSource, { type: "null" }];
   const filesMap: Schema = { type: "object", additionalProperties: { anyOf: mapItems } };
   const filesList: Schema = {
     type: "array",
@@ -180,38 +180,37 @@ export function schema(compact = false): ObjectSchema {
   return { type: "object", properties, additionalProperties: false };
 }
 
-/** The tool for this client: a compact one for Codex, and for anything else the full text, split
- * between the description and the input schema's description. */
-export function tool(client: string | undefined, setting: Setting): Tool {
-  if (isCodex(client)) {
+/** The tool for this client: a compact one for Codex (the plugin's Codex manifest starts the server
+ * with --client=codex), and for anything else the full text, split between the description and the
+ * input schema's description. */
+export function tool(codex: boolean, setting: Setting): McpSchema.Tool {
+  if (codex) {
     const fill = (codex: string) =>
       codex
         .replaceAll("{opened}", () => (setting.opens ? " and opened in the browser" : ""))
         .replaceAll("{open_note}", () => (setting.opens ? " A first publish opens the page." : ""))
         .replaceAll("{drafts}", () => setting.drafts)
         .replaceAll("{store}", () => setting.store);
-    return {
+    return new McpSchema.Tool({
       name: "Artifact",
       description: fill(CODEX_LEAD),
       inputSchema: { description: fill(CODEX_REST), ...schema(true) },
-    };
+    });
   }
   const paragraphs = describe(setting).split("\n\n");
   let count = 1;
   while (count < paragraphs.length && upFront(paragraphs.slice(0, count + 1)).length <= DESCRIPTION_ROOM) count++;
-  return {
+  return new McpSchema.Tool({
     name: "Artifact",
     description: upFront(paragraphs.slice(0, count)),
     inputSchema: { description: paragraphs.slice(count).join("\n\n"), ...schema() },
     _meta: { "anthropic/alwaysLoad": true },
-  };
+  });
 }
 
-const upFront = ([first, ...more]: string[]) =>
+const upFront = ([first, ...more]: Array<string>) =>
   [first + FIRST_CALL, ...more].join("\n\n") +
   "\n\nThe rest of this description is the `description` of the tool's input schema.";
-
-export const isCodex = (client: string | undefined) => (client ?? "").toLowerCase().includes("codex");
 
 /** The ArtifactCheck tool's input schema. */
 export function checkSchema(): ObjectSchema {
@@ -245,13 +244,13 @@ export function checkSchema(): ObjectSchema {
  * its released build has no local preview to offer; deferred, this one went unused even where the
  * skill says to take the look (a dashboard: 0 of 4 runs, against 3 of 3 up front), so it asks to load
  * up front. Codex loads every tool of this server up front (omit_tools_from in the manifest). */
-export function checkTool(): Tool {
-  return {
+export function checkTool(): McpSchema.Tool {
+  return new McpSchema.Tool({
     name: "ArtifactCheck",
     description: CHECK_DESCRIPTION,
     inputSchema: checkSchema(),
     _meta: { "anthropic/alwaysLoad": true },
-  };
+  });
 }
 
 /** A short error for a parameter this tool doesn't take, or null. */

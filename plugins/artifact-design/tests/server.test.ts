@@ -2,7 +2,7 @@
 // both MCP eras (the initialize handshake, and 2026-07-28's server/discover with a _meta envelope
 // on every request), with a publish, read, list and delete round trip in a temporary store.
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -19,17 +19,43 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { NATIVE_ONLY } from "./native-only.ts";
+import "./matchers.ts";
 
-const SERVER = join(import.meta.dir, "..", "mcp", "server.mjs");
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+const SERVER = join(import.meta.dirname, "..", "mcp", "server.mjs");
 const TEMP = mkdtempSync(join(tmpdir(), "artifact-server-test-"));
 const STORE = join(TEMP, "store");
 
 afterAll(() => rmSync(TEMP, { recursive: true, force: true }));
 
-type Reply = { id: number; result?: any; error?: { code: number; message: string } };
+// The parts of the server's replies the tests read.
+type ListedTool = {
+  name: string;
+  description: string;
+  inputSchema: { properties: Record<string, { enum?: Array<string> }> };
+  _meta?: unknown;
+};
+type Result = {
+  serverInfo: { name: string };
+  instructions: string;
+  supportedVersions: Array<string>;
+  capabilities: Record<string, unknown>;
+  tools: Array<ListedTool>;
+  content: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+};
+type Reply = { id: number; result?: Result; error?: { code: number; message: string } };
 
-const spawnServer = (store: string, env: Record<string, string> = {}) =>
-  spawn("node", [SERVER], {
+/** A reply's result, which a test expects there to be. */
+const resultOf = (reply: Reply): Result => {
+  expect(reply.error).toBeUndefined();
+  return reply.result!;
+};
+
+// The plugin's Codex manifest starts the server with --client=codex.
+const spawnServer = (store: string, env: Record<string, string>, codex: boolean) =>
+  spawn("node", [SERVER, ...(codex ? ["--client=codex"] : [])], {
     env: {
       ...process.env,
       ARTIFACTS_DIR: store,
@@ -46,13 +72,11 @@ class Client {
   private child: ReturnType<typeof spawnServer>;
   private waiting = new Map<number, (reply: Reply) => void>();
   private next = 0;
+  private meta: Record<string, unknown> | undefined;
 
-  constructor(
-    private meta?: Record<string, unknown>,
-    store = STORE,
-    env: Record<string, string> = {},
-  ) {
-    this.child = spawnServer(store, env);
+  constructor(meta?: Record<string, unknown>, store = STORE, env: Record<string, string> = {}, codex = false) {
+    this.meta = meta;
+    this.child = spawnServer(store, env, codex);
     createInterface({ input: this.child.stdout }).on("line", (line) => {
       const reply = JSON.parse(line) as Reply;
       this.waiting.get(reply.id)?.(reply);
@@ -76,9 +100,9 @@ class Client {
     name = "Artifact",
   ): Promise<{ text: string; isError: boolean; images: number }> {
     const reply = await this.request("tools/call", { name, arguments: args });
-    const content = reply.result.content as { type: string; text?: string }[];
+    const { content, isError } = resultOf(reply);
     const images = content.filter((part) => part.type === "image").length;
-    return { text: content[0]!.text!, isError: reply.result.isError === true, images };
+    return { text: content[0]!.text!, isError: isError === true, images };
   }
 
   close(): Promise<unknown> {
@@ -88,14 +112,14 @@ class Client {
 }
 
 async function legacy(client: string, store = STORE, env: Record<string, string> = {}): Promise<Client> {
-  const server = new Client(undefined, store, env);
+  const server = new Client(undefined, store, env, client.includes("codex"));
   const reply = await server.request("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
     clientInfo: { name: client, version: "1" },
   });
-  expect(reply.result.serverInfo.name).toBe("artifact");
-  expect(reply.result.instructions).toContain("Artifact");
+  expect(resultOf(reply).serverInfo.name).toBe("artifact");
+  expect(resultOf(reply).instructions).toContain("Artifact");
   server.notify("notifications/initialized");
   return server;
 }
@@ -109,17 +133,17 @@ const envelope = (client: string) => ({
 describe("initialize era", () => {
   test("lists the full tool for Claude Code", async () => {
     const server = await legacy("claude-code");
-    const { tools } = (await server.request("tools/list")).result;
+    const { tools } = resultOf(await server.request("tools/list"));
     expect(tools.map((tool: { name: string }) => tool.name)).toEqual(["Artifact"]);
-    expect(tools[0].description.length).toBeLessThanOrEqual(4096);
-    expect(tools[0]._meta).toEqual({ "anthropic/alwaysLoad": true });
-    expect(tools[0].inputSchema.properties.action.enum).not.toContain("preview");
+    expect(tools[0]!.description.length).toBeLessThanOrEqual(4096);
+    expect(tools[0]!._meta).toEqual({ "anthropic/alwaysLoad": true });
+    expect(tools[0]!.inputSchema.properties.action!.enum).not.toContain("preview");
     await server.close();
   });
 
   test("lists the compact tool for Codex", async () => {
     const server = await legacy("codex-mcp-client");
-    const [tool] = (await server.request("tools/list")).result.tools;
+    const tool = resultOf(await server.request("tools/list")).tools[0]!;
     expect(Buffer.byteLength(tool.description, "utf8")).toBeLessThanOrEqual(1000);
     expect(Buffer.byteLength(JSON.stringify(tool.inputSchema), "utf8")).toBeLessThanOrEqual(5000);
     expect(tool._meta).toBeUndefined();
@@ -130,7 +154,7 @@ describe("initialize era", () => {
     const long = join(TEMP, "Library", "Application Support", "Some Long Folder Name For Pages", "artifacts");
     const temp = mkdtempSync(join(TEMP, "private-var-folders-xx-yyyyyyyyyyyyyyyyyyyy-T-"));
     const server = await legacy("codex-mcp-client", long, { ARTIFACT_OPEN: "1", ARTIFACT_PREVIEW: "1", TMPDIR: temp });
-    const [tool] = (await server.request("tools/list")).result.tools;
+    const tool = resultOf(await server.request("tools/list")).tools[0]!;
     expect(Buffer.byteLength(tool.description, "utf8")).toBeLessThanOrEqual(1000);
     expect(Buffer.byteLength(JSON.stringify(tool.inputSchema), "utf8")).toBeLessThanOrEqual(5000);
     await server.close();
@@ -139,11 +163,11 @@ describe("initialize era", () => {
 
 describe("2026-07-28 era", () => {
   test("answers server/discover and stateless requests", async () => {
-    const server = new Client(envelope("codex-mcp-client"));
-    const discovered = (await server.request("server/discover")).result;
+    const server = new Client(envelope("codex-mcp-client"), STORE, {}, true);
+    const discovered = resultOf(await server.request("server/discover"));
     expect(discovered.supportedVersions).toContain("2026-07-28");
     expect(discovered.capabilities.tools).toBeDefined();
-    const [tool] = (await server.request("tools/list")).result.tools;
+    const tool = resultOf(await server.request("tools/list")).tools[0]!;
     expect(Buffer.byteLength(tool.description, "utf8")).toBeLessThanOrEqual(1000);
     const listed = await server.call({ action: "list" });
     expect(listed.text).toStartWith("No artifacts published yet");
@@ -203,7 +227,7 @@ describe("Artifact tool", () => {
 
     // A third session gets a new artifact, and is told about the earlier one (`updated` counts whole
     // seconds, so the pause makes the third session's the newer).
-    await Bun.sleep(1100);
+    await sleep(1100);
     const third = await legacy("claude-code", STORE, { CLAUDE_CODE_SESSION_ID: "third-session" });
     const fresh = await third.call({ file_path: source });
     expect(fresh.text).toContain("resumed-page-2/index.html (Version 1)");
@@ -269,7 +293,7 @@ describe("Artifact tool", () => {
     // update the newcomer (creation times count in whole seconds).
     const other = await legacy("claude-code");
     await other.call({ action: "delete", url: "report-alpha" });
-    await Bun.sleep(1100);
+    await sleep(1100);
     const three = join(TEMP, "three.html");
     writeFileSync(three, "<title>Report Alpha</title>\n<p>Three</p>\n");
     expect((await other.call({ file_path: three })).text).toContain("report-alpha/index.html (Version 1)");
@@ -294,13 +318,9 @@ describe("Artifact tool", () => {
     expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
 
     const missed = await server.call({ file_path: source, edits: [{ old_str: "Draft", new_str: "Again" }] });
-    expect(missed).toEqual({
-      isError: true,
-      text: expect.stringMatching(
-        /^No edits were applied and nothing was published: edits\[0\] old_str does not occur/,
-      ),
-      images: 0,
-    });
+    expect(missed.isError).toBe(true);
+    expect(missed.images).toBe(0);
+    expect(missed.text).toMatch(/^No edits were applied and nothing was published: edits\[0\] old_str does not occur/);
     expect(readFileSync(join(STORE, "team-notes", "index.html"), "utf8")).toContain("<h1>Final</h1>");
     expect(existsSync(join(STORE, "team-notes", ".versions", "3.html"))).toBe(false);
 
@@ -391,11 +411,9 @@ describe("Artifact tool", () => {
     const relative = await server.call({ file_path: "plan.html" });
     expect(relative.isError).toBe(true);
     const unknown = await server.call({ action: "list", pin: true });
-    expect(unknown).toEqual({
-      isError: true,
-      text: expect.stringContaining("Unknown parameter `pin`. This tool takes"),
-      images: 0,
-    });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.images).toBe(0);
+    expect(unknown.text).toContain("Unknown parameter `pin`. This tool takes");
     expect((await server.call({ action: "preview", file_path: join(TEMP, "x.html") })).text).toBe(
       "Unknown action 'preview'.",
     );
@@ -409,17 +427,19 @@ describe("Artifact tool", () => {
 
 // Preview needs Playwright and a Chromium, which CI doesn't install; where they are found, the
 // server renders a page through preview.mjs.
-const PREVIEW_CHECK = join(import.meta.dir, "..", "skills", "artifact-design", "scripts", "preview.mjs");
+const PREVIEW_CHECK = join(import.meta.dirname, "..", "skills", "artifact-design", "scripts", "preview.mjs");
 const canPreview = (() => {
   try {
-    return JSON.parse(spawnSync("node", [PREVIEW_CHECK, "--check"], { encoding: "utf8" }).stdout).ok === true;
+    const answer = JSON.parse(spawnSync("node", [PREVIEW_CHECK, "--check"], { encoding: "utf8" }).stdout) as {
+      ok?: unknown;
+    };
+    return answer.ok === true;
   } catch {
     return false;
   }
 })();
 
-const toolNames = (reply: { result?: { tools?: { name: string }[] } }) =>
-  (reply.result?.tools ?? []).map((tool) => tool.name);
+const toolNames = (reply: Reply) => (reply.result?.tools ?? []).map((tool) => tool.name);
 
 describe("preview", () => {
   // The answers sit in this user's drafts folder in the temp directory, one file per setup.
@@ -430,7 +450,7 @@ describe("preview", () => {
       .map((name) => JSON.parse(readFileSync(join(folder, name), "utf8")) as { ok: boolean });
   };
   const waitFor = async (done: () => boolean) => {
-    for (let tries = 0; !done() && tries < 300; tries++) await Bun.sleep(100);
+    for (let tries = 0; !done() && tries < 300; tries++) await sleep(100);
   };
 
   test("lists it from the last check's answer, kept in the user's drafts folder", async () => {
@@ -460,7 +480,7 @@ describe("preview", () => {
     expect(
       answers(temp)
         .map((answer) => answer.ok)
-        .sort(),
+        .sort((a, b) => Number(a) - Number(b)),
     ).toEqual([false, true]);
     // The other setup's answer stays, and this setup now lists from its own.
     const again = await legacy("claude-code", STORE, env);
@@ -530,10 +550,10 @@ describe("preview", () => {
     "renders a page as publish wraps it and returns its captures",
     async () => {
       const server = await legacy("claude-code", STORE, { ARTIFACT_PREVIEW: "1" });
-      const { tools } = (await server.request("tools/list")).result;
-      expect(tools[1].name).toBe("ArtifactCheck");
-      expect(tools[1]._meta).toEqual({ "anthropic/alwaysLoad": true });
-      expect(tools[0].inputSchema.properties.action.enum).not.toContain("preview");
+      const { tools } = resultOf(await server.request("tools/list"));
+      expect(tools[1]!.name).toBe("ArtifactCheck");
+      expect(tools[1]!._meta).toEqual({ "anthropic/alwaysLoad": true });
+      expect(tools[0]!.inputSchema.properties.action!.enum).not.toContain("preview");
       const page = join(TEMP, "look.html");
       writeFileSync(page, "<title>Look</title>\n<p>Hello</p>\n");
       expect((await server.call({ action: "preview", file_path: page })).text).toStartWith(

@@ -1,18 +1,9 @@
 {
-  // The plugins' TypeScript sources, which run on Node: Node's types only, so a Bun-only API fails here.
+  // The repository's own TypeScript: the build, export and mod scripts (which run on Bun) and the
+  // Vitest config. Each plugin with TypeScript has its own tsconfig.json beside its src/.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2023",
-    "lib": ["es2023"],
-    "module": "preserve",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "noEmit": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node", "bun"]
   },
-  "include": ["plugins/*/src"]
+  "include": ["scripts", "vitest.config.ts"]
 }

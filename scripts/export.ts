@@ -40,10 +40,11 @@ const PUBLIC_PATHS = [
   "CLAUDE.md",
   "package.json",
   "bun.lock",
+  "bunfig.toml",
+  "tsconfig.base.json",
   "tsconfig.json",
-  "tsconfig.test.json",
+  "vitest.config.ts",
   ".oxlintrc.json",
-  ".oxfmtrc.json",
   ".gitattributes",
   ".gitignore",
 ];
@@ -112,9 +113,9 @@ export function build(out: string, rev = "HEAD"): void {
   const full = mkdtempSync(join(tmpdir(), "pak-export-"));
   try {
     const archive = spawnSync("git", ["archive", "--format=tar", rev], { cwd: root, maxBuffer: 1 << 30 });
-    if (archive.status !== 0) throw new Error(`git archive ${rev} failed:\n${archive.stderr}`);
+    if (archive.status !== 0) throw new Error(`git archive ${rev} failed:\n${archive.stderr.toString()}`);
     const untar = spawnSync("tar", ["-x", "-C", full], { input: archive.stdout });
-    if (untar.status !== 0) throw new Error(`tar failed:\n${untar.stderr}`);
+    if (untar.status !== 0) throw new Error(`tar failed:\n${untar.stderr.toString()}`);
 
     mkdirSync(out, { recursive: true });
     const copy = { recursive: true, preserveTimestamps: true, verbatimSymlinks: true };

@@ -1,0 +1,35 @@
+{
+  // Compiler options shared by every TypeScript project here, after Effect's own tsconfig.base.json:
+  // strict, with its extra guard rails, and the Effect language service, which tsrs runs as part of
+  // the type check (bun install patches tsrs with @effect/tsgo) and editors run through `tsrs --lsp`.
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noErrorTruncation": true,
+    "skipLibCheck": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // effect/ai's McpServer, which the MCP servers run on, is marked unstable.
+        "diagnosticSeverity": { "unstableApiUsage": "off", "effectFnOpportunity": "error" },
+        "includeSuggestionsInTsc": false
+      }
+    ]
+  }
+}

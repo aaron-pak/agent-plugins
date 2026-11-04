@@ -16,7 +16,7 @@ import { typecheckMod } from "./types.ts";
 const HELP: Record<string, string> = {
   check: `bun run mod check <dir> [--grep re] [--shards n]
 
-Runs \`claude plugin validate\`, tsc against this build's API, and the tests (as \`mod test\`), and
+Runs \`claude plugin validate\`, tsrs against this build's API, and the tests (as \`mod test\`), and
 says which passed. A missing manifest version is the one warning it allows, as CI does.`,
   test: `bun run mod test <dir> [--grep re] [--shards n]
 

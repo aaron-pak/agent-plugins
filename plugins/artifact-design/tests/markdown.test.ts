@@ -1,7 +1,7 @@
 // Markdown pages, laid out by Claude Code's rules: marked renders the body, and the heading that
 // opens the document becomes the template's <h1>.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 import { page, render } from "../src/render-markdown.ts";
 
@@ -66,6 +66,6 @@ describe("page", () => {
 
   test("keeps 120 characters of the name", () => {
     const [, title] = page(`# ${"\u{1f600}".repeat(130)}\n`, "e.md");
-    expect([...title].length).toBe(120);
+    expect(Array.from(title).length).toBe(120);
   });
 });

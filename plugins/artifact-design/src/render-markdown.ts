@@ -63,8 +63,7 @@ function firstHeadingText(text: string): string | undefined {
     } catch {
       return undefined;
     }
-    const heading = tokens.find((token) => token.type === "heading");
-    return heading && "text" in heading ? heading.text : undefined;
+    return tokens.find((token): token is Tokens.Heading => token.type === "heading")?.text;
   }
   const line = body.match(ATX_LINE)?.[1];
   return line === undefined ? undefined : stripClosingHashes(line).slice(0, SCAN_LIMIT);
@@ -261,7 +260,7 @@ export function page(source: string, filename: string): [string, string] {
     text.length > SCAN_LIMIT ? { heading: null, packedHeading: undefined } : openingHeading(text);
   const named = title(text, heading, packedHeading, filename);
   const rest = heading ? text.slice(0, heading.offset) + text.slice(heading.offset + heading.token.raw.length) : text;
-  const html = fillTemplate(String(TEMPLATE), {
+  const html = fillTemplate(TEMPLATE, {
     titleHtml: named.titleHtml,
     tabTitle: filename,
     eyebrow: `Markdown · ${filename}`,
@@ -269,5 +268,5 @@ export function page(source: string, filename: string): [string, string] {
     body: render(rest),
   });
   if (html === null) throw new Error("markdown-template.html has no <section> to fill");
-  return [html, [...named.title].slice(0, 120).join("").trim() || filename];
+  return [html, Array.from(named.title).slice(0, 120).join("").trim() || filename];
 }

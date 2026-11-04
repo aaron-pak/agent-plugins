@@ -1,8 +1,0 @@
-{
-  // Tests and build scripts, which run on Bun. A mod's tests are checked by Claude Code.
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "types": ["bun"]
-  },
-  "include": ["plugins/*/src", "plugins/artifact-design/tests", "scripts"]
-}

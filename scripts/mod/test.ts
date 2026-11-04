@@ -20,9 +20,9 @@ import { copyMod, cpus, modName, root, seconds, stream, testFiles } from "./comm
 
 export type TestOptions = {
   /** Only the tests whose names (with their describes', joined by " > ") match. */
-  grep?: RegExp;
+  grep?: RegExp | undefined;
   /** How many shards to aim for across all files; the cores by default. 1 runs the files as they are. */
-  shards?: number;
+  shards?: number | undefined;
 };
 
 type Cache = Record<string, { hash: string; names: string[]; ms: Record<string, number> }>;

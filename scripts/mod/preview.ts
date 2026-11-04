@@ -228,7 +228,9 @@ async function paint(shots: Shot[], out: string, gifs: boolean, animateAt: numbe
           .join("");
         await pg.setContent(page(blocks), { waitUntil: "load" });
         await pg.screenshot({ path: join(dir, "all.png"), fullPage: true });
-        const boxes = await pg.$$eval(".f", (els) =>
+        // The page's elements, typed by hand: the scripts' types leave out the DOM.
+        type Boxed = { getBoundingClientRect(): { x: number; y: number; width: number; height: number } };
+        const boxes = await pg.$$eval(".f", (els: Array<Boxed>) =>
           els.map((e) => {
             const r = e.getBoundingClientRect();
             return [r.x, r.y, r.width, r.height];

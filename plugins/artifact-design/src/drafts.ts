@@ -4,22 +4,14 @@
 // folder; writes into it get each harness's usual check, which auto mode's reviewer in Claude Code
 // and Codex's sandbox (it allows the temp folder) pass without asking.
 
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmdirSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmdir } from "node:fs/promises";
 
-const uid = process.getuid?.();
+import { Clock, Context, Data, Effect, FileSystem, Layer, Option, Path } from "effect";
 
-export const DRAFTS_ROOT = join(tmpdir(), uid === undefined ? "artifact-drafts" : `artifact-drafts-${uid}`);
-
-/** Whether DRAFTS_ROOT is a real folder this user owns, so nobody else can read the drafts or plant the folder. */
-export function draftsRootIsOwn(): boolean {
-  const info = lstatSync(DRAFTS_ROOT, { throwIfNoEntry: false });
-  return !!info && info.isDirectory() && (uid === undefined || info.uid === uid);
-}
+import { ServerConfig } from "./config.ts";
 
 /** The local time as 20261009-142530. */
-export function localStamp(date = new Date()): string {
+export function localStamp(date: Date): string {
   const two = (n: number) => String(n).padStart(2, "0");
   return (
     `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}-` +
@@ -27,25 +19,65 @@ export function localStamp(date = new Date()): string {
   );
 }
 
-/** A private (0700) folder for this session under DRAFTS_ROOT; empty folders a day old go. */
-export function makeDrafts(): string {
-  try {
-    try {
-      mkdirSync(DRAFTS_ROOT, { mode: 0o700 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    if (!draftsRootIsOwn()) throw new Error(`${DRAFTS_ROOT} isn't a folder of this user's own`);
-    for (const name of readdirSync(DRAFTS_ROOT)) {
-      try {
-        const old = join(DRAFTS_ROOT, name);
-        if (statSync(old).isDirectory() && Date.now() - statSync(old).mtimeMs > 86_400_000) rmdirSync(old); // only empty ones
-      } catch {
-        // in use, not empty, or gone
-      }
-    }
-    return mkdtempSync(join(DRAFTS_ROOT, `${localStamp()}-`));
-  } catch {
-    return mkdtempSync(join(tmpdir(), "artifact-drafts-"));
+const DAY = 86_400_000;
+
+class NotOwnFolder extends Data.TaggedError("NotOwnFolder")<{ readonly path: string }> {}
+
+export class Drafts extends Context.Service<
+  Drafts,
+  {
+    /** The folder every session's drafts folder sits in, one per user. */
+    readonly root: string;
+    /** This session's drafts folder. */
+    readonly folder: string;
+    /** Whether root is a real folder this user owns, so nobody else can read the drafts or plant the folder. */
+    readonly rootIsOwn: Effect.Effect<boolean>;
   }
+>()("artifact-design/Drafts") {
+  static readonly layer = Layer.effect(
+    Drafts,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const paths = yield* Path.Path;
+      const { temp } = yield* ServerConfig;
+      const uid = process.getuid?.();
+      const root = paths.join(temp, uid === undefined ? "artifact-drafts" : `artifact-drafts-${uid}`);
+
+      const rootIsOwn = fs.lstat(root).pipe(
+        Effect.map(
+          (info) => info.type === "Directory" && (uid === undefined || Option.getOrUndefined(info.uid) === uid),
+        ),
+        Effect.orElseSucceed(() => false),
+      );
+
+      // A private (0700) folder for this session under root; empty folders a day old go.
+      const own = Effect.gen(function* () {
+        yield* fs
+          .makeDirectory(root, { mode: 0o700 })
+          .pipe(Effect.catchReason("PlatformError", "AlreadyExists", () => Effect.void));
+        // Someone else's folder (or a link) in its place: the drafts go to a fresh folder in temp instead.
+        if (!(yield* rootIsOwn)) return yield* new NotOwnFolder({ path: root });
+        const now = yield* Clock.currentTimeMillis;
+        for (const name of yield* fs.readDirectory(root)) {
+          const old = paths.join(root, name);
+          // Only empty folders go. FileSystem has no rmdir, whose refusal of a folder with anything in
+          // it is what keeps a draft written meanwhile.
+          yield* fs.stat(old).pipe(
+            Effect.flatMap((info) =>
+              info.type === "Directory" && now - Option.getOrElse(info.mtime, () => new Date(now)).getTime() > DAY
+                ? Effect.tryPromise(() => rmdir(old))
+                : Effect.void,
+            ),
+            Effect.ignore,
+          );
+        }
+        return yield* fs.makeTempDirectory({ directory: root, prefix: `${localStamp(new Date(now))}-` });
+      });
+
+      const folder = yield* own.pipe(
+        Effect.catch(() => fs.makeTempDirectory({ directory: temp, prefix: "artifact-drafts-" })),
+      );
+      return Drafts.of({ root, folder, rootIsOwn });
+    }),
+  );
 }

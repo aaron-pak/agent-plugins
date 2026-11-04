@@ -2,11 +2,9 @@
 // page skeleton, the content policy, the Mermaid and highlight.js runtimes, the page's name, and
 // Markdown pages.
 
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { delimiter, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
 
+import { ActionError } from "./errors.ts";
 import { escape, unescape } from "./html.ts";
 import { page as renderMarkdownPage } from "./render-markdown.ts";
 import HLJS_LANGUAGES from "../skills/artifact-design/scripts/hljs-languages.json" with { type: "json" };
@@ -60,20 +58,12 @@ const GENERATOR_MARKS = /<meta name="generator" content="artifact-design(?: publ
 // The Mermaid runtime Claude Code 2.1.300 adds to a page with a <pre class="mermaid"> block,
 // byte for byte, except that Mermaid 11.16.1 loads from jsDelivr (the same file, checked by
 // sha256) instead of claude.ai's /_runtime/ path.
-const MERMAID = String(MERMAID_RUNTIME).replace(/\n+$/, "");
+const MERMAID = MERMAID_RUNTIME.replace(/\n+$/, "");
 // The highlight.js runtime Claude Code 2.1.300 inlines in a page with a language-tagged code block,
 // byte for byte: its 186-grammar highlight.js 11.11.1 bundle, then the script that highlights the
-// page's <pre><code> blocks. At about 600 KB it is read from disk only for a page that needs it.
-let hljsRuntime: string | undefined;
-function highlightRuntime(): string {
-  if (hljsRuntime === undefined) {
-    // In the plugin's scripts folder, from mcp/server.mjs and from src/ alike.
-    const path = fileURLToPath(new URL("../skills/artifact-design/scripts/hljs-runtime.html", import.meta.url));
-    if (!existsSync(path)) throw new Error("the plugin's hljs-runtime.html is missing");
-    hljsRuntime = readFileSync(path, "utf8").replace(/\n+$/, "");
-  }
-  return hljsRuntime;
-}
+// page's <pre><code> blocks. At about 600 KB it is read from disk only for a page that needs it, and
+// passed to wrap().
+export const HLJS_RUNTIME_FILE = "hljs-runtime.html";
 export const SIZE_LIMIT = 16 * 1024 * 1024;
 const TITLE_SCAN = 8192; // the Artifact tool reads a page's <title> from this many characters
 const TITLE_MAX = 280;
@@ -110,18 +100,19 @@ function invalidUtf8At(data: Uint8Array, from: number): number {
 
 /** The page file's text, as UTF-8 (a byte-order mark is dropped). Like the Artifact tool, a file
  * in another encoding is refused rather than published garbled. */
-export function readSource(path: string, data: Buffer = readFileSync(path)): string {
+export const decodeSource = (data: Uint8Array): Effect.Effect<string, ActionError> => {
   const bom = data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf ? 3 : 0;
-  try {
-    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data.subarray(bom));
-  } catch {
-    throw new Error(
-      `the source file is not valid UTF-8 text (first invalid byte at ${invalidUtf8At(data, bom)}). It may be ` +
-        "saved in another encoding or contain binary data. Save the page as UTF-8, then publish again. " +
-        "Nothing was published.",
-    );
-  }
-}
+  return Effect.try({
+    try: () => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data.subarray(bom)),
+    catch: () =>
+      new ActionError({
+        message:
+          `the source file is not valid UTF-8 text (first invalid byte at ${invalidUtf8At(data, bom)}). It may be ` +
+          "saved in another encoding or contain binary data. Save the page as UTF-8, then publish again. " +
+          "Nothing was published.",
+      }),
+  });
+};
 
 /** The page's name, read as the Artifact tool reads it: the first <title> in the first 8192
  * characters, comments left out and nothing from the first <svg> on (an icon's <title> names
@@ -135,16 +126,16 @@ export function pageTitle(content: string): string | null {
     .replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return [...text].slice(0, TITLE_MAX).join("") || null;
+  return Array.from(text).slice(0, TITLE_MAX).join("") || null;
 }
 
 const clean = (text: string) =>
-  [
-    ...unescape(text)
+  Array.from(
+    unescape(text)
       .replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
       .replace(/\s+/g, " ")
       .trim(),
-  ]
+  )
     .slice(0, TITLE_MAX)
     .join("");
 const PLACEHOLDER_NAMES = new Set(["", "index", "untitled", "document"]);
@@ -320,10 +311,12 @@ export function usesHighlight(content: string): boolean {
 
 /** The published page: the skeleton around the content as it is (a full document included,
  * whose <html> and <body> attributes the browser then carries over), as the Artifact tool wraps
- * it. lang and cover come from an unwrapped skeleton, as the tool keeps them on a round trip. */
+ * it. lang and cover come from an unwrapped skeleton, as the tool keeps them on a round trip.
+ * highlight is the highlight.js runtime, which a page that usesHighlight() needs. */
 export function wrap(
   content: string,
   description: string | null,
+  highlight: string,
   lang: string | null = null,
   cover: boolean | null = null,
 ): string {
@@ -333,7 +326,9 @@ export function wrap(
   head += `<meta http-equiv="Content-Security-Policy" content="${CSP}">` + GENERATOR;
   if (description) head += `<meta name="description" content="${escape(description)}">`;
   head += (covers ? SKELETON_RESET : PLAIN_RESET) + SKELETON_BODY;
-  const runtimes = [usesMermaid(content) && MERMAID, usesHighlight(content) && highlightRuntime()].filter(Boolean);
+  const runtimes = [usesMermaid(content) && MERMAID, usesHighlight(content) && highlight.replace(/\n+$/, "")].filter(
+    Boolean,
+  );
   const tail = runtimes.length ? "\n" + TAIL_MARK + "\n" + runtimes.join("\n") : "";
   return head + content + tail + SKELETON_END;
 }
@@ -354,24 +349,29 @@ export function fetchesOwnFiles(content: string): boolean {
   return /fetch\(\s*[`'"](?![a-z]+:)/.test(content);
 }
 
-/** The command that opens a file in the browser here, or null: macOS, Windows, or a Linux desktop session. */
-export function opener(): string | null {
-  if (process.platform === "darwin") return "open";
-  if (process.platform === "win32") return "explorer.exe";
-  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) return null;
-  const found = (process.env.PATH ?? "").split(delimiter).some((dir) => dir && existsSync(join(dir, "xdg-open")));
-  return found ? "xdg-open" : null;
-}
+// The tab icon: a letter on a dark tile, with its angle brackets percent-encoded so that nothing
+// reading the page's head (the title rule stops at the first "<svg") takes it for markup.
+const ICON_SVG =
+  "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' " +
+  "fill='%23141413'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='17' text-anchor='middle' " +
+  "fill='%23faf9f5'%3E{letter}%3C/text%3E%3C/svg%3E";
 
-export function openInBrowser(path: string): boolean {
-  const command = opener();
-  if (!command) return false;
-  try {
-    const child = spawn(command, [path], { stdio: "ignore", detached: true, windowsHide: true });
-    child.on("error", () => {});
-    child.unref();
-    return true;
-  } catch {
-    return false;
-  }
+/** The published page, as wrap() makes it, with the tab icon's letter when there is an icon. */
+export function wrapPage(
+  content: string,
+  description: string | null,
+  icon: string | null,
+  highlight: string,
+  lang: string | null,
+  cover: boolean | null,
+): string {
+  const published = wrap(content, description, highlight, lang, cover);
+  if (!icon) return published;
+  const letter =
+    icon
+      .replace(/[^A-Za-z0-9]/g, "")
+      .slice(0, 1)
+      .toUpperCase() || "A";
+  const link = `<link rel="icon" href="data:image/svg+xml,${ICON_SVG.replace("{letter}", letter)}">`;
+  return published.replace(GENERATOR, () => GENERATOR + link);
 }

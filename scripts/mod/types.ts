@@ -43,12 +43,12 @@ const HOW =
   "No API types for this build. Load the plugin-authoring skill once in a Claude Code session (it writes them), " +
   "or open the mod in an interactive session with --plugin-dir, which lays them in .claude-plugin/types/.";
 
-/** Runs tsc on the mod and resolves to its exit code. */
+/** Runs tsrs (the TypeScript checker) on the mod and resolves to its exit code. */
 export async function typecheckMod(dir: string, explicit?: string): Promise<number> {
-  const tsc = join(root, "node_modules", ".bin", "tsc");
+  const tsc = join(root, "node_modules", ".bin", "tsrs");
   const print = (line: string) => console.log(line);
   if (explicit === undefined && existsSync(join(dir, ".claude-plugin", "types", "tsconfig.json"))) {
-    console.log("tsc: with the types the engine laid in .claude-plugin/types/");
+    console.log("tsrs: with the types the engine laid in .claude-plugin/types/");
     return await stream([tsc, "-p", dir], dir, print);
   }
   const api = explicit === undefined ? findApiTypes() : { path: explicit, version: "given" };
@@ -60,7 +60,7 @@ export async function typecheckMod(dir: string, explicit?: string): Promise<numb
   if (api.version !== "given" && installed !== undefined && api.version !== installed) {
     console.log(`(the newest API types are ${api.version}'s; the installed build is ${installed})`);
   }
-  console.log(`tsc: with ${api.path}`);
+  console.log(`tsrs: with ${api.path}`);
   const work = mkdtempSync(join(tmpdir(), "mod-tsc-"));
   try {
     const include = [api.path, ...["hooks", "types", "tests"].map((sub) => join(dir, sub)).filter(existsSync)];

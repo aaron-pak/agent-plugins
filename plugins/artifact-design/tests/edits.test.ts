@@ -1,8 +1,9 @@
 // `edits` on a publish, applied as Claude Code's Artifact tool applies them.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 import { applyEdits, editsOf, missMessage, savedMessage } from "../src/edits.ts";
+import "./matchers.ts";
 
 describe("applyEdits", () => {
   test("applies exact pairs in order", () => {
@@ -64,7 +65,7 @@ describe("messages", () => {
   });
 
   test("checks the shape of the edits", () => {
-    expect(editsOf([])).toBeString();
+    expect(editsOf([])).toBeTypeOf("string");
     expect(editsOf([{ old_str: "a" }])).toBe("edits[0] must be {old_str, new_str}, both strings.");
     expect(editsOf([{ old_str: "a", new_str: "b" }])).toEqual([{ old_str: "a", new_str: "b" }]);
   });

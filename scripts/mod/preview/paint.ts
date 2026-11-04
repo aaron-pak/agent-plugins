@@ -240,6 +240,14 @@ const BOX_PROPS = [
 const TEXT_PROPS = ["dimColor", "bold", "italic", "underline", "strikethrough", "inverse", "wrap"];
 
 type InkNode = ReturnType<typeof React.createElement> | string | null;
+/** A prop as text: a string, number or boolean as it is, nothing as "", anything else as JSON. */
+const text = (value: unknown): string =>
+  value === undefined || value === null
+    ? ""
+    : typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+      ? `${value}`
+      : JSON.stringify(value);
+
 const h = (type: Parameters<typeof React.createElement>[0], props: object | null, ...children: unknown[]) =>
   React.createElement(type, props, ...(children as InkNode[]));
 
@@ -279,13 +287,13 @@ function inkTree(node: Tree, theme: Theme, key = 0): InkNode {
         ...children,
       );
     case "Link":
-      return h(Text, { key, underline: true }, ...(children.length > 0 ? children : [String(p.url ?? "")]));
+      return h(Text, { key, underline: true }, ...(children.length > 0 ? children : [text(p.url)]));
     case "Markdown":
-      return h(Text, { key }, String(p.source ?? p.text ?? ""));
+      return h(Text, { key }, text(p.source ?? p.text));
     case "Code":
-      return h(Text, { key }, String(p.source ?? ""));
+      return h(Text, { key }, text(p.source));
     case "Fault":
-      return h(Text, { key, color: "#ff5555" }, `⚠ ${String(p.message ?? "fault")}`);
+      return h(Text, { key, color: "#ff5555" }, `⚠ ${text(p.message ?? "fault")}`);
     default:
       return h(Text, { key, color: "#ff5555" }, `⚠ <${node.type}> is not drawn on the terminal`);
   }
@@ -533,7 +541,7 @@ function deskTree(node: Tree, scheme: Desk, paint: DeskPaint = {}): string {
       .join("");
   switch (node.type) {
     case "Box": {
-      const dir = String(p.flexDirection ?? "row");
+      const dir = text(p.flexDirection ?? "row");
       const css = [`display:${p.display === "none" ? "none" : "flex"}`, `flex-direction:${dir}`];
       const map: Record<string, string> = {
         flexGrow: "flex-grow",
@@ -544,7 +552,7 @@ function deskTree(node: Tree, scheme: Desk, paint: DeskPaint = {}): string {
         justifyContent: "justify-content",
         overflow: "overflow",
       };
-      for (const [k, v] of Object.entries(map)) if (p[k] !== undefined) css.push(`${v}:${String(p[k])}`);
+      for (const [k, v] of Object.entries(map)) if (p[k] !== undefined) css.push(`${v}:${text(p[k])}`);
       if (p.gap !== undefined) css.push(`gap:${size(p.gap, dir.startsWith("column") ? "y" : "x")}`);
       if (p.columnGap !== undefined) css.push(`column-gap:${size(p.columnGap, "x")}`);
       if (p.rowGap !== undefined) css.push(`row-gap:${size(p.rowGap, "y")}`);
@@ -592,9 +600,9 @@ function deskTree(node: Tree, scheme: Desk, paint: DeskPaint = {}): string {
       return `<span style="${css.join(";")}">${inner()}</span>`;
     }
     case "Svg": {
-      const w = p.width !== undefined ? `width:${String(p.width)}px;` : "";
-      const hgt = p.height !== undefined ? `height:${String(p.height)}px;` : "";
-      const source = String(p.source ?? "");
+      const w = p.width !== undefined ? `width:${text(p.width)}px;` : "";
+      const hgt = p.height !== undefined ? `height:${text(p.height)}px;` : "";
+      const source = text(p.source);
       if (paint.seek !== undefined) {
         const doc = `<!doctype html><html><head><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}svg{display:block;${w}${hgt}}</style></head><body>${source}</body></html>`;
         return `<iframe data-t="${paint.seek(source)}" title="${esc(p.alt)}" style="border:0;${w}${hgt}flex-shrink:0;background:transparent" srcdoc="${esc(doc).replace(/"/g, "&quot;")}"></iframe>`;
@@ -650,7 +658,7 @@ export function desktopBand(shot: Shot, schemeName: Scheme, seek: (source: strin
 /** The source of every Svg a drawing holds. */
 export function svgSources(tree: Tree): string[] {
   if (!isElement(tree)) return [];
-  const own = tree.type === "Svg" ? [String(tree.props?.source ?? "")] : [];
+  const own = tree.type === "Svg" ? [text(tree.props?.source)] : [];
   return [...own, ...kids(tree).flatMap(svgSources)];
 }
 

@@ -30,7 +30,7 @@ const plugin = join(root, "plugins", "artifact-design");
 // ---------------------------------------------------------------- a release's bundled files
 
 function run(command: string[], cwd?: string): string {
-  const result = Bun.spawnSync(command, { cwd, stdout: "pipe", stderr: "pipe" });
+  const result = Bun.spawnSync(command, { cwd: cwd ?? process.cwd(), stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(`${command.join(" ")}: ${result.stderr.toString().trim()}`);
   return result.stdout.toString().trim();
 }
@@ -212,7 +212,7 @@ function mermaidRuntime(bundle: Bundle): string {
   const palettes = /=(\{light:\{[^{}]*\},dark:\{[^{}]*\}\})/.exec(code)?.[1];
   if (!style || !script || !palettes) throw new Error("Mermaid runtime: style, script or palettes not found");
   const version = /mermaid-(\d+\.\d+\.\d+)\.min\.js/.exec(cook(script))![1];
-  const config = JSON.stringify({ palettes: JSON.parse(palettes.replace(/([{,])(\w+):/g, '$1"$2":')) });
+  const config = JSON.stringify({ palettes: JSON.parse(palettes.replace(/([{,])(\w+):/g, '$1"$2":')) as unknown });
   return (
     `${cook(style)}\n<script src="https://cdn.jsdelivr.net/npm/mermaid@${version}/dist/mermaid.min.js"></script>\n` +
     `<script>${cook(lead)}${config}${cook(init)}</script>\n`
@@ -487,7 +487,9 @@ function main(): number {
   const markedBefore = markedRegexes(before);
   const markedAfter = markedRegexes(after);
   const markedSame = markedBefore.join("\n") === markedAfter.join("\n");
-  const markedVersion = JSON.parse(readFileSync(join(root, "node_modules", "marked", "package.json"), "utf8")).version;
+  const markedVersion = (
+    JSON.parse(readFileSync(join(root, "node_modules", "marked", "package.json"), "utf8")) as { version: string }
+  ).version;
   console.log(
     markedSame
       ? "  same      the bundled marked"

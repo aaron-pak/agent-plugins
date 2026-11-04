@@ -160,7 +160,9 @@ export function lint(shots: Shot[], options: LintOptions): Finding[] {
     });
   }
   for (const [glyph, seen] of strange) {
-    const code = [...glyph].map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ");
+    const code = Array.from(glyph)
+      .map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`)
+      .join(" ");
     const emoji = /\p{Extended_Pictographic}/u.test(glyph) || Bun.stringWidth(glyph) !== 1;
     const first = [...seen][0];
     add({

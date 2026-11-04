@@ -1,0 +1,9 @@
+{
+  // The plugin's sources and tests, which run on Node: Node's types only, so a Bun-only API fails here.
+  // Editors and Oxlint read this one for the plugin's files.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src", "tests"]
+}
