@@ -10,6 +10,7 @@ import { capture } from "../src/capture.ts";
 import { compare, paired, signTest } from "../src/compare.ts";
 import { gradeCase, parseFrontmatter } from "../src/grade.ts";
 import { renderFile, rewriteHistory } from "../src/instructions.ts";
+import { agreement, judgedItems, labelSheet, readLabels } from "../src/label.ts";
 import { resolveMoment, searchSessions } from "../src/sessions.ts";
 import { listTraces, saveTrace, updateTrace } from "../src/traces.ts";
 import { type Rec, mainChain, readTranscript, turnsOf, usedIn } from "../src/transcript.ts";
@@ -279,5 +280,52 @@ describe("compare", () => {
     expect(c.missing.onlyA).toEqual(["c2"]);
     expect(c.score.delta).toBeCloseTo(1 / 3, 6);
     expect(c.warnings.join("\n")).toContain("directional");
+  });
+});
+
+describe("judge check", () => {
+  test("a blind sheet round-trips into agreement, split by which way the judge erred", () => {
+    const dir = mkdtempSync(join(tmpdir(), "evals-label-"));
+    const g = (name: string, passed: boolean) => ({
+      name,
+      passed,
+      judgeVotes: [passed],
+      criteria: "Is kind.",
+      evidence: "verdict: pass\nhi",
+    });
+    writeFileSync(
+      join(dir, "aggregate-result.json"),
+      JSON.stringify({
+        cases: [
+          {
+            name: "a",
+            arms: {
+              with: [{ graders: [g("kind", true), { name: "re", passed: true }] }, { graders: [g("kind", false)] }],
+            },
+          },
+          { name: "b", arms: { with: [{ graders: [g("kind", true)] }] } },
+        ],
+      }),
+    );
+    const items = judgedItems(dir);
+    expect(items.map((i) => i.id)).toEqual(["a · with-1 · kind", "a · with-2 · kind", "b · with-1 · kind"]);
+    const sheet = labelSheet(items);
+    expect(sheet).not.toContain("judgeVotes");
+    // Evidence that itself says "verdict:" stays inside its fence and isn't read as a label.
+    expect(readLabels(sheet).size).toBe(0);
+    const marked = sheet
+      .split("verdict: \n")
+      .reduce(
+        (acc, part, i) => acc + part + (i < 3 ? ["verdict: fail\n", "verdict: pass\n", "verdict: pass\n"][i] : ""),
+        "",
+      );
+    const a = agreement(items, readLabels(marked));
+    expect(a).toMatchObject({
+      labeled: 3,
+      agreed: 1,
+      tooLenient: ["a · with-1 · kind"],
+      tooStrict: ["a · with-2 · kind"],
+    });
+    rmSync(dir, { recursive: true, force: true });
   });
 });

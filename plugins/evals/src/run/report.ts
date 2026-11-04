@@ -53,7 +53,7 @@ section{background:var(--card);border:1px solid var(--line);border-radius:10px;p
 .meta,.sub{color:var(--muted);font-size:13px}pre{white-space:pre-wrap;word-break:break-word;font-size:12.5px;background:var(--bg);padding:8px;border-radius:6px;max-height:320px;overflow:auto}
 ul{padding-left:18px;margin:6px 0}li{margin:2px 0}code{font-size:12px;word-break:break-all}.adv{color:var(--muted);font-size:13px}
 </style></head><body><main><h1>Eval report</h1><div class="sub">${esc(result.harness)} ${esc(result.harnessVersion)} · ${esc(result.suite.root)} · ablation ${esc(result.suite.ablation)} · model ${esc(result.suite.modelOverride ?? "case default")} · judge ${esc(result.suite.judgeModel ?? "default")} · $${result.costUsd.toFixed(2)} · ${result.durationSeconds}s${result.partial ? ` · <b class="fail">partial (${esc(result.partialReason)})</b>` : ""}</div>
-<p>${ag.casesPassed} of ${ag.casesTotal} cases at or above ${result.suite.threshold} · overall score ${pct(ag.overallScore)} · mean Δ ${ag.meanDelta === null ? "—" : ag.meanDelta.toFixed(2)}</p>
+<p>${ag.casesPassed} of ${ag.casesTotal} cases at or above ${result.suite.threshold} · overall score ${pct(ag.overallScore)} · every run passed in ${pct(ag.allRunsPassRate ?? 0)} of cases · mean Δ ${ag.meanDelta === null ? "—" : ag.meanDelta.toFixed(2)}</p>
 ${result.errors.map((e) => `<section><h2 class="fail">${esc(e.case)} <small>did not load</small></h2><pre>${esc(e.error)}</pre></section>`).join("")}
 ${result.cases.map((c) => caseBlock(c, result.suite.threshold)).join("")}
 </main></body></html>`;

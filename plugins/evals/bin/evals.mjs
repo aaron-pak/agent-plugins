@@ -8019,6 +8019,105 @@ function gradeCase(caseDir, options) {
   return grade(graders, run);
 }
 
+// plugins/evals/src/label.ts
+function judgedItems(path) {
+  const result = loadResult(path);
+  const items = [];
+  for (const c of result.cases) {
+    for (const [arm, runs] of [
+      ["with", c.arms.with],
+      ["without", c.arms.without ?? []]
+    ]) {
+      runs.forEach((r, i) => {
+        for (const g of r.graders ?? []) {
+          if (!g.judgeVotes)
+            continue;
+          items.push({
+            id: `${c.name} · ${arm}-${i + 1} · ${g.name}`,
+            criteria: g.criteria ?? "(criteria not recorded; see the case's grader file)",
+            evidence: g.evidence ?? "",
+            judge: g.passed
+          });
+        }
+      });
+    }
+  }
+  return items;
+}
+function labelSheet(items) {
+  const head = "# Label these before you look at the grades\n\nFor each one, write `pass` or `fail` after `verdict:`. Leave it blank to skip. Judge only by the criteria.\n";
+  const sections = items.map((it) => `## ${it.id}
+
+**Criteria:** ${it.criteria.trim()}
+
+**What the judge saw:**
+
+~~~~
+${it.evidence.trim()}
+~~~~
+
+verdict: 
+`);
+  return [head, ...sections].join(`
+`);
+}
+function readLabels(sheet) {
+  const labels = new Map;
+  let id;
+  let fenced = false;
+  for (const line of sheet.split(`
+`)) {
+    if (line.startsWith("~~~~"))
+      fenced = !fenced;
+    if (fenced)
+      continue;
+    const heading = /^## (.+)$/.exec(line);
+    if (heading)
+      id = heading[1].trim();
+    const verdict = /^verdict:\s*(\S+)/i.exec(line);
+    if (id && verdict) {
+      const v = verdict[1].toLowerCase();
+      if (["pass", "yes", "y", "p", "1", "true"].includes(v))
+        labels.set(id, true);
+      else if (["fail", "no", "n", "f", "0", "false"].includes(v))
+        labels.set(id, false);
+    }
+  }
+  return labels;
+}
+function agreement(items, labels) {
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const out = { labeled: 0, agreed: 0, tooLenient: [], tooStrict: [], unknown: [] };
+  for (const [id, human] of labels) {
+    const it = byId.get(id);
+    if (!it) {
+      out.unknown.push(id);
+      continue;
+    }
+    out.labeled++;
+    if (it.judge === human)
+      out.agreed++;
+    else
+      (it.judge ? out.tooLenient : out.tooStrict).push(id);
+  }
+  return out;
+}
+function formatAgreement(a) {
+  if (a.labeled === 0)
+    return "no labels found: fill in `verdict: pass` or `verdict: fail` in the sheet";
+  const pct = Math.round(100 * a.agreed / a.labeled);
+  const lines = [`judge agreed with you on ${a.agreed} of ${a.labeled} (${pct}%)`];
+  if (a.tooLenient.length)
+    lines.push(`passed what you failed (too lenient):`, ...a.tooLenient.map((id) => `  ${id}`));
+  if (a.tooStrict.length)
+    lines.push(`failed what you passed (too strict):`, ...a.tooStrict.map((id) => `  ${id}`));
+  if (a.unknown.length)
+    lines.push(`not in this result:`, ...a.unknown.map((id) => `  ${id}`));
+  lines.push(a.labeled < 20 ? "fewer than 20 labels: read this as a hint, not a number" : pct >= 90 ? "good enough to trust the judged scores on cases like these" : "below 9 in 10: sharpen the criteria where it disagreed, then label again");
+  return lines.join(`
+`);
+}
+
 // plugins/evals/src/run/harness/claude.ts
 import { copyFileSync as copyFileSync2, existsSync as existsSync7, writeFileSync as writeFileSync3 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
@@ -8770,7 +8869,7 @@ section{background:var(--card);border:1px solid var(--line);border-radius:10px;p
 .meta,.sub{color:var(--muted);font-size:13px}pre{white-space:pre-wrap;word-break:break-word;font-size:12.5px;background:var(--bg);padding:8px;border-radius:6px;max-height:320px;overflow:auto}
 ul{padding-left:18px;margin:6px 0}li{margin:2px 0}code{font-size:12px;word-break:break-all}.adv{color:var(--muted);font-size:13px}
 </style></head><body><main><h1>Eval report</h1><div class="sub">${esc(result.harness)} ${esc(result.harnessVersion)} · ${esc(result.suite.root)} · ablation ${esc(result.suite.ablation)} · model ${esc(result.suite.modelOverride ?? "case default")} · judge ${esc(result.suite.judgeModel ?? "default")} · $${result.costUsd.toFixed(2)} · ${result.durationSeconds}s${result.partial ? ` · <b class="fail">partial (${esc(result.partialReason)})</b>` : ""}</div>
-<p>${ag.casesPassed} of ${ag.casesTotal} cases at or above ${result.suite.threshold} · overall score ${pct(ag.overallScore)} · mean Δ ${ag.meanDelta === null ? "—" : ag.meanDelta.toFixed(2)}</p>
+<p>${ag.casesPassed} of ${ag.casesTotal} cases at or above ${result.suite.threshold} · overall score ${pct(ag.overallScore)} · every run passed in ${pct(ag.allRunsPassRate ?? 0)} of cases · mean Δ ${ag.meanDelta === null ? "—" : ag.meanDelta.toFixed(2)}</p>
 ${result.errors.map((e) => `<section><h2 class="fail">${esc(e.case)} <small>did not load</small></h2><pre>${esc(e.error)}</pre></section>`).join("")}
 ${result.cases.map((c) => caseBlock(c, result.suite.threshold)).join("")}
 </main></body></html>`;
@@ -9683,6 +9782,7 @@ async function judged(g, ctx) {
     weight: g.weight,
     explanation: v.explanation,
     judge_votes: v.votes,
+    criteria: g.criteria,
     evidence: evidence.slice(0, 4000),
     costUsd: v.costUsd
   };
@@ -10670,6 +10770,7 @@ async function runOne(job, options, runsDir, state) {
         withOnly: g.with_only === true,
         scored: g.scored !== false,
         ...g.judge_votes && { judgeVotes: g.judge_votes },
+        ...g.criteria !== undefined && { criteria: g.criteria },
         ...g.evidence !== undefined && { evidence: g.evidence }
       }))
     });
@@ -10811,7 +10912,8 @@ async function runSuite(options) {
     const wo = p.arms.includes("without") ? arm("without") : undefined;
     const score = mean2(w.map((r) => r.score));
     const passRate = w.length ? w.filter((r) => r.score >= 1).length / w.length : 0;
-    const aggregates = { score, passRate };
+    const allRunsPassed = w.length > 0 && w.every((r) => r.score >= 1);
+    const aggregates = { score, passRate, allRunsPassed };
     if (wo) {
       aggregates.scoreWithout = mean2(wo.map((r) => r.score));
       aggregates.passRateWithout = wo.length ? wo.filter((r) => r.score >= 1).length / wo.length : 0;
@@ -10891,6 +10993,7 @@ async function runSuite(options) {
       casesPassed: ran.filter((c) => c.aggregates.score >= options.threshold).length,
       overallScore: mean2(ran.map((c) => c.aggregates.score)),
       overallPassRate: mean2(ran.map((c) => c.aggregates.passRate)),
+      allRunsPassRate: mean2(ran.map((c) => c.aggregates.allRunsPassed ? 1 : 0)),
       meanDelta: deltas.length ? mean2(deltas) : null
     }
   };
@@ -10938,6 +11041,10 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
                                        B against A: paired per-case score Δ with a 95% interval and a sign test;
                                        --drop-errors leaves out plumbing (timeouts, API errors, aborts), not the turn cap
+
+  label <results> [--out file]         writes a sheet of every judged grade (what the judge saw, the criteria, no
+                                       verdicts) for you to mark pass or fail
+  agree <results> <sheet>              how often the judge agreed with your marks, and where it didn't
 `;
 function fail(message) {
   console.error(`evals: ${message}`);
@@ -11206,6 +11313,9 @@ async function runCommand(argv) {
 `);
   if (result.partial)
     log(`⚠ partial: ${result.partialReason}`);
+  const ag = result.aggregates;
+  if (ag.casesTotal > 0)
+    log(`${ag.casesPassed} of ${ag.casesTotal} cases passed · pass rate ${ag.overallPassRate.toFixed(2)} · every run passed in ${result.cases.filter((c) => c.aggregates.allRunsPassed).length} of ${ag.casesTotal} cases (pass^k)`);
   log(`results: ${join14(outputDir, "aggregate-result.json")}
 report: ${reportPath}`);
   process.exitCode = exitCode;
@@ -11331,6 +11441,24 @@ function main(argv) {
         console.log(JSON.stringify(result, null, 2));
       else
         console.log(formatComparison(result, values["min-effect"] ? Number(values["min-effect"]) : undefined));
+      return;
+    }
+    case "label": {
+      const { values, positionals } = args(argv.slice(1), { out: { type: "string" } });
+      const items = judgedItems(positionals[0] ?? fail("label <results>"));
+      if (items.length === 0)
+        fail("no judged grades in this result");
+      const out = values.out ?? "labels.md";
+      writeFileSync9(out, labelSheet(items));
+      console.log(`${items.length} judged grades to label: ${out}
+then: evals agree ${positionals[0]} ${out}`);
+      return;
+    }
+    case "agree": {
+      const [results, sheet] = argv.slice(1);
+      if (!results || !sheet)
+        fail("agree <results> <sheet>");
+      console.log(formatAgreement(agreement(judgedItems(results), readLabels(readFileSync11(sheet, "utf8")))));
       return;
     }
     case undefined:

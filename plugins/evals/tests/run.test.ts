@@ -282,10 +282,12 @@ describe("suites", () => {
     expect(good.arms.with[0]!.mocks!.calls.total).toBe(1);
     // Without the plugin its server isn't there, so the call fails, but the file and reply still score.
     expect(good.arms.without![0]!.graders.map((g) => g.name)).toEqual(["file", "said"]);
-    expect(good.aggregates).toMatchObject({ score: 1, scoreWithout: 1, delta: 0 });
+    expect(good.aggregates).toMatchObject({ score: 1, scoreWithout: 1, delta: 0, allRunsPassed: true });
     const wrong = result.cases.find((c) => c.name === "wrong")!;
     expect(wrong.arms.with[0]!.aborted).toMatchObject({ server: "tracker", tool: "create" });
     expect(wrong.arms.with[0]!.score).toBe(0);
+    expect(wrong.aggregates.allRunsPassed).toBe(false);
+    expect(result.aggregates.allRunsPassRate).toBe(0.5);
     expect(exitCode).toBe(1);
     const saved = JSON.parse(readFileSync(join(out, "aggregate-result.json"), "utf8"));
     expect(saved.cases).toHaveLength(2);

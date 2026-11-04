@@ -19,6 +19,7 @@ export type GraderResult = {
   with_only?: boolean;
   scored?: boolean;
   judge_votes?: boolean[];
+  criteria?: string;
   evidence?: string;
 };
 
@@ -171,6 +172,7 @@ async function judged(
     weight: g.weight,
     explanation: v.explanation,
     judge_votes: v.votes,
+    criteria: g.criteria,
     evidence: evidence.slice(0, 4000),
     costUsd: v.costUsd,
   };

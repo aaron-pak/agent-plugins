@@ -102,6 +102,7 @@ export type RunRecord = {
     withOnly: boolean;
     scored: boolean;
     judgeVotes?: boolean[];
+    criteria?: string;
     evidence?: string;
   }[];
 };
@@ -125,7 +126,15 @@ export type CaseRecord = {
   }[];
   arms: { with: RunRecord[]; without?: RunRecord[] };
   advisories: string[];
-  aggregates: { score: number; passRate: number; scoreWithout?: number; passRateWithout?: number; delta?: number };
+  aggregates: {
+    score: number;
+    passRate: number;
+    /** pass^k with k = the case's runs: every run scored 1. */
+    allRunsPassed: boolean;
+    scoreWithout?: number;
+    passRateWithout?: number;
+    delta?: number;
+  };
 };
 
 export type Result = {
@@ -160,6 +169,7 @@ export type Result = {
     casesPassed: number;
     overallScore: number;
     overallPassRate: number;
+    allRunsPassRate: number;
     meanDelta: number | null;
   };
 };
@@ -565,6 +575,7 @@ async function runOne(job: Job, options: RunOptions, runsDir: string, state: { s
         withOnly: g.with_only === true,
         scored: g.scored !== false,
         ...(g.judge_votes && { judgeVotes: g.judge_votes }),
+        ...(g.criteria !== undefined && { criteria: g.criteria }),
         ...(g.evidence !== undefined && { evidence: g.evidence }),
       })),
     });
@@ -741,7 +752,8 @@ export async function runSuite(options: RunOptions): Promise<{ result: Result; e
     const wo = p.arms.includes("without") ? arm("without") : undefined;
     const score = mean(w.map((r) => r.score));
     const passRate = w.length ? w.filter((r) => r.score >= 1).length / w.length : 0;
-    const aggregates: CaseRecord["aggregates"] = { score, passRate };
+    const allRunsPassed = w.length > 0 && w.every((r) => r.score >= 1);
+    const aggregates: CaseRecord["aggregates"] = { score, passRate, allRunsPassed };
     if (wo) {
       aggregates.scoreWithout = mean(wo.map((r) => r.score));
       aggregates.passRateWithout = wo.length ? wo.filter((r) => r.score >= 1).length / wo.length : 0;
@@ -826,6 +838,9 @@ export async function runSuite(options: RunOptions): Promise<{ result: Result; e
       casesPassed: ran.filter((c) => c.aggregates.score >= options.threshold).length,
       overallScore: mean(ran.map((c) => c.aggregates.score)),
       overallPassRate: mean(ran.map((c) => c.aggregates.passRate)),
+      // pass^k: the share of cases where every run passed. An agent that's right two times in three
+      // has a pass rate of 0.67 and fails here.
+      allRunsPassRate: mean(ran.map((c) => (c.aggregates.allRunsPassed ? 1 : 0))),
       meanDelta: deltas.length ? mean(deltas) : null,
     },
   };

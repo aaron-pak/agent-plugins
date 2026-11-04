@@ -74,8 +74,8 @@ one concrete fix each, most misleading first. An audit that finds nothing is a v
   answer; a wrong but plausible answer fails.
 - **Cheat-resistant.** There's no shortcut that satisfies the graders without doing the task:
   quoting the rubric, an empty file a lenient pattern accepts, doing nothing.
-- **Judged graders are calibrated.** The user scored a sample before seeing the grades, and the
-  judge agreed on about 9 in 10 clear-cut cases. Good and bad saved traces of the target are free
+- **Judged graders are calibrated.** The user scored a sample before seeing the grades (`evals label`,
+  then `evals agree`), and the judge agreed on about 9 in 10 clear-cut cases. Good and bad saved traces of the target are free
   labels: the judge passes the good ones and fails the bad ones. Only the user's own notes count as
   labels; an inferred note is an agent's guess.
 - **Read the failures.** Of the outputs the graders failed, more than about one in ten looking right

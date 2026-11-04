@@ -10,6 +10,7 @@ import { type ParseArgsOptionsConfig, parseArgs } from "node:util";
 import { capture } from "./capture.ts";
 import { compare, formatComparison, loadResult } from "./compare.ts";
 import { gradeCase } from "./grade.ts";
+import { agreement, formatAgreement, judgedItems, labelSheet, readLabels } from "./label.ts";
 import { claudeHarness } from "./run/harness/claude.ts";
 import { codexHarness } from "./run/harness/codex.ts";
 import type { Harness } from "./run/harness/types.ts";
@@ -55,6 +56,10 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
                                        B against A: paired per-case score Δ with a 95% interval and a sign test;
                                        --drop-errors leaves out plumbing (timeouts, API errors, aborts), not the turn cap
+
+  label <results> [--out file]         writes a sheet of every judged grade (what the judge saw, the criteria, no
+                                       verdicts) for you to mark pass or fail
+  agree <results> <sheet>              how often the judge agreed with your marks, and where it didn't
 `;
 
 function fail(message: string): never {
@@ -327,6 +332,11 @@ async function runCommand(argv: string[]): Promise<void> {
   if (jsonBare) console.log(JSON.stringify(result, null, 2));
   else if (values.json) writeFileSync(values.json as string, `${JSON.stringify(result, null, 2)}\n`);
   if (result.partial) log(`⚠ partial: ${result.partialReason}`);
+  const ag = result.aggregates;
+  if (ag.casesTotal > 0)
+    log(
+      `${ag.casesPassed} of ${ag.casesTotal} cases passed · pass rate ${ag.overallPassRate.toFixed(2)} · every run passed in ${result.cases.filter((c) => c.aggregates.allRunsPassed).length} of ${ag.casesTotal} cases (pass^k)`,
+    );
   log(`results: ${join(outputDir, "aggregate-result.json")}\nreport: ${reportPath}`);
   process.exitCode = exitCode;
 }
@@ -445,6 +455,21 @@ function main(argv: string[]): void | Promise<void> {
       });
       if (values.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatComparison(result, values["min-effect"] ? Number(values["min-effect"]) : undefined));
+      return;
+    }
+    case "label": {
+      const { values, positionals } = args(argv.slice(1), { out: { type: "string" } });
+      const items = judgedItems(positionals[0] ?? fail("label <results>"));
+      if (items.length === 0) fail("no judged grades in this result");
+      const out = (values.out as string | undefined) ?? "labels.md";
+      writeFileSync(out, labelSheet(items));
+      console.log(`${items.length} judged grades to label: ${out}\nthen: evals agree ${positionals[0]} ${out}`);
+      return;
+    }
+    case "agree": {
+      const [results, sheet] = argv.slice(1);
+      if (!results || !sheet) fail("agree <results> <sheet>");
+      console.log(formatAgreement(agreement(judgedItems(results), readLabels(readFileSync(sheet, "utf8")))));
       return;
     }
     case undefined:

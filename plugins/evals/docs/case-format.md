@@ -122,7 +122,9 @@ $E run <suite or plugin> [--harness claude|codex] [--runs 3] [--ablation with-wi
 Results: `<output dir>/aggregate-result.json` (default `<eval dir>/results/<timestamp>/`), and
 `report.html` beside it. The top level has `harness`, `harnessVersion`, `costUsd`, `partial`,
 `partialReason` and `suite` (with `instructions`: the file, its hash and scope). Per case,
-`cases[].aggregates` (`score`, `scoreWithout`, `delta`) and per run `cases[].arms.with[]` /
+`cases[].aggregates` (`score`, `passRate`, `allRunsPassed`, `scoreWithout`, `delta`), and in
+`aggregates` the suite's `allRunsPassRate` (pass^k: the share of cases where every run passed, the
+number that matches daily use better than an average), and per run `cases[].arms.with[]` /
 `.without[]` with `score`, `turns`, `costUsd`, `judgeCostUsd`, `durationSeconds`, `error`,
 `aborted`, `skippedPaidGraders`, `tracePath` (the run's event stream, kept in
 `runs/<case>/<arm>-<n>/trace.jsonl` with the mock calls beside it) and `graders[]` (`passed`,
@@ -186,6 +188,11 @@ in Claude Code's session format, or a text given as the final message. Judged gr
 recorded case loaded; `$E instructions rewrite <history.jsonl> --replace <recorded path> --with <file>`
 (or `--remove <path>`, `--add <path> --with <file>`) edits them by hand, in the record and in the
 text the model was sent. `evals run --instructions` does the replace for you.
+
+**Check the judge:** `$E label <results> [--out labels.md]` writes every judged grade as a blind
+sheet (what the judge saw and the criteria, no verdicts); mark each `verdict: pass` or `fail`, then
+`$E agree <results> labels.md` reports how often the judge agreed, split into too lenient and too
+strict. Fewer than 20 labels is a hint, not a number.
 
 **Compare** two results: `$E compare <A> <B> [--cases <glob>]... [--drop-errors] [--min-effect 0.1] [--json]`
 (each a results folder or an `aggregate-result.json`). It pairs cases by name and reports B against

@@ -184,7 +184,10 @@ run" and "The graders"). Each run's transcript is at its `tracePath` in `aggrega
 `--keep-temp` keeps each run's workspace for reading what it produced.
 
 Calibrate with the user's judgment first: show them each case's output (the run's final message)
-**before** the grades, ask how they'd score it, and only then compare with the graders. The judge
+**before** the grades, ask how they'd score it, and only then compare with the graders. For the
+judged graders, `$E label <results>` writes a blind sheet (what the judge saw, the criteria, no
+verdicts) for the user to mark, and `$E agree <results> labels.md` gives the agreement and which way
+the judge erred. The judge
 answers a bare PASS or FAIL, so there is no reasoning to show; its three votes are. Ask: **"Would
 you have scored any of these differently?"** If yes for even one, the rubric isn't ready: revise
 and re-pilot until the user and the graders agree on clear-cut cases (aim for about 9 in 10 or
