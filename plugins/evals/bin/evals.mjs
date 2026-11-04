@@ -6906,8 +6906,8 @@ var require_public_api = __commonJS(function(exports) {
 });
 
 // plugins/evals/src/cli.ts
-import { mkdirSync as mkdirSync7, readFileSync as readFileSync10, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname4, join as join13 } from "node:path";
+import { mkdirSync as mkdirSync7, readFileSync as readFileSync12, writeFileSync as writeFileSync8 } from "node:fs";
+import { dirname as dirname4, join as join14 } from "node:path";
 import { parseArgs } from "node:util";
 
 // plugins/evals/src/capture.ts
@@ -8241,11 +8241,11 @@ function provideCredentials(configDir, env = process.env) {
   }
   return "no credentials for the run: set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY; a macOS keychain login can't be passed to an isolated run";
 }
-function childEnv(box, extra) {
+function childEnv(box, extra, instructions = false) {
   return runEnv(box, {
     CLAUDE_CONFIG_DIR: box.configDir,
     CLAUDE_CODE_TMPDIR: box.tmpDir,
-    CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+    ...!instructions && { CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1" },
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     DISABLE_AUTOUPDATER: "1",
@@ -8401,6 +8401,9 @@ var claudeHarness = {
   mcpToolName(server, tool, pluginName) {
     return pluginName ? `mcp__plugin_${pluginSegment(pluginName)}_${pluginSegment(server)}__${tool}` : `mcp__${pluginSegment(server)}__${tool}`;
   },
+  instructionsPath(box, scope, name) {
+    return scope === "user" ? join7(box.configDir, "CLAUDE.md") : join7(box.cwd, name ?? "CLAUDE.md");
+  },
   async run(request) {
     const { box } = request;
     const credentialProblem = provideCredentials(box.configDir);
@@ -8441,7 +8444,7 @@ var claudeHarness = {
     const tracePath = join7(box.outDir, "trace.jsonl");
     const result = await exec(claudeBin(), args, {
       cwd: box.cwd,
-      env: childEnv(box, request.env),
+      env: childEnv(box, request.env, request.loadsInstructions),
       input: request.prompt,
       timeoutMs: request.timeoutMs,
       signal: request.signal,
@@ -8501,6 +8504,241 @@ var claudeHarness = {
   }
 };
 
+// plugins/evals/src/run/harness/codex.ts
+import { copyFileSync as copyFileSync3, cpSync, existsSync as existsSync8, readFileSync as readFileSync5, readdirSync as readdirSync5, writeFileSync as writeFileSync4 } from "node:fs";
+import { homedir as homedir5 } from "node:os";
+import { join as join8 } from "node:path";
+function codexBin() {
+  return process.env.EVALS_CODEX_BIN || "codex";
+}
+function provideCredentials2(codexHome, env = process.env) {
+  if (env.OPENAI_API_KEY || env.CODEX_API_KEY)
+    return null;
+  const source = join8(env.CODEX_HOME || join8(homedir5(), ".codex"), "auth.json");
+  if (existsSync8(source)) {
+    copyFileSync3(source, join8(codexHome, "auth.json"));
+    return null;
+  }
+  return "no Codex credentials: sign in with `codex login` or set OPENAI_API_KEY";
+}
+function toml(value) {
+  return JSON.stringify(value);
+}
+function codexConfig(servers, model) {
+  const lines = ['approval_policy = "never"', "[sandbox_workspace_write]", "network_access = false"];
+  if (model)
+    lines.unshift(`model = ${toml(model)}`);
+  for (const s of servers) {
+    lines.push("", `[mcp_servers.${toml(s.name)}]`, `command = ${toml(s.command)}`, `args = [${s.args.map(toml).join(", ")}]`);
+  }
+  return `${lines.join(`
+`)}
+`;
+}
+function installSkills(pluginDir, codexHome) {
+  const skills = join8(pluginDir, "skills");
+  if (!existsSync8(skills))
+    return;
+  for (const name of readdirSync5(skills)) {
+    if (existsSync8(join8(skills, name, "SKILL.md")))
+      cpSync(join8(skills, name), join8(codexHome, "skills", name), { recursive: true });
+  }
+}
+function pluginServers(pluginDir) {
+  const file = join8(pluginDir, ".mcp.json");
+  if (!existsSync8(file))
+    return [];
+  try {
+    const parsed = JSON.parse(readFileSync5(file, "utf8"));
+    return Object.entries(parsed.mcpServers ?? {}).filter(([, c]) => typeof c.command === "string").map(([name, c]) => ({ name, command: c.command, args: c.args ?? [] }));
+  } catch {
+    return [];
+  }
+}
+function skillOf(command) {
+  return /skills\/([A-Za-z0-9_.-]+)\/SKILL\.md/.exec(command)?.[1];
+}
+function parseCodex(events, exit, tracePath) {
+  const toolCalls = [];
+  let lastAssistantText = "";
+  let steps = 0;
+  let error = null;
+  let authFailed = false;
+  let apiError = false;
+  for (const e of events) {
+    if (e.type === "item.completed" && e.item) {
+      const it = e.item;
+      const id = String(it.id ?? toolCalls.length);
+      if (it.type === "agent_message") {
+        lastAssistantText = String(it.text ?? "");
+        steps++;
+      } else if (it.type === "command_execution") {
+        const command = String(it.command ?? "");
+        const input = { command };
+        const call = {
+          id,
+          name: "Bash",
+          input,
+          inputText: JSON.stringify(input),
+          output: String(it.aggregated_output ?? ""),
+          isError: typeof it.exit_code === "number" && it.exit_code !== 0
+        };
+        toolCalls.push(call);
+        const skill = skillOf(command);
+        if (skill)
+          toolCalls.push({ id: `${id}-skill`, name: "Skill", input: { skill }, inputText: JSON.stringify({ skill }) });
+        steps++;
+      } else if (it.type === "file_change") {
+        const changes = Array.isArray(it.changes) ? it.changes : [];
+        const input = { changes };
+        toolCalls.push({ id, name: "Edit", input, inputText: JSON.stringify(input), isError: it.status === "failed" });
+        steps++;
+      } else if (it.type === "mcp_tool_call") {
+        const name = `mcp__${String(it.server ?? "")}__${String(it.tool ?? "")}`;
+        const input = it.arguments ?? {};
+        const result = it.result;
+        toolCalls.push({
+          id,
+          name,
+          input,
+          inputText: JSON.stringify(input),
+          output: result?.content?.map((c) => c.text ?? "").join(`
+`) ?? String(it.error?.message ?? ""),
+          isError: it.status === "failed" || it.error != null
+        });
+        steps++;
+      } else if (it.type === "web_search") {
+        const input = { query: it.query };
+        toolCalls.push({ id, name: "WebSearch", input, inputText: JSON.stringify(input) });
+        steps++;
+      }
+    } else if (e.type === "turn.failed") {
+      error = String(e.error?.message ?? "turn failed");
+      apiError = /unexpected status \d{3}/.test(error);
+    } else if (e.type === "error") {
+      error = String(e.message ?? "error");
+    }
+  }
+  if (error && /401|unauthori[sz]ed|not logged in|auth/i.test(error))
+    authFailed = true;
+  if (exit.timedOut)
+    error = `timed out after ${Math.round(exit.timeoutMs / 1000)}s`;
+  else if (exit.code !== 0)
+    error = `exit ${exit.code}: ${error ?? (exit.stderrTail || "(no stderr)")}`;
+  return {
+    messages: events,
+    toolCalls,
+    lastAssistantText,
+    numTurns: steps,
+    costUsd: 0,
+    error,
+    timedOut: exit.timedOut,
+    endedOnApiError: apiError && !exit.timedOut,
+    authRejected: authFailed && error ? error : null,
+    tracePath
+  };
+}
+function parseLines2(text) {
+  return text.split(`
+`).filter((l) => l.trim()).flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return [];
+    }
+  });
+}
+function env2(box, extra) {
+  return runEnv(box, { CODEX_HOME: box.configDir, ...extra });
+}
+var codexHarness = {
+  name: "codex",
+  async version() {
+    const r = await exec(codexBin(), ["--version"], { timeoutMs: 30000 });
+    return r.stdout.trim().split(/\s/).pop() || "unknown";
+  },
+  mcpToolName(server, tool) {
+    return `mcp__${server}__${tool}`;
+  },
+  instructionsPath(box, scope, name) {
+    return scope === "user" ? join8(box.configDir, "AGENTS.md") : join8(box.cwd, name ?? "AGENTS.md");
+  },
+  async run(request) {
+    const { box } = request;
+    const tracePath = join8(box.outDir, "trace.jsonl");
+    if (request.historyFile) {
+      writeFileSync4(tracePath, "");
+      return parseCodex([{ type: "error", message: "Codex can't resume a recorded Claude Code session (context.history_file)" }], { code: 1, timedOut: false, stderrTail: "", timeoutMs: request.timeoutMs }, tracePath);
+    }
+    const problem = provideCredentials2(box.configDir);
+    for (const dir of request.pluginDirs)
+      installSkills(dir, box.configDir);
+    const servers = [...request.pluginDirs.flatMap(pluginServers), ...request.servers];
+    writeFileSync4(join8(box.configDir, "config.toml"), codexConfig(servers, request.model));
+    const writes = request.allowedTools.some((t) => /^(Bash|Write|Edit|MultiEdit|NotebookEdit)(\(|$)/.test(t));
+    const args = [
+      "exec",
+      "--json",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "-C",
+      box.cwd,
+      "-s",
+      writes ? "workspace-write" : "read-only"
+    ];
+    if (request.model)
+      args.push("-m", request.model);
+    for (const dir of request.addDirs)
+      args.push("--add-dir", dir);
+    args.push("-");
+    const prompt = request.appendSystemPrompt ? `${request.prompt}
+
+${request.appendSystemPrompt}` : request.prompt;
+    const r = await exec(codexBin(), args, {
+      cwd: box.cwd,
+      env: env2(box, request.env),
+      input: prompt,
+      timeoutMs: request.timeoutMs,
+      signal: request.signal,
+      onSpawn: request.onSpawn
+    });
+    writeFileSync4(tracePath, r.stdout);
+    const stderrTail = r.stderr.trim().split(`
+`).slice(-5).join(" ").slice(-500);
+    return parseCodex(parseLines2(r.stdout), {
+      code: r.code,
+      timedOut: r.timedOut,
+      stderrTail: problem ? `${problem} · ${stderrTail}` : stderrTail,
+      timeoutMs: request.timeoutMs
+    }, tracePath);
+  },
+  async ask(system, user, model, signal) {
+    const box = createSandbox();
+    try {
+      const problem = provideCredentials2(box.configDir);
+      writeFileSync4(join8(box.configDir, "config.toml"), codexConfig([], model));
+      const args = ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-C", box.cwd, "-s", "read-only", "-"];
+      if (model)
+        args.splice(1, 0, "-m", model);
+      const r = await exec(codexBin(), args, {
+        cwd: box.cwd,
+        env: env2(box, {}),
+        input: `${system}
+
+${user}`,
+        timeoutMs: 300000,
+        signal
+      });
+      const run = parseCodex(parseLines2(r.stdout), { code: r.code, timedOut: r.timedOut, stderrTail: r.stderr.slice(-400), timeoutMs: 300000 }, "");
+      if (run.error || !run.lastAssistantText)
+        throw new Error(`codex exec failed: ${run.error ?? "no answer"}${problem ? ` · ${problem}` : ""}`);
+      return { text: run.lastAssistantText, costUsd: 0 };
+    } finally {
+      removeSandbox(box);
+    }
+  }
+};
+
 // plugins/evals/src/run/report.ts
 function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -8539,15 +8777,246 @@ ${result.cases.map((c) => caseBlock(c, result.suite.threshold)).join("")}
 }
 
 // plugins/evals/src/run/runner.ts
-import { randomBytes as randomBytes2 } from "node:crypto";
-import { copyFileSync as copyFileSync3, existsSync as existsSync12, mkdirSync as mkdirSync5, writeFileSync as writeFileSync5 } from "node:fs";
+import { createHash as createHash2, randomBytes as randomBytes2 } from "node:crypto";
+import { copyFileSync as copyFileSync4, existsSync as existsSync14, mkdirSync as mkdirSync6, readFileSync as readFileSync11, writeFileSync as writeFileSync7 } from "node:fs";
 import { createServer } from "node:net";
-import { dirname as dirname3, join as join11, relative as relative5, resolve as resolve7 } from "node:path";
+import { dirname as dirname3, join as join13, relative as relative6, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// plugins/evals/src/instructions.ts
+import { cpSync as cpSync2, existsSync as existsSync9, mkdirSync as mkdirSync4, readFileSync as readFileSync6, readdirSync as readdirSync6, statSync as statSync4, writeFileSync as writeFileSync5 } from "node:fs";
+import { join as join9, relative as relative2, resolve as resolve3 } from "node:path";
+var LABELS = {
+  Project: "project instructions, checked into the codebase",
+  User: "user's private global instructions for all projects",
+  Local: "user's private project instructions, not checked in",
+  Managed: "managed instructions"
+};
+function renderFile(text) {
+  let body = text.replace(/^﻿/, "");
+  const fm = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(body);
+  if (fm)
+    body = body.slice(fm[0].length);
+  return body.replace(/<!--[\s\S]*?-->/g, "").replace(/^\n+/, "");
+}
+function header(file) {
+  return `Contents of ${file.path} (${LABELS[file.type ?? "Project"] ?? LABELS.Project}):`;
+}
+function reminder(files) {
+  const sections = files.map((f) => `${header(f)}
+
+${f.content}`);
+  return `<system-reminder>
+Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
+
+${sections.join(`
+
+`)}
+</system-reminder>`;
+}
+function recordedFiles(records) {
+  const files = new Map;
+  for (const rec of records) {
+    if (rec.type === "attachment" && rec.attachment?.type === "instructions") {
+      for (const f of rec.attachment.files ?? [])
+        files.set(f.path, f);
+    }
+  }
+  return [...files.values()];
+}
+function rewriteHistory(records, edits) {
+  const warnings = [];
+  let changed = 0;
+  const seen = new Set;
+  const out = records.map((rec) => {
+    if (rec.type !== "attachment" || rec.attachment?.type !== "instructions")
+      return rec;
+    let files = [...rec.attachment.files ?? []];
+    let rendered = Array.isArray(rec.rendered) ? rec.rendered.map((r) => r.content).join("") : undefined;
+    let exact = rendered !== undefined;
+    const section = (f) => `${header(f)}
+
+${f.content}`;
+    for (const edit of edits) {
+      const at = files.findIndex((f) => f.path === edit.path);
+      const old = at >= 0 ? files[at] : undefined;
+      if (edit.kind === "remove") {
+        if (!old)
+          continue;
+        seen.add(edit.path);
+        files = files.filter((_, i) => i !== at);
+        if (rendered !== undefined) {
+          const next = rendered.replace(`
+
+${section(old)}`, "");
+          exact &&= next !== rendered;
+          rendered = next;
+        }
+        continue;
+      }
+      if (edit.kind === "replace" && !old)
+        continue;
+      seen.add(edit.path);
+      const file = old ? { ...old, content: renderFile(edit.text) } : {
+        path: edit.path,
+        type: edit.kind === "add" ? edit.type ?? "Project" : "Project",
+        content: renderFile(edit.text)
+      };
+      if (old)
+        files[at] = file;
+      else
+        files.push(file);
+      if (rendered !== undefined) {
+        const next = old ? rendered.replace(section(old), () => section(file)) : rendered.replace(/\n<\/system-reminder>\s*$/, () => `
+
+${section(file)}
+</system-reminder>`);
+        exact &&= next !== rendered;
+        rendered = next;
+      }
+    }
+    changed++;
+    const next = { ...rec, attachment: { ...rec.attachment, files } };
+    if (rendered !== undefined) {
+      if (!exact)
+        warnings.push("a recorded instructions message didn't quote the files as expected, so it was rebuilt from them");
+      next.rendered = exact ? [{ content: rendered }] : files.length ? [{ content: reminder(files) }] : [];
+    }
+    return next;
+  });
+  for (const edit of edits) {
+    if (edit.kind !== "add" && !seen.has(edit.path)) {
+      const known = recordedFiles(records).map((f) => f.path);
+      throw new Error(`the history never loaded ${edit.path}${known.length ? `; it loaded ${known.join(", ")}` : ""}`);
+    }
+  }
+  if (changed === 0) {
+    if (edits.some((e) => e.kind === "add")) {
+      warnings.push("the history loaded no instruction files, so there was no attachment to add to; use a shim plugin for this case");
+    }
+  }
+  for (const edit of edits) {
+    if (edit.kind !== "remove" && /^\s*@\S/m.test(edit.text)) {
+      warnings.push(`${edit.path} has an @import line; it's sent as written, not expanded`);
+    }
+  }
+  return { records: out, changed, warnings };
+}
+function rewriteHistoryFile(path, edits, outPath = path) {
+  const result = rewriteHistory(readTranscript(path), edits);
+  writeFileSync5(outPath, result.records.map((r) => JSON.stringify(r)).join(`
+`) + `
+`);
+  return result;
+}
+function writeShim(dir, files, name = "instructions-variant") {
+  const rendered = files.map((f) => ({ path: f.path, type: f.type ?? "Project", content: renderFile(f.text) }));
+  const context = rendered.map((f) => `${header(f)}
+
+${f.content}`).join(`
+
+`);
+  mkdirSync4(join9(dir, ".claude-plugin"), { recursive: true });
+  mkdirSync4(join9(dir, "hooks"), { recursive: true });
+  writeFileSync5(join9(dir, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name, description: "Adds an instruction-file variant as session context, for evals." }, null, 2)}
+`);
+  writeFileSync5(join9(dir, "hooks", "context.json"), `${JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } })}
+`);
+  writeFileSync5(join9(dir, "hooks", "hooks.json"), `${JSON.stringify({
+    hooks: {
+      SessionStart: [{ hooks: [{ type: "command", command: 'cat "${CLAUDE_PLUGIN_ROOT}/hooks/context.json"' }] }]
+    }
+  }, null, 2)}
+`);
+}
+function caseDirs(root) {
+  const out = [];
+  const walk = (dir) => {
+    const names = readdirSync6(dir);
+    if (names.includes("case.yaml") || names.includes("prompt.md")) {
+      out.push(dir);
+      return;
+    }
+    for (const n of names) {
+      if (n === "results" || n === "mocks" || n.startsWith("."))
+        continue;
+      const p = join9(dir, n);
+      if (statSync4(p).isDirectory())
+        walk(p);
+    }
+  };
+  walk(root);
+  return out;
+}
+function historyOf(caseDir) {
+  const yaml = join9(caseDir, "case.yaml");
+  if (!existsSync9(yaml))
+    return;
+  const m = /^\s+history_file:\s*["']?([^"'\n]+)["']?\s*$/m.exec(readFileSync6(yaml, "utf8"));
+  return m ? join9(caseDir, m[1].trim()) : undefined;
+}
+function addPlugin(caseDir, pluginDir) {
+  const rel = relative2(caseDir, pluginDir);
+  const yamlPath = join9(caseDir, "case.yaml");
+  if (!existsSync9(yamlPath)) {
+    const name = caseDir.split("/").pop();
+    writeFileSync5(yamlPath, `schema_version: "1.1"
+name: ${JSON.stringify(name)}
+plugins: [${JSON.stringify(rel)}]
+`);
+    return;
+  }
+  let yaml = readFileSync6(yamlPath, "utf8");
+  const inline = /^plugins:\s*\[(.*)\]\s*$/m.exec(yaml);
+  if (inline) {
+    const items = inline[1].trim() ? `${inline[1].trim()}, ` : "";
+    yaml = yaml.replace(inline[0], `plugins: [${items}${JSON.stringify(rel)}]`);
+  } else if (/^plugins:\s*$/m.test(yaml)) {
+    yaml = yaml.replace(/^plugins:\s*$/m, `plugins:
+  - ${JSON.stringify(rel)}`);
+  } else {
+    yaml = yaml.replace(/^(name:.*)$/m, `$1
+plugins: [${JSON.stringify(rel)}]`);
+  }
+  writeFileSync5(yamlPath, yaml);
+}
+function writeVariant(options) {
+  const suite = resolve3(options.suite);
+  const out = resolve3(options.out);
+  if (existsSync9(out))
+    throw new Error(`${out} exists; pick a new folder for the variant`);
+  const text = readFileSync6(options.file, "utf8");
+  const path = options.path ?? options.replaces ?? resolve3(options.file);
+  cpSync2(suite, out, {
+    recursive: true,
+    filter: (src) => !relative2(suite, src).split("/").includes("results")
+  });
+  const result = { recorded: [], fresh: [], warnings: [] };
+  const shimDir = join9(out, ".variant-plugin");
+  let shimWritten = false;
+  for (const dir of caseDirs(out)) {
+    const history = historyOf(dir);
+    if (history && existsSync9(history)) {
+      if (!options.replaces)
+        throw new Error(`${relative2(out, dir)} is a recorded case; pass --replaces <the path its session loaded>`);
+      const r = rewriteHistoryFile(history, [{ kind: "replace", path: options.replaces, text }]);
+      result.warnings.push(...r.warnings.map((w) => `${relative2(out, dir)}: ${w}`));
+      result.recorded.push(relative2(out, dir));
+    } else {
+      if (!shimWritten) {
+        writeShim(shimDir, [{ path, type: options.type, text }]);
+        shimWritten = true;
+      }
+      addPlugin(dir, shimDir);
+      result.fresh.push(relative2(out, dir));
+    }
+  }
+  return result;
+}
+
 // plugins/evals/src/run/case.ts
-import { existsSync as existsSync8, readFileSync as readFileSync5, readdirSync as readdirSync5, statSync as statSync4 } from "node:fs";
-import { basename as basename3, isAbsolute, join as join8, relative as relative2, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync10, readFileSync as readFileSync7, readdirSync as readdirSync7, statSync as statSync5 } from "node:fs";
+import { basename as basename3, isAbsolute, join as join10, relative as relative3, resolve as resolve4 } from "node:path";
 
 // node_modules/yaml/dist/index.js
 var composer = require_composer();
@@ -8802,14 +9271,14 @@ function graderOf(c, g, path) {
   }
 }
 function readText(path) {
-  return existsSync8(path) ? readFileSync5(path, "utf8") : undefined;
+  return existsSync10(path) ? readFileSync7(path, "utf8") : undefined;
 }
 function loadCase(dir, evalRoot) {
-  const abs = resolve3(dir);
-  const shown = relative2(evalRoot, abs) || ".";
-  const yamlText = readText(join8(abs, "case.yaml"));
-  const promptText = readText(join8(abs, "prompt.md"));
-  const graderFiles = existsSync8(join8(abs, "graders")) ? readdirSync5(join8(abs, "graders")).filter((n) => n.endsWith(".md")).sort() : [];
+  const abs = resolve4(dir);
+  const shown = relative3(evalRoot, abs) || ".";
+  const yamlText = readText(join10(abs, "case.yaml"));
+  const promptText = readText(join10(abs, "prompt.md"));
+  const graderFiles = existsSync10(join10(abs, "graders")) ? readdirSync7(join10(abs, "graders")).filter((n) => n.endsWith(".md")).sort() : [];
   if (yamlText === undefined && promptText === undefined && graderFiles.length === 0)
     return;
   let fromYaml;
@@ -8847,7 +9316,7 @@ function loadCase(dir, evalRoot) {
     }
   }
   for (const file of graderFiles) {
-    const text = readFileSync5(join8(abs, "graders", file), "utf8");
+    const text = readFileSync7(join10(abs, "graders", file), "utf8");
     const { fm, body, had } = splitFrontmatter(text, `${shown}/graders/${file}`);
     if (!had)
       continue;
@@ -8898,10 +9367,11 @@ function loadCase(dir, evalRoot) {
   if (!isObj(ctxRaw))
     c.add("context", "expected a map");
   else {
-    c.only(ctxRaw, ["scaffold_script", "history_file", "add_dirs"], "context.");
+    c.only(ctxRaw, ["scaffold_script", "history_file", "add_dirs", "instructions"], "context.");
     context.scaffold_script = c.str(ctxRaw, "scaffold_script", "context.");
     context.history_file = c.str(ctxRaw, "history_file", "context.");
     context.add_dirs = c.strs(ctxRaw, "add_dirs", "context.") ?? [];
+    context.instructions = c.str(ctxRaw, "instructions", "context.");
   }
   const notes = [];
   const ex = merged.execution;
@@ -8964,13 +9434,14 @@ function loadCase(dir, evalRoot) {
   for (const [label, p] of [
     ["context.history_file", context.history_file],
     ["context.scaffold_script", context.scaffold_script],
+    ["context.instructions", context.instructions],
     ...context.add_dirs.map((d) => ["context.add_dirs", d])
   ]) {
-    if (p !== undefined && !existsSync8(resolve3(abs, p)))
+    if (p !== undefined && !existsSync10(resolve4(abs, p)))
       throw new CaseError(`${shown}: ${label} ${p} does not exist`);
   }
   for (const g of graders) {
-    if (g.type === "baseline" && !existsSync8(resolve3(abs, g.baseline_file))) {
+    if (g.type === "baseline" && !existsSync10(resolve4(abs, g.baseline_file))) {
       throw new CaseError(`${shown}: grader "${g.name}" baseline_file ${g.baseline_file} does not exist`);
     }
   }
@@ -8992,12 +9463,12 @@ function loadCase(dir, evalRoot) {
   };
 }
 function findCaseDirs(evalDir, depth = 0) {
-  if (depth > 8 || !existsSync8(evalDir) || !statSync4(evalDir).isDirectory())
+  if (depth > 8 || !existsSync10(evalDir) || !statSync5(evalDir).isDirectory())
     return [];
-  const here = readdirSync5(evalDir);
+  const here = readdirSync7(evalDir);
   if (here.includes("case.yaml") || here.includes("prompt.md"))
     return [evalDir];
-  return here.filter((n) => !n.startsWith(".") && !SKIP_DIRS.has(n)).map((n) => join8(evalDir, n)).filter((p) => statSync4(p).isDirectory()).sort().flatMap((p) => findCaseDirs(p, depth + 1));
+  return here.filter((n) => !n.startsWith(".") && !SKIP_DIRS.has(n)).map((n) => join10(evalDir, n)).filter((p) => statSync5(p).isDirectory()).sort().flatMap((p) => findCaseDirs(p, depth + 1));
 }
 function globMatch(glob, text) {
   const re = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
@@ -9028,12 +9499,12 @@ function pathGlob(pattern) {
   return new RegExp(`${out}$`);
 }
 function inCase(c, p) {
-  return isAbsolute(p) ? p : resolve3(c.dir, p);
+  return isAbsolute(p) ? p : resolve4(c.dir, p);
 }
 
 // plugins/evals/src/run/graders.ts
-import { existsSync as existsSync9, readFileSync as readFileSync6, realpathSync as realpathSync2, statSync as statSync5 } from "node:fs";
-import { relative as relative3, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync8, realpathSync as realpathSync2, statSync as statSync6 } from "node:fs";
+import { relative as relative4, resolve as resolve5 } from "node:path";
 
 // plugins/evals/src/run/judge.ts
 var JUDGE_SYSTEM = "You are a strict, terse evaluation judge for coding-agent traces.";
@@ -9117,21 +9588,21 @@ function unavailable(g, reason) {
 }
 function focusText(focus, ctx) {
   if (typeof focus === "object") {
-    const file = resolve4(ctx.sandboxCwd, focus.path);
-    const rel = relative3(ctx.sandboxCwd, file);
+    const file = resolve5(ctx.sandboxCwd, focus.path);
+    const rel = relative4(ctx.sandboxCwd, file);
     if (rel.startsWith("..") || rel.startsWith("/"))
       return { kind: "unavailable", reason: `focus file ${focus.path} is outside the run's working folder` };
-    if (!existsSync9(file) || !statSync5(file).isFile())
+    if (!existsSync11(file) || !statSync6(file).isFile())
       return { kind: "unavailable", reason: `focus file ${focus.path} does not exist` };
     const real = realpathSync2(file);
-    if (relative3(realpathSync2(ctx.sandboxCwd), real).startsWith(".."))
+    if (relative4(realpathSync2(ctx.sandboxCwd), real).startsWith(".."))
       return { kind: "unavailable", reason: `focus file ${focus.path} links outside the run's working folder` };
     if (IMAGE.test(file))
       return {
         kind: "unavailable",
         reason: `${label(focus)} is an image; this runner shows the judge text only, so have the case write a text rendering and grade that`
       };
-    const bytes = readFileSync6(real);
+    const bytes = readFileSync8(real);
     if (bytes.includes(0))
       return {
         kind: "unavailable",
@@ -9166,7 +9637,7 @@ function focusText(focus, ctx) {
 `) };
 }
 function callMatches2(call, ref) {
-  if (call.name !== ref.tool)
+  if (call.name !== ref.tool && !call.aliases?.includes(ref.tool))
     return false;
   return ref.input_match ? new RegExp(ref.input_match).test(call.inputText) : true;
 }
@@ -9203,7 +9674,7 @@ async function judged(g, ctx) {
     prompt = llmPrompt(g.criteria, label(g.focus), evidence);
   } else {
     const file = inCase(ctx.case_, g.baseline_file);
-    const baseline = readFileSync6(file, "utf8").split(`
+    const baseline = readFileSync8(file, "utf8").split(`
 `).filter((l) => l.trim()).map((l) => {
       try {
         return JSON.parse(l);
@@ -9310,8 +9781,8 @@ function scoreOf(results) {
 }
 
 // plugins/evals/src/run/mocks.ts
-import { existsSync as existsSync10, readFileSync as readFileSync7, readdirSync as readdirSync6, statSync as statSync6 } from "node:fs";
-import { basename as basename4, dirname as dirname2, join as join9, relative as relative4, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync12, readFileSync as readFileSync9, readdirSync as readdirSync8, statSync as statSync7 } from "node:fs";
+import { basename as basename4, dirname as dirname2, join as join11, relative as relative5, resolve as resolve6 } from "node:path";
 var ABORT_PREFIX = "ABORT:";
 var ERROR_PREFIX = "ERROR:";
 var RESPONDER_FAILED = "mock agent responder failed";
@@ -9360,7 +9831,7 @@ function countGuards(e) {
   return Object.values(e).reduce((n, v) => n + (isObj2(v) ? countGuards(v) : 1), 0);
 }
 function readResponder(file, baseDir, label) {
-  const { fm, body } = splitFrontmatter(readFileSync7(file, "utf8"), label);
+  const { fm, body } = splitFrontmatter(readFileSync9(file, "utf8"), label);
   for (const k of Object.keys(fm)) {
     if (!["type", "expect", "error", "tools", "abort_when"].includes(k)) {
       throw new CaseError(`${label}: ${k}: unknown key (keys: type, expect, error, tools, abort_when)`);
@@ -9407,11 +9878,11 @@ function readResponder(file, baseDir, label) {
 }
 function readListings(file, label) {
   const out = new Map;
-  if (!existsSync10(file))
+  if (!existsSync12(file))
     return out;
   let raw;
   try {
-    raw = JSON.parse(readFileSync7(file, "utf8"));
+    raw = JSON.parse(readFileSync9(file, "utf8"));
   } catch (error) {
     throw new CaseError(`${label}: not valid JSON (${error.message})`);
   }
@@ -9432,13 +9903,13 @@ function readListings(file, label) {
 }
 function readLayer(mocksDir, root) {
   const out = new Map;
-  if (!existsSync10(mocksDir) || !statSync6(mocksDir).isDirectory())
+  if (!existsSync12(mocksDir) || !statSync7(mocksDir).isDirectory())
     return out;
-  for (const dirName of readdirSync6(mocksDir).sort()) {
-    const dir = join9(mocksDir, dirName);
-    if (!statSync6(dir).isDirectory())
+  for (const dirName of readdirSync8(mocksDir).sort()) {
+    const dir = join11(mocksDir, dirName);
+    if (!statSync7(dir).isDirectory())
       continue;
-    const shown = relative4(root, dir) || dir;
+    const shown = relative5(root, dir) || dir;
     if (!NAME.test(dirName)) {
       throw new CaseError(`${shown}: name the folder after the server (letters, digits, "_" and "-" only)`);
     }
@@ -9447,15 +9918,15 @@ function readLayer(mocksDir, root) {
     const layer = {
       toolFiles: new Map,
       serverAgent: null,
-      listings: readListings(join9(dir, "_tools.json"), `${shown}/_tools.json`)
+      listings: readListings(join11(dir, "_tools.json"), `${shown}/_tools.json`)
     };
-    for (const file of readdirSync6(dir).sort()) {
+    for (const file of readdirSync8(dir).sort()) {
       if (!file.endsWith(".md"))
         continue;
       const label = `${shown}/${file}`;
       const tool = file.slice(0, -3);
       if (file === "_server.md") {
-        const r = readResponder(join9(dir, file), dir, label);
+        const r = readResponder(join11(dir, file), dir, label);
         if (r.responder.kind !== "agent") {
           throw new CaseError(`${label}: only \`type: agent\` is meaningful here; put a fixed answer in <tool>.md`);
         }
@@ -9470,7 +9941,7 @@ function readLayer(mocksDir, root) {
       if (!NAME.test(tool) || tool.includes("__")) {
         throw new CaseError(`${label}: name responder files after the tool (letters, digits, "_" and "-" only), e.g. list_issues.md`);
       }
-      layer.toolFiles.set(tool, readResponder(join9(dir, file), dir, label).responder);
+      layer.toolFiles.set(tool, readResponder(join11(dir, file), dir, label).responder);
     }
     out.set(dirName, layer);
   }
@@ -9478,8 +9949,8 @@ function readLayer(mocksDir, root) {
 }
 function layerDirs(caseDir, evalRoot) {
   const dirs = [];
-  let d = resolve5(caseDir);
-  const root = resolve5(evalRoot);
+  let d = resolve6(caseDir);
+  const root = resolve6(evalRoot);
   for (;; ) {
     dirs.unshift(d);
     if (d === root || !d.startsWith(`${root}/`))
@@ -9493,7 +9964,7 @@ function layerDirs(caseDir, evalRoot) {
 }
 function loadMocks(caseDir, evalRoot) {
   const notes = [];
-  const layers = layerDirs(caseDir, evalRoot).map((d) => readLayer(join9(d, "mocks"), evalRoot));
+  const layers = layerDirs(caseDir, evalRoot).map((d) => readLayer(join11(d, "mocks"), evalRoot));
   const servers = new Map;
   for (const name of new Set(layers.flatMap((l) => [...l.keys()]))) {
     const mine = layers.flatMap((l) => l.has(name) ? [l.get(name)] : []);
@@ -9527,14 +9998,14 @@ function declaredServers(pluginDir) {
   const out = new Map;
   const read = (file) => {
     try {
-      return JSON.parse(readFileSync7(file, "utf8"));
+      return JSON.parse(readFileSync9(file, "utf8"));
     } catch {
       return;
     }
   };
   const take = (value, base) => {
     if (typeof value === "string")
-      value = read(resolve5(base, value));
+      value = read(resolve6(base, value));
     if (!isObj2(value))
       return;
     const map = isObj2(value.mcpServers) ? value.mcpServers : value;
@@ -9542,10 +10013,10 @@ function declaredServers(pluginDir) {
       if (isObj2(v) && !out.has(k))
         out.set(k, v);
   };
-  if (existsSync10(join9(pluginDir, ".mcp.json")))
-    take(read(join9(pluginDir, ".mcp.json")), pluginDir);
+  if (existsSync12(join11(pluginDir, ".mcp.json")))
+    take(read(join11(pluginDir, ".mcp.json")), pluginDir);
   for (const manifest of [".claude-plugin/plugin.json", "plugin.json", ".codex-plugin/plugin.json"]) {
-    const m = read(join9(pluginDir, manifest));
+    const m = read(join11(pluginDir, manifest));
     if (isObj2(m) && m.mcpServers !== undefined)
       take(m.mcpServers, pluginDir);
   }
@@ -9674,17 +10145,17 @@ function fillTemplate(text, input, baseDir, maxArg = Number.POSITIVE_INFINITY) {
         problem ??= `{input.${p}} = ${show(v)} is not a plain file-name segment`;
       return s;
     });
-    const file = resolve5(baseDir, path);
-    const rel = relative4(baseDir, file);
+    const file = resolve6(baseDir, path);
+    const rel = relative5(baseDir, file);
     if (!rel || rel.startsWith("..") || rel.startsWith("/")) {
       problem ??= `{{file:${path}}} names a path outside the mock's folder`;
       return "";
     }
-    if (!existsSync10(file)) {
+    if (!existsSync12(file)) {
       problem ??= `{{file:${path}}}: no such file`;
       return "";
     }
-    return readFileSync7(file, "utf8");
+    return readFileSync9(file, "utf8");
   });
   return problem === null ? { ok: true, text: out } : { ok: false, reason: problem };
 }
@@ -9776,13 +10247,13 @@ function listingsOf(server) {
 }
 
 // plugins/evals/src/run/plugins.ts
-import { cpSync, existsSync as existsSync11, mkdirSync as mkdirSync4, mkdtempSync as mkdtempSync2, readFileSync as readFileSync8, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { cpSync as cpSync3, existsSync as existsSync13, mkdirSync as mkdirSync5, mkdtempSync as mkdtempSync2, readFileSync as readFileSync10, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { basename as basename5, join as join10, resolve as resolve6 } from "node:path";
+import { basename as basename5, join as join12, resolve as resolve7 } from "node:path";
 var MANIFESTS = [".claude-plugin/plugin.json", "plugin.json", ".codex-plugin/plugin.json"];
 function readJson(file) {
   try {
-    const v = JSON.parse(readFileSync8(file, "utf8"));
+    const v = JSON.parse(readFileSync10(file, "utf8"));
     return v && typeof v === "object" && !Array.isArray(v) ? v : undefined;
   } catch {
     return;
@@ -9790,17 +10261,17 @@ function readJson(file) {
 }
 function manifestOf(dir) {
   for (const m of MANIFESTS) {
-    const data = readJson(join10(dir, m));
+    const data = readJson(join12(dir, m));
     if (data)
-      return { path: join10(dir, m), data };
+      return { path: join12(dir, m), data };
   }
   return;
 }
 function isPlugin(dir) {
-  return manifestOf(dir) !== undefined || existsSync11(join10(dir, "skills")) || existsSync11(join10(dir, "hooks", "hooks.json"));
+  return manifestOf(dir) !== undefined || existsSync13(join12(dir, "skills")) || existsSync13(join12(dir, "hooks", "hooks.json"));
 }
 function isSkill(dir) {
-  return existsSync11(join10(dir, "SKILL.md"));
+  return existsSync13(join12(dir, "SKILL.md"));
 }
 function pluginName(dir) {
   const m = manifestOf(dir);
@@ -9812,22 +10283,22 @@ function pluginVersion(dir) {
 }
 function evalDirOf(target, flag) {
   if (flag)
-    return resolve6(target, flag);
+    return resolve7(target, flag);
   const evals = manifestOf(target)?.data.experimental?.evals;
   if (typeof evals === "string" && evals && !evals.startsWith("/") && !evals.split("/").includes(".."))
-    return resolve6(target, evals);
-  return join10(target, "evals");
+    return resolve7(target, evals);
+  return join12(target, "evals");
 }
 var wrapped = new Map;
 function wrapSkill(skillDir) {
   const known = wrapped.get(skillDir);
   if (known)
     return known;
-  const root = mkdtempSync2(join10(tmpdir2(), "evals-skill-"));
+  const root = mkdtempSync2(join12(tmpdir2(), "evals-skill-"));
   const name = basename5(skillDir);
-  mkdirSync4(join10(root, ".claude-plugin"), { recursive: true });
-  writeFileSync4(join10(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name }));
-  cpSync(skillDir, join10(root, "skills", name), { recursive: true, filter: (src) => !src.includes(`${name}/evals`) });
+  mkdirSync5(join12(root, ".claude-plugin"), { recursive: true });
+  writeFileSync6(join12(root, ".claude-plugin", "plugin.json"), JSON.stringify({ name }));
+  cpSync3(skillDir, join12(root, "skills", name), { recursive: true, filter: (src) => !src.includes(`${name}/evals`) });
   wrapped.set(skillDir, root);
   return root;
 }
@@ -9840,7 +10311,7 @@ function casePluginDirs(c, targetPlugin) {
   if (c.plugins) {
     return c.plugins.map((p) => {
       const dir = inCase(c, p);
-      if (!existsSync11(dir))
+      if (!existsSync13(dir))
         throw new CaseError(`case "${c.name}": plugins: ${p} does not exist`);
       if (isPlugin(dir))
         return dir;
@@ -9855,8 +10326,8 @@ function rebindPlugin(pluginDir, into, servers, command) {
   const mine = servers.filter((s) => s.kind === "shadow" && s.pluginDir === pluginDir);
   if (mine.length === 0)
     return pluginDir;
-  const dest = join10(into, basename5(pluginDir));
-  cpSync(pluginDir, dest, { recursive: true, filter: (src) => !/\/(\.git|node_modules\/\.cache)(\/|$)/.test(src) });
+  const dest = join12(into, basename5(pluginDir));
+  cpSync3(pluginDir, dest, { recursive: true, filter: (src) => !/\/(\.git|node_modules\/\.cache)(\/|$)/.test(src) });
   const declared = declaredServers(pluginDir);
   const kept = {};
   for (const [name, config] of declared) {
@@ -9866,16 +10337,16 @@ function rebindPlugin(pluginDir, into, servers, command) {
     else if (!plan.withheld)
       kept[name] = { type: "stdio", ...command(plan) };
   }
-  writeFileSync4(join10(dest, ".mcp.json"), JSON.stringify({ mcpServers: kept }, null, 2));
+  writeFileSync6(join12(dest, ".mcp.json"), JSON.stringify({ mcpServers: kept }, null, 2));
   for (const m of MANIFESTS) {
-    const data = readJson(join10(dest, m));
+    const data = readJson(join12(dest, m));
     if (data && "mcpServers" in data) {
       delete data.mcpServers;
-      writeFileSync4(join10(dest, m), JSON.stringify(data, null, 2));
+      writeFileSync6(join12(dest, m), JSON.stringify(data, null, 2));
     }
   }
-  if (existsSync11(join10(dest, "mcp.json")))
-    rmSync2(join10(dest, "mcp.json"));
+  if (existsSync13(join12(dest, "mcp.json")))
+    rmSync2(join12(dest, "mcp.json"));
   return dest;
 }
 
@@ -9883,14 +10354,14 @@ function rebindPlugin(pluginDir, into, servers, command) {
 function mockServerPath() {
   const here = dirname3(fileURLToPath(import.meta.url));
   for (const p of [
-    join11(here, "mock-server.mjs"),
-    join11(here, "..", "..", "bin", "mock-server.mjs"),
-    join11(here, "..", "bin", "mock-server.mjs")
+    join13(here, "mock-server.mjs"),
+    join13(here, "..", "..", "bin", "mock-server.mjs"),
+    join13(here, "..", "bin", "mock-server.mjs")
   ]) {
-    if (existsSync12(p))
+    if (existsSync14(p))
       return p;
   }
-  return process.env.EVALS_MOCK_SERVER ?? join11(here, "mock-server.mjs");
+  return process.env.EVALS_MOCK_SERVER ?? join13(here, "mock-server.mjs");
 }
 function rule(text) {
   const m = /^([^(]+)\((.*)\)$/.exec(text.trim());
@@ -9917,6 +10388,36 @@ function armsOf(c, pluginDirs, mode, auto) {
 var mean2 = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
 function safeName(s) {
   return s.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80) || "case";
+}
+function instructionsFor(c, options) {
+  if (options.instructions)
+    return resolve8(options.instructions);
+  return c.context.instructions ? inCase(c, c.context.instructions) : undefined;
+}
+function loadInstructions(c, options, box, historyFile) {
+  const file = instructionsFor(c, options);
+  if (!file)
+    return { written: false, notes: [] };
+  const text = readFileSync11(file, "utf8");
+  if (historyFile) {
+    const records = readTranscript(historyFile);
+    const type = options.instructionsScope === "user" ? "User" : "Project";
+    const edits = recordedFiles(records).filter((f) => (f.type ?? "Project") === type).map((f) => ({ kind: "replace", path: f.path, text }));
+    if (edits.length > 0) {
+      const result = rewriteHistory(records, edits);
+      writeFileSync7(historyFile, `${result.records.map((r) => JSON.stringify(r)).join(`
+`)}
+`);
+      return { written: false, notes: result.warnings };
+    }
+  }
+  writeFileSync7(options.harness.instructionsPath(box, options.instructionsScope, options.instructionsName), text);
+  return {
+    written: true,
+    notes: historyFile ? [
+      "the history loaded no instruction file of this scope, so the file was written for the resumed session to load"
+    ] : []
+  };
 }
 async function scaffold(c, box, signal) {
   const script = inCase(c, c.context.scaffold_script);
@@ -10010,8 +10511,8 @@ async function runOne(job, options, runsDir, state) {
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
   const box = createSandbox();
-  const out = join11(runsDir, safeName(c.name), `${arm}-${index + 1}`);
-  mkdirSync5(out, { recursive: true });
+  const out = join13(runsDir, safeName(c.name), `${arm}-${index + 1}`);
+  mkdirSync6(out, { recursive: true });
   const base = { passed: false, turns: 0, costUsd: 0, judgeCostUsd: 0, graders: [], startedAt, tracePath: "" };
   const finish = (r) => ({
     ...r,
@@ -10026,13 +10527,14 @@ async function runOne(job, options, runsDir, state) {
     }
     let historyFile;
     if (c.context.history_file) {
-      historyFile = join11(box.root, "history.jsonl");
-      copyFileSync3(inCase(c, c.context.history_file), historyFile);
+      historyFile = join13(box.root, "history.jsonl");
+      copyFileSync4(inCase(c, c.context.history_file), historyFile);
     }
+    const loaded = loadInstructions(c, options, box, historyFile);
     const servers = options.mocks ? forArm(plan.servers, arm) : [];
     const live = servers.filter((s) => !s.withheld);
     const token = randomBytes2(12).toString("hex");
-    const socketPath = join11(box.root, "mock.sock");
+    const socketPath = join13(box.root, "mock.sock");
     let kill;
     let aborted;
     const ask = hasAgentResponders(live) ? (s, u) => options.judgeHarness.ask(s, u, options.judgeModel, options.signal) : null;
@@ -10044,12 +10546,12 @@ async function runOne(job, options, runsDir, state) {
       await relay.ready;
     }
     const command = (s) => {
-      const spec = join11(box.outDir, `mock-${s.dirName}.json`);
-      writeFileSync5(spec, JSON.stringify({ server: s.dirName, tools: listingsOf(s.server), socket: socketPath, token }));
+      const spec = join13(box.outDir, `mock-${s.dirName}.json`);
+      writeFileSync7(spec, JSON.stringify({ server: s.dirName, tools: listingsOf(s.server), socket: socketPath, token }));
       return { command: process.execPath.endsWith("node") ? process.execPath : "node", args: [mockServerPath(), spec] };
     };
-    const pluginsHome = join11(box.root, "plugins");
-    mkdirSync5(pluginsHome, { recursive: true });
+    const pluginsHome = join13(box.root, "plugins");
+    mkdirSync6(pluginsHome, { recursive: true });
     const pluginDirs = arm === "with" ? plan.pluginDirs.map((d) => rebindPlugin(d, pluginsHome, servers, command)) : [];
     const standalone = live.filter((s) => s.kind === "standalone").map((s) => ({ name: s.dirName, ...command(s) }));
     const mockedTools = live.flatMap((s) => [...s.server.tools.keys()].map((t) => options.harness.mcpToolName(s.dirName, t, s.kind === "shadow" ? pluginName(s.pluginDir) : undefined)));
@@ -10071,19 +10573,20 @@ async function runOne(job, options, runsDir, state) {
       addDirs: c.context.add_dirs.map((d) => inCase(c, d)),
       readOnlyDirs: [...plan.pluginDirs, c.dir],
       env: c.execution.env,
+      loadsInstructions: loaded.written,
       signal: options.signal,
       onSpawn: (k) => {
         kill = k;
       }
     });
     const cwdDiff = createdFiles(before, listFiles(box.cwd));
-    if (existsSync12(run.tracePath)) {
-      copyFileSync3(run.tracePath, join11(out, "trace.jsonl"));
-      run.tracePath = join11(out, "trace.jsonl");
+    if (existsSync14(run.tracePath)) {
+      copyFileSync4(run.tracePath, join13(out, "trace.jsonl"));
+      run.tracePath = join13(out, "trace.jsonl");
     }
     const mockCalls = relay?.calls ?? [];
     if (relay)
-      writeFileSync5(join11(out, "mock-calls.jsonl"), mockCalls.map((m) => JSON.stringify(m)).join(`
+      writeFileSync7(join13(out, "mock-calls.jsonl"), mockCalls.map((m) => JSON.stringify(m)).join(`
 `));
     const queue = [...mockCalls];
     for (const call of run.toolCalls) {
@@ -10091,6 +10594,9 @@ async function runOne(job, options, runsDir, state) {
       if (i >= 0) {
         const m = queue.splice(i, 1)[0];
         call.mock = { server: m.server, tool: m.tool, verdict: m.verdict };
+        const plain = `mcp__${m.server}__${m.tool}`;
+        if (plain !== call.name)
+          call.aliases = [...call.aliases ?? [], plain];
       }
     }
     const mockCost = mockCalls.reduce((n, m) => n + (m.costUsd ?? 0), 0);
@@ -10113,6 +10619,7 @@ async function runOne(job, options, runsDir, state) {
       ...base,
       turns: run.numTurns,
       tracePath: run.tracePath,
+      ...loaded.notes.length > 0 && { notes: loaded.notes },
       ...mocks && { mocks },
       ...run.authRejected && { authRejected: run.authRejected }
     };
@@ -10179,8 +10686,8 @@ async function pool(items, n, work) {
   }));
 }
 function loadSuite(target, evalDirFlag, caseGlobs, tags) {
-  const root = resolve7(target);
-  if (!existsSync12(root))
+  const root = resolve8(target);
+  if (!existsSync14(root))
     throw new CaseError(`${target} does not exist`);
   const targetPlugin = isPlugin(root) ? root : isSkill(root) ? wrapSkill(root) : null;
   const evalDir = isSkill(root) && !isPlugin(root) ? evalDirOf(root, evalDirFlag) : evalDirOf(root, evalDirFlag);
@@ -10202,7 +10709,7 @@ function loadSuite(target, evalDirFlag, caseGlobs, tags) {
       cases.push(c);
       notes.push(...c.notes);
     } catch (error) {
-      errors.push({ case: relative5(evalDir, dir) || ".", error: error.message });
+      errors.push({ case: relative6(evalDir, dir) || ".", error: error.message });
     }
   }
   const names = new Map;
@@ -10257,9 +10764,9 @@ async function runSuite(options) {
       options.onLine(`  ${p.c.name}: ${n}`);
   }
   const startedAt = new Date(started).toISOString();
-  const outputDir = resolve7(options.outputDir ?? join11(suite.evalDir, "results", startedAt.replace(/[:.]/g, "-")));
-  const runsDir = join11(outputDir, "runs");
-  mkdirSync5(runsDir, { recursive: true });
+  const outputDir = resolve8(options.outputDir ?? join13(suite.evalDir, "results", startedAt.replace(/[:.]/g, "-")));
+  const runsDir = join13(outputDir, "runs");
+  mkdirSync6(runsDir, { recursive: true });
   const harnessVersion = await options.harness.version().catch(() => "unknown");
   const jobs = planned.flatMap((plan) => plan.arms.flatMap((arm) => Array.from({ length: options.runs ?? plan.c.runs }, (_, index) => ({ plan, arm, index }))));
   const results = new Map;
@@ -10319,7 +10826,7 @@ async function runSuite(options) {
     }
     return {
       name: p.c.name,
-      dir: relative5(suite.evalDir, p.c.dir) || ".",
+      dir: relative6(suite.evalDir, p.c.dir) || ".",
       source: p.c.source,
       promptMarkdown: p.c.execution.prompt,
       model: options.model ?? p.c.execution.model ?? null,
@@ -10359,6 +10866,12 @@ async function runSuite(options) {
       threshold: options.threshold,
       concurrency: options.concurrency,
       pluginId: suite.targetPlugin ? pluginName(suite.targetPlugin) : null,
+      judgeHarness: options.judgeHarness.name,
+      instructions: options.instructions ? {
+        path: resolve8(options.instructions),
+        sha256: createHash2("sha256").update(readFileSync11(options.instructions)).digest("hex"),
+        scope: options.instructionsScope
+      } : null,
       plugins: [...new Set(planned.flatMap((p) => p.pluginDirs))].map((d) => ({
         name: pluginName(d),
         version: pluginVersion(d),
@@ -10376,243 +10889,12 @@ async function runSuite(options) {
       meanDelta: deltas.length ? mean2(deltas) : null
     }
   };
-  writeFileSync5(join11(outputDir, "aggregate-result.json"), `${JSON.stringify(result, null, 2)}
+  writeFileSync7(join13(outputDir, "aggregate-result.json"), `${JSON.stringify(result, null, 2)}
 `);
   cleanupWrapped();
   const failed = ran.some((c) => c.aggregates.score < options.threshold || [...c.arms.with, ...c.arms.without ?? []].some((r) => r.error || r.aborted));
   const exitCode = partialReason ? 2 : failed || suite.errors.length > 0 || allRuns.some((r) => r.endedOnApiError) ? 1 : 0;
   return { result, exitCode, outputDir };
-}
-
-// plugins/evals/src/instructions.ts
-import { cpSync as cpSync2, existsSync as existsSync13, mkdirSync as mkdirSync6, readFileSync as readFileSync9, readdirSync as readdirSync7, statSync as statSync7, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join12, relative as relative6, resolve as resolve8 } from "node:path";
-var LABELS = {
-  Project: "project instructions, checked into the codebase",
-  User: "user's private global instructions for all projects",
-  Local: "user's private project instructions, not checked in",
-  Managed: "managed instructions"
-};
-function renderFile(text) {
-  let body = text.replace(/^﻿/, "");
-  const fm = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(body);
-  if (fm)
-    body = body.slice(fm[0].length);
-  return body.replace(/<!--[\s\S]*?-->/g, "").replace(/^\n+/, "");
-}
-function header(file) {
-  return `Contents of ${file.path} (${LABELS[file.type ?? "Project"] ?? LABELS.Project}):`;
-}
-function reminder(files) {
-  const sections = files.map((f) => `${header(f)}
-
-${f.content}`);
-  return `<system-reminder>
-Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
-
-${sections.join(`
-
-`)}
-</system-reminder>`;
-}
-function recordedFiles(records) {
-  const files = new Map;
-  for (const rec of records) {
-    if (rec.type === "attachment" && rec.attachment?.type === "instructions") {
-      for (const f of rec.attachment.files ?? [])
-        files.set(f.path, f);
-    }
-  }
-  return [...files.values()];
-}
-function rewriteHistory(records, edits) {
-  const warnings = [];
-  let changed = 0;
-  const seen = new Set;
-  const out = records.map((rec) => {
-    if (rec.type !== "attachment" || rec.attachment?.type !== "instructions")
-      return rec;
-    let files = [...rec.attachment.files ?? []];
-    let rendered = Array.isArray(rec.rendered) ? rec.rendered.map((r) => r.content).join("") : undefined;
-    let exact = rendered !== undefined;
-    const section = (f) => `${header(f)}
-
-${f.content}`;
-    for (const edit of edits) {
-      const at = files.findIndex((f) => f.path === edit.path);
-      const old = at >= 0 ? files[at] : undefined;
-      if (edit.kind === "remove") {
-        if (!old)
-          continue;
-        seen.add(edit.path);
-        files = files.filter((_, i) => i !== at);
-        if (rendered !== undefined) {
-          const next = rendered.replace(`
-
-${section(old)}`, "");
-          exact &&= next !== rendered;
-          rendered = next;
-        }
-        continue;
-      }
-      if (edit.kind === "replace" && !old)
-        continue;
-      seen.add(edit.path);
-      const file = old ? { ...old, content: renderFile(edit.text) } : {
-        path: edit.path,
-        type: edit.kind === "add" ? edit.type ?? "Project" : "Project",
-        content: renderFile(edit.text)
-      };
-      if (old)
-        files[at] = file;
-      else
-        files.push(file);
-      if (rendered !== undefined) {
-        const next = old ? rendered.replace(section(old), () => section(file)) : rendered.replace(/\n<\/system-reminder>\s*$/, () => `
-
-${section(file)}
-</system-reminder>`);
-        exact &&= next !== rendered;
-        rendered = next;
-      }
-    }
-    changed++;
-    const next = { ...rec, attachment: { ...rec.attachment, files } };
-    if (rendered !== undefined) {
-      if (!exact)
-        warnings.push("a recorded instructions message didn't quote the files as expected, so it was rebuilt from them");
-      next.rendered = exact ? [{ content: rendered }] : files.length ? [{ content: reminder(files) }] : [];
-    }
-    return next;
-  });
-  for (const edit of edits) {
-    if (edit.kind !== "add" && !seen.has(edit.path)) {
-      const known = recordedFiles(records).map((f) => f.path);
-      throw new Error(`the history never loaded ${edit.path}${known.length ? `; it loaded ${known.join(", ")}` : ""}`);
-    }
-  }
-  if (changed === 0) {
-    if (edits.some((e) => e.kind === "add")) {
-      warnings.push("the history loaded no instruction files, so there was no attachment to add to; use a shim plugin for this case");
-    }
-  }
-  for (const edit of edits) {
-    if (edit.kind !== "remove" && /^\s*@\S/m.test(edit.text)) {
-      warnings.push(`${edit.path} has an @import line; it's sent as written, not expanded`);
-    }
-  }
-  return { records: out, changed, warnings };
-}
-function rewriteHistoryFile(path, edits, outPath = path) {
-  const result = rewriteHistory(readTranscript(path), edits);
-  writeFileSync6(outPath, result.records.map((r) => JSON.stringify(r)).join(`
-`) + `
-`);
-  return result;
-}
-function writeShim(dir, files, name = "instructions-variant") {
-  const rendered = files.map((f) => ({ path: f.path, type: f.type ?? "Project", content: renderFile(f.text) }));
-  const context = rendered.map((f) => `${header(f)}
-
-${f.content}`).join(`
-
-`);
-  mkdirSync6(join12(dir, ".claude-plugin"), { recursive: true });
-  mkdirSync6(join12(dir, "hooks"), { recursive: true });
-  writeFileSync6(join12(dir, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name, description: "Adds an instruction-file variant as session context, for evals." }, null, 2)}
-`);
-  writeFileSync6(join12(dir, "hooks", "context.json"), `${JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } })}
-`);
-  writeFileSync6(join12(dir, "hooks", "hooks.json"), `${JSON.stringify({
-    hooks: {
-      SessionStart: [{ hooks: [{ type: "command", command: 'cat "${CLAUDE_PLUGIN_ROOT}/hooks/context.json"' }] }]
-    }
-  }, null, 2)}
-`);
-}
-function caseDirs(root) {
-  const out = [];
-  const walk = (dir) => {
-    const names = readdirSync7(dir);
-    if (names.includes("case.yaml") || names.includes("prompt.md")) {
-      out.push(dir);
-      return;
-    }
-    for (const n of names) {
-      if (n === "results" || n === "mocks" || n.startsWith("."))
-        continue;
-      const p = join12(dir, n);
-      if (statSync7(p).isDirectory())
-        walk(p);
-    }
-  };
-  walk(root);
-  return out;
-}
-function historyOf(caseDir) {
-  const yaml = join12(caseDir, "case.yaml");
-  if (!existsSync13(yaml))
-    return;
-  const m = /^\s+history_file:\s*["']?([^"'\n]+)["']?\s*$/m.exec(readFileSync9(yaml, "utf8"));
-  return m ? join12(caseDir, m[1].trim()) : undefined;
-}
-function addPlugin(caseDir, pluginDir) {
-  const rel = relative6(caseDir, pluginDir);
-  const yamlPath = join12(caseDir, "case.yaml");
-  if (!existsSync13(yamlPath)) {
-    const name = caseDir.split("/").pop();
-    writeFileSync6(yamlPath, `schema_version: "1.1"
-name: ${JSON.stringify(name)}
-plugins: [${JSON.stringify(rel)}]
-`);
-    return;
-  }
-  let yaml = readFileSync9(yamlPath, "utf8");
-  const inline = /^plugins:\s*\[(.*)\]\s*$/m.exec(yaml);
-  if (inline) {
-    const items = inline[1].trim() ? `${inline[1].trim()}, ` : "";
-    yaml = yaml.replace(inline[0], `plugins: [${items}${JSON.stringify(rel)}]`);
-  } else if (/^plugins:\s*$/m.test(yaml)) {
-    yaml = yaml.replace(/^plugins:\s*$/m, `plugins:
-  - ${JSON.stringify(rel)}`);
-  } else {
-    yaml = yaml.replace(/^(name:.*)$/m, `$1
-plugins: [${JSON.stringify(rel)}]`);
-  }
-  writeFileSync6(yamlPath, yaml);
-}
-function writeVariant(options) {
-  const suite = resolve8(options.suite);
-  const out = resolve8(options.out);
-  if (existsSync13(out))
-    throw new Error(`${out} exists; pick a new folder for the variant`);
-  const text = readFileSync9(options.file, "utf8");
-  const path = options.path ?? options.replaces ?? resolve8(options.file);
-  cpSync2(suite, out, {
-    recursive: true,
-    filter: (src) => !relative6(suite, src).split("/").includes("results")
-  });
-  const result = { recorded: [], fresh: [], warnings: [] };
-  const shimDir = join12(out, ".variant-plugin");
-  let shimWritten = false;
-  for (const dir of caseDirs(out)) {
-    const history = historyOf(dir);
-    if (history && existsSync13(history)) {
-      if (!options.replaces)
-        throw new Error(`${relative6(out, dir)} is a recorded case; pass --replaces <the path its session loaded>`);
-      const r = rewriteHistoryFile(history, [{ kind: "replace", path: options.replaces, text }]);
-      result.warnings.push(...r.warnings.map((w) => `${relative6(out, dir)}: ${w}`));
-      result.recorded.push(relative6(out, dir));
-    } else {
-      if (!shimWritten) {
-        writeShim(shimDir, [{ path, type: options.type, text }]);
-        shimWritten = true;
-      }
-      addPlugin(dir, shimDir);
-      result.fresh.push(relative6(out, dir));
-    }
-  }
-  return result;
 }
 
 // plugins/evals/src/cli.ts
@@ -10642,11 +10924,12 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
                        [--type Project|User|Local] [--out <file>]
   variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
 
-  run [target] [--runs n] [--model m] [--judge-model m] [--ablation none|with-without] [--case glob]... [--tag t]...
+  run [target] [--harness claude|codex] [--runs n] [--model m (opus)] [--judge-model m (opus)] [--judge-harness claude|codex]
+      [--instructions <file>] [--instructions-scope project|user] [--instructions-name AGENTS.md] [--ablation none|with-without] [--case glob]... [--tag t]...
       [--allow-tools t...] [--disallow-tools t...] [--threshold 0..1] [--max-cost-usd usd] [-j n] [--scaffold]
       [--mocks record|off] [--allow-real-servers] [--eval-dir d] [--output-dir d] [--report file] [--json [file]] [--keep-temp]
                                        runs the target's eval cases (<target>/evals/**/case.yaml or prompt.md) the
-                                       way \`claude plugin eval\` does; --max-cost-usd 0 loads them and runs nothing
+                                       way \`claude plugin eval\` does, under Claude Code or Codex; --max-cost-usd 0 loads them and runs nothing
 
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
                                        B against A: paired per-case score Δ with a 95% interval and a sign test;
@@ -10844,8 +11127,17 @@ var RUN_OPTIONS = {
   concurrency: { type: "string", short: "j" },
   "keep-temp": { type: "boolean" },
   mocks: { type: "string" },
-  "allow-real-servers": { type: "boolean" }
+  "allow-real-servers": { type: "boolean" },
+  harness: { type: "string" },
+  "judge-harness": { type: "string" },
+  instructions: { type: "string" },
+  "instructions-scope": { type: "string" },
+  "instructions-name": { type: "string" }
 };
+var HARNESSES = { claude: claudeHarness, codex: codexHarness };
+function harnessOf(name, flag) {
+  return HARNESSES[String(name)] ?? fail(`${flag} claude | codex`);
+}
 function number(value, flag, min, max, integer = false) {
   if (value === undefined)
     return;
@@ -10863,6 +11155,13 @@ async function runCommand(argv) {
   const mocks = values.mocks ?? "record";
   if (mocks !== "record" && mocks !== "off")
     fail("--mocks record | off");
+  const harness = harnessOf(values.harness ?? "claude", "--harness");
+  const judgeHarness = harnessOf(values["judge-harness"] ?? "claude", "--judge-harness");
+  const scope = values["instructions-scope"] ?? "project";
+  if (scope !== "project" && scope !== "user")
+    fail("--instructions-scope project | user");
+  const model = values.model ?? (harness.name === "claude" ? "opus" : undefined);
+  const judgeModel = values["judge-model"] ?? (judgeHarness.name === "claude" ? "opus" : undefined);
   const log = (line) => jsonBare ? console.error(line) : console.log(line);
   const controller = new AbortController;
   process.once("SIGINT", () => controller.abort());
@@ -10870,8 +11169,8 @@ async function runCommand(argv) {
     target: positionals[0] ?? ".",
     evalDir: values["eval-dir"],
     runs: number(values.runs, "--runs", 1, 50, true),
-    model: values.model,
-    judgeModel: values["judge-model"] ?? "haiku",
+    model,
+    judgeModel,
     ablation,
     threshold: number(values.threshold, "--threshold", 0, 1) ?? 1,
     maxCostUsd: number(values["max-cost-usd"], "--max-cost-usd", 0, Number.MAX_SAFE_INTEGER),
@@ -10885,20 +11184,25 @@ async function runCommand(argv) {
     keepTemp: Boolean(values["keep-temp"]),
     mocks: mocks === "record",
     allowRealServers: Boolean(values["allow-real-servers"]),
-    harness: claudeHarness,
-    judgeHarness: claudeHarness,
+    harness,
+    judgeHarness,
+    ...values.instructions !== undefined && { instructions: values.instructions },
+    instructionsScope: scope,
+    ...values["instructions-name"] !== undefined && { instructionsName: values["instructions-name"] },
     onLine: log,
     signal: controller.signal
   });
-  const reportPath = values.report ?? join13(outputDir, "report.html");
+  const reportPath = values.report ?? join14(outputDir, "report.html");
   mkdirSync7(dirname4(reportPath), { recursive: true });
-  writeFileSync7(reportPath, renderReport(result));
+  writeFileSync8(reportPath, renderReport(result));
   if (jsonBare)
     console.log(JSON.stringify(result, null, 2));
   else if (values.json)
-    writeFileSync7(values.json, `${JSON.stringify(result, null, 2)}
+    writeFileSync8(values.json, `${JSON.stringify(result, null, 2)}
 `);
-  log(`results: ${join13(outputDir, "aggregate-result.json")}
+  if (result.partial)
+    log(`⚠ partial: ${result.partialReason}`);
+  log(`results: ${join14(outputDir, "aggregate-result.json")}
 report: ${reportPath}`);
   process.exitCode = exitCode;
 }
@@ -10951,7 +11255,7 @@ function main(argv) {
       const dir = positionals[0] ?? fail("grade <case dir>");
       const verdicts = gradeCase(dir, {
         transcript: values.transcript,
-        text: values["text-file"] ? readFileSync10(values["text-file"], "utf8") : undefined
+        text: values["text-file"] ? readFileSync12(values["text-file"], "utf8") : undefined
       });
       for (const v of verdicts) {
         const mark = v.passed === undefined ? "  ·  " : v.passed ? "PASS " : "FAIL ";
@@ -10979,7 +11283,7 @@ function main(argv) {
           out: { type: "string" }
         });
         const path = positionals[0] ?? fail("instructions rewrite <history.jsonl> ...");
-        const text = values.with ? readFileSync10(values.with, "utf8") : undefined;
+        const text = values.with ? readFileSync12(values.with, "utf8") : undefined;
         let edit;
         if (values.replace)
           edit = {

@@ -2,12 +2,14 @@
 // times as it asks, each run in a fresh sandbox; grading each run; and writing the results in
 // `claude plugin eval`'s aggregate-result.json shape, so the same tools read either.
 
-import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { type Edit, recordedFiles, rewriteHistory } from "../instructions.ts";
+import { readTranscript } from "../transcript.ts";
 import { type Case, CaseError, findCaseDirs, globMatch, inCase, loadCase } from "./case.ts";
 import { scoreOf, gradeRun, type GraderResult } from "./graders.ts";
 import { READ_ONLY_TOOLS } from "./harness/claude.ts";
@@ -59,6 +61,12 @@ export type RunOptions = {
   allowRealServers: boolean;
   harness: Harness;
   judgeHarness: Harness;
+  /** An instruction file every case loads, in place of the case's own `context.instructions`. */
+  instructions?: string;
+  /** Where the instruction file loads from: the project (working folder) or the user's config. */
+  instructionsScope: "project" | "user";
+  /** The instruction file's name in the working folder (default: the harness's own, CLAUDE.md or AGENTS.md). */
+  instructionsName?: string;
   onLine: (line: string) => void;
   signal?: AbortSignal;
 };
@@ -79,6 +87,7 @@ export type RunRecord = {
   aborted?: { server: string; tool: string; reason: string };
   endedOnApiError?: boolean;
   authRejected?: string;
+  notes?: string[];
   mocks?: {
     servers: { server: string; kind: string; withheld?: boolean; tools: { tool: string; responder: string }[] }[];
     warnings: string[];
@@ -139,6 +148,9 @@ export type Result = {
     concurrency: number;
     pluginId: string | null;
     plugins: { name: string; version: string | null; path: string; problem: string | null }[];
+    judgeHarness: string;
+    /** The instruction file every case loaded (--instructions), with its hash. */
+    instructions: { path: string; sha256: string; scope: "project" | "user" } | null;
   };
   cases: CaseRecord[];
   errors: { case: string; error: string }[];
@@ -199,6 +211,49 @@ const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.l
 
 function safeName(s: string): string {
   return s.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80) || "case";
+}
+
+/** The instruction file a case's run loads: the operator's, else the case's own. */
+export function instructionsFor(c: Case, options: Pick<RunOptions, "instructions">): string | undefined {
+  if (options.instructions) return resolve(options.instructions);
+  return c.context.instructions ? inCase(c, c.context.instructions) : undefined;
+}
+
+/**
+ * Puts the instruction file where the harness loads it. A recorded case's history already carries
+ * the files its session loaded, so there the recorded text is replaced in a copy of the history
+ * (the resumed conversation then reads the new text where the old was) and no file is written.
+ */
+function loadInstructions(
+  c: Case,
+  options: RunOptions,
+  box: Sandbox,
+  historyFile: string | undefined,
+): { written: boolean; notes: string[] } {
+  const file = instructionsFor(c, options);
+  if (!file) return { written: false, notes: [] };
+  const text = readFileSync(file, "utf8");
+  if (historyFile) {
+    const records = readTranscript(historyFile);
+    const type = options.instructionsScope === "user" ? "User" : "Project";
+    const edits: Edit[] = recordedFiles(records)
+      .filter((f) => (f.type ?? "Project") === type)
+      .map((f) => ({ kind: "replace", path: f.path, text }));
+    if (edits.length > 0) {
+      const result = rewriteHistory(records, edits);
+      writeFileSync(historyFile, `${result.records.map((r) => JSON.stringify(r)).join("\n")}\n`);
+      return { written: false, notes: result.warnings };
+    }
+  }
+  writeFileSync(options.harness.instructionsPath(box, options.instructionsScope, options.instructionsName), text);
+  return {
+    written: true,
+    notes: historyFile
+      ? [
+          "the history loaded no instruction file of this scope, so the file was written for the resumed session to load",
+        ]
+      : [],
+  };
 }
 
 /** Runs the case's scaffold script in the run's working folder. */
@@ -328,6 +383,7 @@ async function runOne(job: Job, options: RunOptions, runsDir: string, state: { s
       historyFile = join(box.root, "history.jsonl");
       copyFileSync(inCase(c, c.context.history_file), historyFile);
     }
+    const loaded = loadInstructions(c, options, box, historyFile);
 
     const servers = options.mocks ? forArm(plan.servers, arm) : [];
     const live = servers.filter((s) => !s.withheld);
@@ -385,6 +441,7 @@ async function runOne(job: Job, options: RunOptions, runsDir: string, state: { s
       addDirs: c.context.add_dirs.map((d) => inCase(c, d)),
       readOnlyDirs: [...plan.pluginDirs, c.dir],
       env: c.execution.env,
+      loadsInstructions: loaded.written,
       signal: options.signal,
       onSpawn: (k) => {
         kill = k;
@@ -413,6 +470,9 @@ async function runOne(job: Job, options: RunOptions, runsDir: string, state: { s
       if (i >= 0) {
         const m = queue.splice(i, 1)[0]!;
         call.mock = { server: m.server, tool: m.tool, verdict: m.verdict };
+        // A grader can name the tool the same way under every harness: mcp__<server>__<tool>.
+        const plain = `mcp__${m.server}__${m.tool}`;
+        if (plain !== call.name) call.aliases = [...(call.aliases ?? []), plain];
       }
     }
     const mockCost = mockCalls.reduce((n, m) => n + (m.costUsd ?? 0), 0);
@@ -437,6 +497,7 @@ async function runOne(job: Job, options: RunOptions, runsDir: string, state: { s
       ...base,
       turns: run.numTurns,
       tracePath: run.tracePath,
+      ...(loaded.notes.length > 0 && { notes: loaded.notes }),
       ...(mocks && { mocks }),
       ...(run.authRejected && { authRejected: run.authRejected }),
     };
@@ -724,6 +785,14 @@ export async function runSuite(options: RunOptions): Promise<{ result: Result; e
       threshold: options.threshold,
       concurrency: options.concurrency,
       pluginId: suite.targetPlugin ? pluginName(suite.targetPlugin) : null,
+      judgeHarness: options.judgeHarness.name,
+      instructions: options.instructions
+        ? {
+            path: resolve(options.instructions),
+            sha256: createHash("sha256").update(readFileSync(options.instructions)).digest("hex"),
+            scope: options.instructionsScope,
+          }
+        : null,
       plugins: [...new Set(planned.flatMap((p) => p.pluginDirs))].map((d) => ({
         name: pluginName(d),
         version: pluginVersion(d),

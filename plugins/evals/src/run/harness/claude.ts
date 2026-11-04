@@ -51,11 +51,11 @@ export function provideCredentials(configDir: string, env: NodeJS.ProcessEnv = p
   return "no credentials for the run: set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY; a macOS keychain login can't be passed to an isolated run";
 }
 
-function childEnv(box: Sandbox, extra: Record<string, string>): Record<string, string> {
+function childEnv(box: Sandbox, extra: Record<string, string>, instructions = false): Record<string, string> {
   return runEnv(box, {
     CLAUDE_CONFIG_DIR: box.configDir,
     CLAUDE_CODE_TMPDIR: box.tmpDir,
-    CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+    ...(!instructions && { CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1" }),
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     DISABLE_AUTOUPDATER: "1",
@@ -223,6 +223,10 @@ export const claudeHarness: Harness = {
       : `mcp__${pluginSegment(server)}__${tool}`;
   },
 
+  instructionsPath(box, scope, name) {
+    return scope === "user" ? join(box.configDir, "CLAUDE.md") : join(box.cwd, name ?? "CLAUDE.md");
+  },
+
   async run(request) {
     const { box } = request;
     const credentialProblem = provideCredentials(box.configDir);
@@ -261,7 +265,7 @@ export const claudeHarness: Harness = {
     const tracePath = join(box.outDir, "trace.jsonl");
     const result = await exec(claudeBin(), args, {
       cwd: box.cwd,
-      env: childEnv(box, request.env),
+      env: childEnv(box, request.env, request.loadsInstructions),
       input: request.prompt,
       timeoutMs: request.timeoutMs,
       signal: request.signal,

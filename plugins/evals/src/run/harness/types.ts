@@ -10,6 +10,8 @@ export type ToolCall = {
   input: unknown;
   /** The input as JSON, which `input_match` patterns are matched against. */
   inputText: string;
+  /** Other names graders may use for this call, such as an MCP tool's name outside its plugin. */
+  aliases?: string[];
   output?: string;
   isError?: boolean;
   /** Set on calls a mock answered. */
@@ -57,6 +59,8 @@ export type RunRequest = {
   /** Folders the agent may read but never write (the plugin and case under test). */
   readOnlyDirs: string[];
   env: Record<string, string>;
+  /** An instruction file was written for the run; the harness must let it load. */
+  loadsInstructions: boolean;
   signal?: AbortSignal;
   /** Called once the agent's process starts, with a way to stop it. */
   onSpawn?: (kill: () => void) => void;
@@ -73,4 +77,6 @@ export type Harness = {
   ask(system: string, user: string, model: string | undefined, signal?: AbortSignal): Promise<Answer>;
   /** The name the model sees for a tool of an MCP server (inside a plugin, when pluginName is set). */
   mcpToolName(server: string, tool: string, pluginName?: string): string;
+  /** Where the harness loads an instruction file from, in a run's sandbox, and the file's name. */
+  instructionsPath(box: Sandbox, scope: "project" | "user", name?: string): string;
 };

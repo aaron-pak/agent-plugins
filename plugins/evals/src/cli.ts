@@ -11,6 +11,8 @@ import { capture } from "./capture.ts";
 import { compare, formatComparison, loadResult } from "./compare.ts";
 import { gradeCase } from "./grade.ts";
 import { claudeHarness } from "./run/harness/claude.ts";
+import { codexHarness } from "./run/harness/codex.ts";
+import type { Harness } from "./run/harness/types.ts";
 import { renderReport } from "./run/report.ts";
 import { type Ablation, runSuite } from "./run/runner.ts";
 import { type Edit, recordedFiles, rewriteHistoryFile, writeVariant } from "./instructions.ts";
@@ -44,11 +46,12 @@ Traces live in $EVALS_HOME (default ~/.claude/evals); sessions are read from $CL
                        [--type Project|User|Local] [--out <file>]
   variant --suite <dir> --out <dir> --file <new text> [--replaces <recorded path>] [--path <path>] [--type t]
 
-  run [target] [--runs n] [--model m] [--judge-model m] [--ablation none|with-without] [--case glob]... [--tag t]...
+  run [target] [--harness claude|codex] [--runs n] [--model m (opus)] [--judge-model m (opus)] [--judge-harness claude|codex]
+      [--instructions <file>] [--instructions-scope project|user] [--instructions-name AGENTS.md] [--ablation none|with-without] [--case glob]... [--tag t]...
       [--allow-tools t...] [--disallow-tools t...] [--threshold 0..1] [--max-cost-usd usd] [-j n] [--scaffold]
       [--mocks record|off] [--allow-real-servers] [--eval-dir d] [--output-dir d] [--report file] [--json [file]] [--keep-temp]
                                        runs the target's eval cases (<target>/evals/**/case.yaml or prompt.md) the
-                                       way \`claude plugin eval\` does; --max-cost-usd 0 loads them and runs nothing
+                                       way \`claude plugin eval\` does, under Claude Code or Codex; --max-cost-usd 0 loads them and runs nothing
 
   compare <results A> <results B> [--cases <glob>]... [--drop-errors] [--min-effect x] [--json]
                                        B against A: paired per-case score Δ with a 95% interval and a sign test;
@@ -247,7 +250,18 @@ const RUN_OPTIONS: ParseArgsOptionsConfig = {
   "keep-temp": { type: "boolean" },
   mocks: { type: "string" },
   "allow-real-servers": { type: "boolean" },
+  harness: { type: "string" },
+  "judge-harness": { type: "string" },
+  instructions: { type: "string" },
+  "instructions-scope": { type: "string" },
+  "instructions-name": { type: "string" },
 };
+
+const HARNESSES: Record<string, Harness> = { claude: claudeHarness, codex: codexHarness };
+
+function harnessOf(name: unknown, flag: string): Harness {
+  return HARNESSES[String(name)] ?? fail(`${flag} claude | codex`);
+}
 
 function number(value: unknown, flag: string, min: number, max: number, integer = false): number | undefined {
   if (value === undefined) return undefined;
@@ -268,6 +282,14 @@ async function runCommand(argv: string[]): Promise<void> {
   if (!["auto", "with-without", "none"].includes(ablation)) fail("--ablation none | with-without");
   const mocks = (values.mocks as string | undefined) ?? "record";
   if (mocks !== "record" && mocks !== "off") fail("--mocks record | off");
+  const harness = harnessOf(values.harness ?? "claude", "--harness");
+  const judgeHarness = harnessOf(values["judge-harness"] ?? "claude", "--judge-harness");
+  const scope = (values["instructions-scope"] as string | undefined) ?? "project";
+  if (scope !== "project" && scope !== "user") fail("--instructions-scope project | user");
+  // Opus runs and judges unless told otherwise; another harness keeps its own default model.
+  const model = (values.model as string | undefined) ?? (harness.name === "claude" ? "opus" : undefined);
+  const judgeModel =
+    (values["judge-model"] as string | undefined) ?? (judgeHarness.name === "claude" ? "opus" : undefined);
   const log = (line: string) => (jsonBare ? console.error(line) : console.log(line));
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort());
@@ -275,8 +297,8 @@ async function runCommand(argv: string[]): Promise<void> {
     target: positionals[0] ?? ".",
     evalDir: values["eval-dir"] as string | undefined,
     runs: number(values.runs, "--runs", 1, 50, true),
-    model: values.model as string | undefined,
-    judgeModel: (values["judge-model"] as string | undefined) ?? "haiku",
+    model,
+    judgeModel,
     ablation: ablation as Ablation,
     threshold: number(values.threshold, "--threshold", 0, 1) ?? 1,
     maxCostUsd: number(values["max-cost-usd"], "--max-cost-usd", 0, Number.MAX_SAFE_INTEGER),
@@ -292,8 +314,11 @@ async function runCommand(argv: string[]): Promise<void> {
     keepTemp: Boolean(values["keep-temp"]),
     mocks: mocks === "record",
     allowRealServers: Boolean(values["allow-real-servers"]),
-    harness: claudeHarness,
-    judgeHarness: claudeHarness,
+    harness,
+    judgeHarness,
+    ...(values.instructions !== undefined && { instructions: values.instructions as string }),
+    instructionsScope: scope as "project" | "user",
+    ...(values["instructions-name"] !== undefined && { instructionsName: values["instructions-name"] as string }),
     onLine: log,
     signal: controller.signal,
   });
@@ -302,6 +327,7 @@ async function runCommand(argv: string[]): Promise<void> {
   writeFileSync(reportPath, renderReport(result));
   if (jsonBare) console.log(JSON.stringify(result, null, 2));
   else if (values.json) writeFileSync(values.json as string, `${JSON.stringify(result, null, 2)}\n`);
+  if (result.partial) log(`⚠ partial: ${result.partialReason}`);
   log(`results: ${join(outputDir, "aggregate-result.json")}\nreport: ${reportPath}`);
   process.exitCode = exitCode;
 }

@@ -106,7 +106,7 @@ function focusText(focus: Focus, ctx: GradeContext): Text {
 }
 
 function callMatches(call: ToolCall, ref: ToolRef): boolean {
-  if (call.name !== ref.tool) return false;
+  if (call.name !== ref.tool && !call.aliases?.includes(ref.tool)) return false;
   return ref.input_match ? new RegExp(ref.input_match).test(call.inputText) : true;
 }
 

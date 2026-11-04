@@ -45,6 +45,8 @@ export type Context = {
   scaffold_script?: string;
   history_file?: string;
   add_dirs: string[];
+  /** An instruction file (CLAUDE.md or AGENTS.md text) the run loads, relative to the case. */
+  instructions?: string;
 };
 
 export type Case = {
@@ -361,10 +363,11 @@ export function loadCase(dir: string, evalRoot: string): Case | undefined {
   const context: Context = { add_dirs: [] };
   if (!isObj(ctxRaw)) c.add("context", "expected a map");
   else {
-    c.only(ctxRaw, ["scaffold_script", "history_file", "add_dirs"], "context.");
+    c.only(ctxRaw, ["scaffold_script", "history_file", "add_dirs", "instructions"], "context.");
     context.scaffold_script = c.str(ctxRaw, "scaffold_script", "context.");
     context.history_file = c.str(ctxRaw, "history_file", "context.");
     context.add_dirs = c.strs(ctxRaw, "add_dirs", "context.") ?? [];
+    context.instructions = c.str(ctxRaw, "instructions", "context.");
   }
 
   const notes: string[] = [];
@@ -424,6 +427,7 @@ export function loadCase(dir: string, evalRoot: string): Case | undefined {
   for (const [label, p] of [
     ["context.history_file", context.history_file],
     ["context.scaffold_script", context.scaffold_script],
+    ["context.instructions", context.instructions],
     ...context.add_dirs.map((d) => ["context.add_dirs", d] as const),
   ] as const) {
     if (p !== undefined && !existsSync(resolve(abs, p))) throw new CaseError(`${shown}: ${label} ${p} does not exist`);

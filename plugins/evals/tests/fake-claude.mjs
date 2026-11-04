@@ -88,13 +88,20 @@ if (call) {
   });
   turns++;
 }
+const resume = values("--resume")[0];
+const claudeMd = join(process.cwd(), "CLAUDE.md");
+const facts = [
+  `claude-md:${existsSync(claudeMd) ? readFileSync(claudeMd, "utf8").split("\n")[0] : "none"}`,
+  `mds-off:${process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS === "1"}`,
+  `history:${resume ? (readFileSync(resume, "utf8").includes("NEW RULES") ? "new" : "old") : "none"}`,
+];
 const write = /write (\S+)/.exec(stdin);
 if (write) writeFileSync(join(process.cwd(), write[1]), "written\n");
 emit({
   type: "assistant",
   message: {
     id: "m2",
-    content: [{ type: "text", text: `hello from fake (${process.env.HOME === process.cwd() ? "home" : "work"})` }],
+    content: [{ type: "text", text: `hello from fake ${facts.join(" ")}` }],
   },
 });
 emit({

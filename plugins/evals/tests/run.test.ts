@@ -12,7 +12,8 @@ import { claudeHarness, parseStream } from "../src/run/harness/claude.ts";
 import type { Harness, RunOutput } from "../src/run/harness/types.ts";
 import { readVote, renderTrace } from "../src/run/judge.ts";
 import { checkCall, fillTemplate, loadMocks, planServers } from "../src/run/mocks.ts";
-import { grantTools, runSuite } from "../src/run/runner.ts";
+import { codexConfig, parseCodex } from "../src/run/harness/codex.ts";
+import { type RunOptions, grantTools, runSuite } from "../src/run/runner.ts";
 
 let root: string;
 const FAKE = join(dirname(import.meta.path), "fake-claude.mjs");
@@ -265,6 +266,7 @@ describe("suites", () => {
       keepTemp: false,
       mocks: true,
       allowRealServers: false,
+      instructionsScope: "project",
       harness: claudeHarness,
       judgeHarness: claudeHarness,
       onLine: (l) => lines.push(l),
@@ -306,6 +308,7 @@ describe("suites", () => {
       keepTemp: false,
       mocks: true,
       allowRealServers: false,
+      instructionsScope: "project",
       harness: claudeHarness,
       judgeHarness: claudeHarness,
       onLine: () => {},
@@ -314,5 +317,150 @@ describe("suites", () => {
     expect(result.partialReason).toBe("cost_ceiling");
     expect(result.costUsd).toBe(0);
     expect(exitCode).toBe(2);
+  });
+
+  test("instruction files load for real, and replace the recorded ones in a history", async () => {
+    const suite = join(root, "instr");
+    write(join(suite, "NEW.md"), "NEW RULES\nAsk first.\n");
+    write(join(suite, "evals", "fresh", "prompt.md"), "---\nruns: 1\n---\nhi\n");
+    write(
+      join(suite, "evals", "fresh", "graders", "loaded.md"),
+      "---\ntype: regex\n---\nclaude-md:NEW RULES mds-off:false history:none\n",
+    );
+    write(join(suite, "evals", "plain", "prompt.md"), "---\nruns: 1\n---\nhi\n");
+    write(join(suite, "evals", "plain", "graders", "none.md"), "---\ntype: regex\n---\nclaude-md:none mds-off:true\n");
+    const attachment = {
+      type: "attachment",
+      uuid: "a1",
+      parentUuid: null,
+      attachment: { type: "instructions", files: [{ path: "/p/CLAUDE.md", type: "Project", content: "OLD RULES" }] },
+      rendered: [
+        {
+          content:
+            "<system-reminder>\nContents of /p/CLAUDE.md (project instructions, checked into the codebase):\n\nOLD RULES\n</system-reminder>",
+        },
+      ],
+    };
+    write(join(suite, "evals", "recorded", "history.jsonl"), `${JSON.stringify(attachment)}\n`);
+    write(
+      join(suite, "evals", "recorded", "case.yaml"),
+      'schema_version: "1.1"\nname: recorded\nruns: 1\ncontext:\n  history_file: history.jsonl\nexecution:\n  prompt: next\n',
+    );
+    write(
+      join(suite, "evals", "recorded", "graders", "rewritten.md"),
+      "---\ntype: regex\n---\nclaude-md:none mds-off:true history:new\n",
+    );
+    const base: RunOptions = {
+      target: suite,
+      ablation: "none",
+      threshold: 1,
+      allowTools: [],
+      disallowTools: [],
+      caseGlobs: ["fresh", "recorded"],
+      tags: [],
+      scaffold: false,
+      outputDir: join(suite, "out"),
+      concurrency: 1,
+      keepTemp: false,
+      mocks: true,
+      allowRealServers: false,
+      instructions: join(suite, "NEW.md"),
+      instructionsScope: "project",
+      harness: claudeHarness,
+      judgeHarness: claudeHarness,
+      onLine: () => {},
+    };
+    const { result } = await runSuite(base);
+    expect(result.cases.map((c) => [c.name, c.aggregates.score])).toEqual([
+      ["fresh", 1],
+      ["recorded", 1],
+    ]);
+    expect(result.suite.instructions?.scope).toBe("project");
+    const plain = await runSuite({
+      ...base,
+      caseGlobs: ["plain"],
+      instructions: undefined,
+      outputDir: join(suite, "out2"),
+    });
+    expect(plain.result.cases[0]!.aggregates.score).toBe(1);
+  }, 30_000);
+
+  test("a mocked tool answers to its plain mcp__server__tool name too", async () => {
+    const plugin = join(root, "suite", "plug");
+    write(join(plugin, "evals", "alias", "prompt.md"), '---\nruns: 1\n---\ncall tracker create {"project":"ABC"}\n');
+    write(
+      join(plugin, "evals", "alias", "graders", "plain.md"),
+      "---\ntype: tool_used\ntool: mcp__tracker__create\n---\n",
+    );
+    const { result } = await runSuite({
+      target: plugin,
+      ablation: "none",
+      threshold: 1,
+      allowTools: [],
+      disallowTools: [],
+      caseGlobs: ["alias"],
+      tags: [],
+      scaffold: false,
+      outputDir: join(root, "suite", "out-alias"),
+      concurrency: 1,
+      keepTemp: false,
+      mocks: true,
+      allowRealServers: false,
+      instructionsScope: "project",
+      harness: claudeHarness,
+      judgeHarness: claudeHarness,
+      onLine: () => {},
+    });
+    expect(result.cases[0]!.arms.with[0]!.graders[0]).toMatchObject({
+      passed: true,
+      explanation: "mcp__tracker__create called 1x (expected 1..∞)",
+    });
+  }, 30_000);
+});
+
+describe("codex", () => {
+  test("exec --json events become tool calls, with a skill read standing for the Skill tool", () => {
+    const run = parseCodex(
+      [
+        { type: "thread.started" },
+        {
+          type: "item.completed",
+          item: {
+            id: "1",
+            type: "command_execution",
+            command: "cat ~/.codex/skills/hello/SKILL.md",
+            aggregated_output: "body",
+            exit_code: 0,
+          },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "2",
+            type: "mcp_tool_call",
+            server: "tracker",
+            tool: "create",
+            arguments: { project: "ABC" },
+            result: { content: [{ text: "ABC-1" }] },
+            status: "completed",
+          },
+        },
+        { type: "item.completed", item: { id: "3", type: "agent_message", text: "Done." } },
+        { type: "turn.completed", usage: { input_tokens: 10, output_tokens: 2 } },
+      ],
+      { code: 0, timedOut: false, stderrTail: "", timeoutMs: 1000 },
+      "/t",
+    );
+    expect(run.toolCalls.map((c) => c.name)).toEqual(["Bash", "Skill", "mcp__tracker__create"]);
+    expect(run.toolCalls[2]!.output).toBe("ABC-1");
+    expect([run.lastAssistantText, run.error, run.numTurns]).toEqual(["Done.", null, 3]);
+  });
+
+  test("config.toml carries no approvals and the run's MCP servers", () => {
+    const text = codexConfig([{ name: "tracker", command: "node", args: ["/m.mjs", "/s.json"] }], "gpt-6.1");
+    expect(text).toContain('approval_policy = "never"');
+    expect(text).toContain('[mcp_servers."tracker"]');
+    expect(text).toContain('args = ["/m.mjs", "/s.json"]');
+    expect(text.startsWith('model = "gpt-6.1"')).toBe(true);
   });
 });
